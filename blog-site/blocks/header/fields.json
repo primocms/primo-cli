@@ -1,0 +1,13 @@
+{
+  "id": "header-block",
+  "name": "Header",
+  "fields": [
+    {
+      "id": "header-sticky",
+      "label": "Sticky Header",
+      "name": "sticky",
+      "options": null,
+      "type": "switch"
+    }
+  ]
+}

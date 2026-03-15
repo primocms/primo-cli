@@ -1,0 +1,24 @@
+badge: "Testimonials"
+title: "Loved by teams everywhere"
+testimonials:
+  - quote: "SaaSify has completely transformed how we deploy applications. What used to take hours now takes minutes."
+    name: "Sarah Chen"
+    role: "CTO"
+    company: "TechFlow"
+    avatar:
+      url: ""
+      alt: "Sarah Chen"
+  - quote: "The best developer experience I've ever had. Our team's productivity has increased by 40% since switching."
+    name: "Marcus Johnson"
+    role: "Engineering Lead"
+    company: "DataSync"
+    avatar:
+      url: ""
+      alt: "Marcus Johnson"
+  - quote: "Finally, a platform that just works. No more infrastructure headaches, just building great products."
+    name: "Emily Rodriguez"
+    role: "Founder"
+    company: "Launchpad"
+    avatar:
+      url: ""
+      alt: "Emily Rodriguez"

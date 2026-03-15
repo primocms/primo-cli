@@ -1,0 +1,41 @@
+{
+  "id": "event-contact",
+  "name": "Contact",
+  "fields": [
+    {
+      "id": "contact-badge",
+      "name": "badge",
+      "label": "Badge",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "contact-title",
+      "name": "title",
+      "label": "Title",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "contact-subtitle",
+      "name": "subtitle",
+      "label": "Subtitle",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "contact-endpoint",
+      "name": "form_endpoint",
+      "label": "Form Endpoint URL",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "contact-success-message",
+      "name": "success_message",
+      "label": "Success Message",
+      "type": "text",
+      "options": null
+    }
+  ]
+}

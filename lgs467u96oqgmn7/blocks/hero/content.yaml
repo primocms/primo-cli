@@ -1,0 +1,12 @@
+badge: "Now in public beta"
+headline: "Ship faster with modern dev tools"
+subheadline: "The all-in-one platform that helps your team build, deploy, and scale applications without the complexity."
+primary_cta:
+  label: "Start for free"
+  url: "#signup"
+secondary_cta:
+  label: "Watch demo"
+  url: "#demo"
+image:
+  url: ""
+  alt: ""

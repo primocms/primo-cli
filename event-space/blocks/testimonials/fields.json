@@ -1,0 +1,59 @@
+{
+  "id": "event-testimonials",
+  "name": "Testimonials",
+  "fields": [
+    {
+      "id": "testimonials-badge",
+      "name": "badge",
+      "label": "Badge",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "testimonials-title",
+      "name": "title",
+      "label": "Title",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "testimonials-list",
+      "name": "testimonials",
+      "label": "Testimonials",
+      "type": "repeater",
+      "options": null
+    },
+    {
+      "id": "testimonial-quote",
+      "name": "quote",
+      "label": "Quote",
+      "type": "text",
+      "parent": "testimonials",
+      "options": null
+    },
+    {
+      "id": "testimonial-author",
+      "name": "author",
+      "label": "Author Name",
+      "type": "text",
+      "parent": "testimonials",
+      "options": null
+    },
+    {
+      "id": "testimonial-event",
+      "name": "event_type",
+      "label": "Event Type",
+      "type": "text",
+      "parent": "testimonials",
+      "options": null
+    },
+    {
+      "id": "testimonial-image",
+      "name": "image",
+      "label": "Photo",
+      "type": "image",
+      "parent": "testimonials",
+      "options": null
+    }
+  ]
+}

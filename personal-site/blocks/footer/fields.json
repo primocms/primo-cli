@@ -1,0 +1,13 @@
+{
+  "id": "footer-block",
+  "name": "Footer",
+  "fields": [
+    {
+      "id": "footer-show-back-to-top",
+      "label": "Show Back to Top",
+      "name": "show_back_to_top",
+      "options": null,
+      "type": "switch"
+    }
+  ]
+}

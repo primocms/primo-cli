@@ -1,0 +1,66 @@
+{
+  "id": "agency-services",
+  "name": "Services",
+  "fields": [
+    {
+      "id": "services-badge",
+      "name": "badge",
+      "label": "Badge",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "services-title",
+      "name": "title",
+      "label": "Title",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "services-subtitle",
+      "name": "subtitle",
+      "label": "Subtitle",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "services-list",
+      "name": "services",
+      "label": "Services",
+      "type": "repeater",
+      "options": null
+    },
+    {
+      "id": "service-icon",
+      "name": "icon",
+      "label": "Icon",
+      "type": "icon",
+      "parent": "services",
+      "options": null
+    },
+    {
+      "id": "service-title",
+      "name": "service_title",
+      "label": "Title",
+      "type": "text",
+      "parent": "services",
+      "options": null
+    },
+    {
+      "id": "service-description",
+      "name": "description",
+      "label": "Description",
+      "type": "text",
+      "parent": "services",
+      "options": null
+    },
+    {
+      "id": "service-link",
+      "name": "link",
+      "label": "Link",
+      "type": "link",
+      "parent": "services",
+      "options": null
+    }
+  ]
+}

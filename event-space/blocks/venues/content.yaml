@@ -1,0 +1,34 @@
+badge: "Our Spaces"
+title: "Stunning Venues for Every Occasion"
+subtitle: "From intimate gatherings to grand celebrations, we have the perfect space for your event."
+venues:
+  - image:
+      url: "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=800"
+      alt: "Grand Ballroom"
+    name: "The Grand Ballroom"
+    capacity: "Up to 500 guests"
+    size: "8,000 sq ft"
+    description: "Our flagship space featuring soaring ceilings, crystal chandeliers, and elegant architectural details."
+    link:
+      label: "View Details"
+      url: "/venues#ballroom"
+  - image:
+      url: "https://images.unsplash.com/photo-1464366400600-7168b8af9bc3?w=800"
+      alt: "Garden Terrace"
+    name: "Garden Terrace"
+    capacity: "Up to 200 guests"
+    size: "4,000 sq ft"
+    description: "A beautiful outdoor space surrounded by manicured gardens, perfect for ceremonies and cocktail receptions."
+    link:
+      label: "View Details"
+      url: "/venues#garden"
+  - image:
+      url: "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800"
+      alt: "Executive Suite"
+    name: "Executive Suite"
+    capacity: "Up to 80 guests"
+    size: "2,000 sq ft"
+    description: "An intimate setting ideal for corporate meetings, workshops, and private dinners."
+    link:
+      label: "View Details"
+      url: "/venues#executive"

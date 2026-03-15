@@ -1,0 +1,51 @@
+{
+  "id": "process",
+  "name": "Process",
+  "fields": [
+    {
+      "id": "process-title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "process-subtitle",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "process-steps",
+      "label": "Steps",
+      "name": "steps",
+      "options": null,
+      "type": "repeater"
+    },
+    {
+      "id": "process-step-title",
+      "label": "Step Title",
+      "name": "step_title",
+      "options": null,
+      "type": "text",
+      "parent": "steps"
+    },
+    {
+      "id": "process-step-description",
+      "label": "Step Description",
+      "name": "description",
+      "options": null,
+      "type": "text",
+      "parent": "steps"
+    },
+    {
+      "id": "process-step-icon",
+      "label": "Icon",
+      "name": "icon",
+      "options": null,
+      "type": "icon",
+      "parent": "steps"
+    }
+  ]
+}

@@ -1,0 +1,165 @@
+id: np-home
+name: Home
+slug: ""
+page_type: default
+fields:
+  title: Hope Foundation - Making a Difference Together
+  description: Hope Foundation empowers underserved communities through education, healthcare, and sustainable development programs.
+sections:
+  - block: header
+    content:
+      logo:
+        type: "text"
+        text: "Hope Foundation"
+      nav_links:
+        - link:
+            label: "About"
+            url: "#mission"
+        - link:
+            label: "Programs"
+            url: "#programs"
+        - link:
+            label: "Impact"
+            url: "#impact"
+        - link:
+            label: "Get Involved"
+            url: "#donate"
+      cta:
+        label: "Donate"
+        url: "#donate"
+  - block: hero
+    content:
+      badge: "Join Our Mission"
+      headline: "Together We Can Make a Difference"
+      subheadline: "Hope Foundation empowers underserved communities through education, healthcare, and sustainable development programs. Every donation changes lives."
+      primary_cta:
+        label: "Donate Now"
+        url: "#donate"
+      secondary_cta:
+        label: "Learn More"
+        url: "#mission"
+      image:
+        url: ""
+        alt: "Community members coming together"
+  - block: mission
+    content:
+      badge: "Our Mission"
+      title: "Creating Lasting Change in Communities"
+      description: "<p>For over 15 years, Hope Foundation has been dedicated to transforming lives through sustainable community development. We believe that every person deserves access to quality education, healthcare, and opportunities for growth.</p><p>Our approach is simple: work alongside communities to understand their unique needs and empower them with the tools and resources to build a brighter future.</p>"
+      image:
+        url: ""
+        alt: "Community members working together"
+      values:
+        - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>'
+          value_title: "Compassion"
+          value_description: "We lead with empathy and understanding in everything we do."
+        - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
+          value_title: "Community"
+          value_description: "We work hand-in-hand with local leaders and residents."
+        - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg>'
+          value_title: "Transparency"
+          value_description: "We maintain full accountability for every dollar donated."
+  - block: programs
+    content:
+      badge: "What We Do"
+      title: "Our Programs"
+      subtitle: "We focus on three core areas that create lasting change in the communities we serve."
+      programs:
+        - image:
+            url: ""
+            alt: "Education program"
+          program_title: "Education Initiative"
+          description: "Providing access to quality education through school construction, teacher training, and scholarship programs for underprivileged students."
+          link:
+            label: "Learn More"
+            url: "/programs/education"
+        - image:
+            url: ""
+            alt: "Healthcare program"
+          program_title: "Community Health"
+          description: "Building health clinics, training local healthcare workers, and providing essential medical supplies to underserved communities."
+          link:
+            label: "Learn More"
+            url: "/programs/health"
+        - image:
+            url: ""
+            alt: "Sustainable development"
+          program_title: "Sustainable Development"
+          description: "Empowering communities through clean water projects, agricultural training, and microfinance programs that promote self-sufficiency."
+          link:
+            label: "Learn More"
+            url: "/programs/development"
+  - block: impact
+    content:
+      badge: "Our Impact"
+      title: "Measurable Change, Real Results"
+      subtitle: "Every donation helps us expand our reach and deepen our impact in communities around the world."
+      stats:
+        - number: "50K+"
+          stat_label: "Lives Changed"
+          icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
+        - number: "120"
+          stat_label: "Communities Served"
+          icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>'
+        - number: "15"
+          stat_label: "Years of Service"
+          icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'
+        - number: "98%"
+          stat_label: "Funds to Programs"
+          icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>'
+  - block: donate
+    content:
+      title: "Make a Difference Today"
+      subtitle: "Your donation directly funds our programs. Choose an amount that works for you."
+      amounts:
+        - value: "25"
+          amount_label: "Provides school supplies for one child"
+        - value: "50"
+          amount_label: "Funds a week of meals for a family"
+        - value: "100"
+          amount_label: "Supports a health clinic visit"
+        - value: "250"
+          amount_label: "Sponsors a student for a month"
+      cta:
+        label: "Donate Now"
+        url: "/donate"
+      note: "All donations are tax-deductible. Hope Foundation is a registered 501(c)(3) nonprofit."
+  - block: footer
+    content:
+      logo:
+        type: "text"
+        text: "Hope Foundation"
+      tagline: "Empowering communities through education, healthcare, and sustainable development."
+      social_links:
+        - platform: "instagram"
+          url: "https://instagram.com/hopefoundation"
+        - platform: "facebook"
+          url: "https://facebook.com/hopefoundation"
+        - platform: "twitter"
+          url: "https://twitter.com/hopefoundation"
+        - platform: "linkedin"
+          url: "https://linkedin.com/company/hopefoundation"
+      phone: "+1 (555) 123-4567"
+      email: "info@hopefoundation.org"
+      address: "123 Hope Street, San Francisco, CA 94102"
+      ein: "12-3456789"
+      copyright: "Hope Foundation. All rights reserved."
+      footer_links:
+        - link:
+            label: "About Us"
+            url: "/about"
+        - link:
+            label: "Our Programs"
+            url: "/programs"
+        - link:
+            label: "Get Involved"
+            url: "/volunteer"
+        - link:
+            label: "Donate"
+            url: "/donate"
+        - link:
+            label: "Contact"
+            url: "/contact"
+        - link:
+            label: "Privacy Policy"
+            url: "/privacy"

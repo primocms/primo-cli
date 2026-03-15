@@ -1,0 +1,24 @@
+title: Get In Touch
+subtitle: We'd love to hear from you
+endpoint: https://formspree.io/f/your-form-id
+rows:
+  - fields:
+      - label: Name
+        name: name
+        input_type: text
+        required: "true"
+      - label: Email
+        name: email
+        input_type: email
+        required: "true"
+  - fields:
+      - label: Company
+        name: company
+        input_type: text
+        required: "false"
+  - fields:
+      - label: How can we help?
+        name: message
+        input_type: textarea
+        required: "true"
+button_text: Send Message

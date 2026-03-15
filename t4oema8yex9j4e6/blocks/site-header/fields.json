@@ -1,0 +1,71 @@
+{
+  "id": "site-header-block",
+  "name": "Site Header",
+  "fields": [
+    {
+      "id": "header-site-name",
+      "label": "Site Name",
+      "name": "site_name",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "header-logo-icon",
+      "label": "Logo Icon",
+      "name": "logo_icon",
+      "options": null,
+      "type": "icon"
+    },
+    {
+      "id": "header-nav-links",
+      "label": "Navigation Links",
+      "name": "nav_links",
+      "options": null,
+      "type": "repeater"
+    },
+    {
+      "id": "nav-link-label",
+      "label": "Label",
+      "name": "label",
+      "parent": "nav_links",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "nav-link-url",
+      "label": "URL",
+      "name": "url",
+      "parent": "nav_links",
+      "options": null,
+      "type": "url"
+    },
+    {
+      "id": "header-github-stars",
+      "label": "GitHub Stars",
+      "name": "github_stars",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "header-github-url",
+      "label": "GitHub URL",
+      "name": "github_url",
+      "options": null,
+      "type": "url"
+    },
+    {
+      "id": "header-cta-label",
+      "label": "CTA Label",
+      "name": "cta_label",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "header-cta-url",
+      "label": "CTA URL",
+      "name": "cta_url",
+      "options": null,
+      "type": "url"
+    }
+  ]
+}

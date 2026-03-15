@@ -1,0 +1,67 @@
+{
+  "id": "offices",
+  "name": "Offices",
+  "fields": [
+    {
+      "id": "offices_title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "offices_subtitle",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "offices_locations",
+      "label": "Locations",
+      "name": "locations",
+      "options": null,
+      "type": "repeater"
+    },
+    {
+      "id": "office_image",
+      "label": "Image",
+      "name": "image",
+      "parent": "locations",
+      "options": null,
+      "type": "image"
+    },
+    {
+      "id": "office_city",
+      "label": "City",
+      "name": "city",
+      "parent": "locations",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "office_badge",
+      "label": "Badge (optional)",
+      "name": "badge",
+      "parent": "locations",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "office_address",
+      "label": "Address",
+      "name": "address",
+      "parent": "locations",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "office_phone",
+      "label": "Phone",
+      "name": "phone",
+      "parent": "locations",
+      "options": null,
+      "type": "text"
+    }
+  ]
+}

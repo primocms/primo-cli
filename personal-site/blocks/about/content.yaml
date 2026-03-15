@@ -1,0 +1,10 @@
+badge: "About Me"
+title: "Designing with purpose, building with passion"
+bio: "<p>I'm a designer and developer based in San Francisco with over 8 years of experience creating digital products. I specialize in crafting user experiences that are both beautiful and functional.</p><p>When I'm not coding, you'll find me exploring hiking trails, experimenting with coffee brewing methods, or contributing to open-source projects.</p>"
+skills:
+  - name: "React"
+  - name: "TypeScript"
+  - name: "Node.js"
+  - name: "Figma"
+  - name: "Svelte"
+  - name: "PostgreSQL"

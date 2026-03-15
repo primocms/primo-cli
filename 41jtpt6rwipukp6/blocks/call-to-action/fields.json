@@ -1,0 +1,27 @@
+{
+  "id": "x4oxj7k0sr3xchg",
+  "name": "Call to Action",
+  "fields": [
+    {
+      "id": "gkyxr7k5ovgfl9c",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "6o6wemk85ezngj4",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "8krcoupdxtvd10m",
+      "label": "Button",
+      "name": "button",
+      "options": null,
+      "type": "link"
+    }
+  ]
+}

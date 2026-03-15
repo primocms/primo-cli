@@ -1,0 +1,44 @@
+id: 4lqre456jen6q8j
+name: Privacy Policy
+slug: privacy
+page_type: default
+fields:
+  title: Privacy Policy - SaaSify
+  description: Our commitment to protecting your privacy and data.
+sections:
+  - block: page-header
+    content:
+      title: "Privacy Policy"
+      subtitle: "Last updated March 2026"
+
+  - block: basic
+    content:
+      content: |
+        <h2>Introduction</h2>
+        <p>At SaaSify, we take your privacy seriously. This policy describes how we collect, use, and protect your personal information.</p>
+
+        <h2>Information We Collect</h2>
+        <p>We collect information you provide directly to us, such as when you create an account, use our services, or contact us for support.</p>
+        <ul>
+          <li>Account information (name, email, password)</li>
+          <li>Usage data (how you interact with our services)</li>
+          <li>Payment information (processed securely by our payment provider)</li>
+        </ul>
+
+        <h2>How We Use Your Information</h2>
+        <p>We use the information we collect to:</p>
+        <ul>
+          <li>Provide, maintain, and improve our services</li>
+          <li>Process transactions and send related information</li>
+          <li>Send you technical notices and support messages</li>
+          <li>Respond to your comments and questions</li>
+        </ul>
+
+        <h2>Data Security</h2>
+        <p>We implement appropriate technical and organizational measures to protect your personal information against unauthorized access, alteration, disclosure, or destruction.</p>
+
+        <h2>Your Rights</h2>
+        <p>You have the right to access, correct, or delete your personal information. Contact us at <a href="mailto:privacy@saasify.com">privacy@saasify.com</a> to exercise these rights.</p>
+
+        <h2>Contact Us</h2>
+        <p>If you have questions about this privacy policy, please contact us at <a href="mailto:privacy@saasify.com">privacy@saasify.com</a>.</p>

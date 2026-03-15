@@ -1,0 +1,34 @@
+{
+  "id": "hpor5cp03jx1hyp",
+  "name": "Hero",
+  "fields": [
+    {
+      "id": "g9ng20kjxcbbgyy",
+      "label": "Headline",
+      "name": "headline",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "lucjn9jluo1f2xx",
+      "label": "Subtext",
+      "name": "subtext",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "ymk8czx374zpig3",
+      "label": "Call to Action",
+      "name": "cta",
+      "options": null,
+      "type": "link"
+    },
+    {
+      "id": "hero-bg-image",
+      "label": "Background Image",
+      "name": "background_image",
+      "options": null,
+      "type": "image"
+    }
+  ]
+}

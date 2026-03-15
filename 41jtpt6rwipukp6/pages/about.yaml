@@ -1,0 +1,137 @@
+id: c46lpl2oag3yf7k
+name: About
+slug: about
+page_type: default
+fields:
+  description: Learn about Northstar Solutions - our story, mission, and the team behind your success
+  title: About Us - Northstar Solutions
+sections:
+  - block: page-header
+    content:
+      title: Built on Trust, Driven by Results
+      subtitle: For over 15 years, we've helped companies navigate complexity and achieve sustainable growth through strategic partnership.
+  - block: logos
+    content:
+      title: Trusted by industry leaders worldwide
+      logos:
+        - image:
+            url: https://placehold.co/200x80/1e293b/94a3b8?text=Acme+Corp
+            alt: Acme Corp
+        - image:
+            url: https://placehold.co/200x80/1e293b/94a3b8?text=TechFlow
+            alt: TechFlow
+        - image:
+            url: https://placehold.co/200x80/1e293b/94a3b8?text=Innovate+Inc
+            alt: Innovate Inc
+        - image:
+            url: https://placehold.co/200x80/1e293b/94a3b8?text=Global+Dynamics
+            alt: Global Dynamics
+        - image:
+            url: https://placehold.co/200x80/1e293b/94a3b8?text=Peak+Solutions
+            alt: Peak Solutions
+        - image:
+            url: https://placehold.co/200x80/1e293b/94a3b8?text=Horizon+Labs
+            alt: Horizon Labs
+  - block: stats
+    content:
+      title: Our Impact
+      subtitle: Numbers that reflect our commitment to excellence
+      stats:
+        - value: "150+"
+          label: Clients Served
+        - value: "94%"
+          label: Client Retention
+        - value: "$50M+"
+          label: Cost Savings Delivered
+        - value: "25+"
+          label: Industry Sectors
+  - block: basic
+    content:
+      content:
+        type: doc
+        content:
+          - type: heading
+            attrs:
+              level: 2
+            content:
+              - type: text
+                text: Our Story
+          - type: paragraph
+            content:
+              - type: text
+                text: Northstar Solutions was founded in 2009 by a team of former McKinsey consultants who saw an opportunity to bring enterprise-grade strategic thinking to mid-market companies. We believed that every ambitious business deserves access to the insights and frameworks that drive Fortune 500 success.
+          - type: paragraph
+            content:
+              - type: text
+                text: Today, we've grown to a team of 45 professionals across offices in San Francisco, New York, and London. We've partnered with over 200 companies across technology, healthcare, manufacturing, and financial services—helping them navigate market shifts, optimize operations, and scale sustainably.
+          - type: heading
+            attrs:
+              level: 2
+            content:
+              - type: text
+                text: Our Approach
+          - type: paragraph
+            content:
+              - type: text
+                text: We don't believe in one-size-fits-all solutions. Every engagement begins with deep listening—understanding your unique challenges, market position, and aspirations. From there, we combine rigorous analysis with practical experience to develop strategies that work in the real world.
+          - type: paragraph
+            content:
+              - type: text
+                text: Our consultants don't just deliver recommendations and walk away. We roll up our sleeves and work alongside your team to implement changes, measure results, and adjust course as needed. Your success is our success.
+  - block: process
+    content:
+      title: How We Work
+      subtitle: Our proven approach to delivering results
+      steps:
+        - number: "1"
+          step_title: Discovery
+          description: We start by deeply understanding your business, challenges, and goals through stakeholder interviews and data analysis.
+        - number: "2"
+          step_title: Strategy
+          description: Our team develops tailored recommendations backed by rigorous analysis and industry best practices.
+        - number: "3"
+          step_title: Implementation
+          description: We work alongside your team to execute the strategy, ensuring buy-in and sustainable change.
+        - number: "4"
+          step_title: Results
+          description: We measure outcomes against clear KPIs and iterate to maximize impact and ROI.
+  - block: team
+    content:
+      title: Leadership Team
+      subtitle: Experienced professionals dedicated to your success
+      members:
+        - name: David Mitchell
+          role: Founder & CEO
+          bio: Former McKinsey partner with 20+ years in strategy consulting.
+          linkedin: https://linkedin.com/in/davidmitchell
+          photo:
+            url: https://images.unsplash.com/photo-1560250097-0b93528c311a?w=400&h=400&q=80&fit=crop&crop=face
+            alt: David Mitchell
+        - name: Elena Vasquez
+          role: Chief Operating Officer
+          bio: Operations expert with background at Amazon and Deloitte.
+          linkedin: https://linkedin.com/in/elenavasquez
+          photo:
+            url: https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&h=400&q=80&fit=crop&crop=face
+            alt: Elena Vasquez
+        - name: James Chen
+          role: Head of Digital Strategy
+          bio: Former Google product leader guiding digital transformation.
+          linkedin: https://linkedin.com/in/jameschen
+          photo:
+            url: https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&h=400&q=80&fit=crop&crop=face
+            alt: James Chen
+        - name: Rachel Thompson
+          role: Director of Client Success
+          bio: 15 years ensuring every partnership exceeds expectations.
+          linkedin: https://linkedin.com/in/rachelthompson
+          photo:
+            url: https://images.unsplash.com/photo-1580489944761-15a19d654956?w=400&h=400&q=80&fit=crop&crop=face
+            alt: Rachel Thompson
+  - block: cta
+    content:
+      title: Let's Build Something Great Together
+      subtitle: Whether you're facing a specific challenge or exploring new opportunities, we're here to help.
+      button:
+        url: /contact
+        label: Start a Conversation

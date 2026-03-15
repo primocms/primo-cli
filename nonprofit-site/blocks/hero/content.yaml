@@ -1,0 +1,12 @@
+badge: "Join Our Mission"
+headline: "Together We Can Make a Difference"
+subheadline: "Hope Foundation empowers underserved communities through education, healthcare, and sustainable development programs. Every donation changes lives."
+primary_cta:
+  label: "Donate Now"
+  url: "#donate"
+secondary_cta:
+  label: "Learn More"
+  url: "#mission"
+image:
+  url: ""
+  alt: "Community members coming together"

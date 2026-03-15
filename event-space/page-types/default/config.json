@@ -1,0 +1,41 @@
+{
+  "id": "event-default",
+  "name": "Default",
+  "icon": "iconoir:page",
+  "color": "",
+  "allowed_blocks": [
+    "header",
+    "hero",
+    "venues",
+    "services",
+    "gallery",
+    "testimonials",
+    "pricing",
+    "cta",
+    "contact",
+    "footer"
+  ],
+  "fields": [
+    {
+      "id": "page-title",
+      "name": "title",
+      "label": "Page Title",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "page-description",
+      "name": "description",
+      "label": "Meta Description",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "page-og-image",
+      "name": "og_image",
+      "label": "Social Share Image",
+      "type": "image",
+      "options": null
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "id": "case-study",
+  "name": "Case Study",
+  "fields": [
+    {
+      "id": "cs-industry",
+      "label": "Industry",
+      "name": "industry",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "cs-service",
+      "label": "Service Type",
+      "name": "service",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "cs-title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "cs-description",
+      "label": "Description",
+      "name": "description",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "cs-results",
+      "label": "Results",
+      "name": "results",
+      "options": null,
+      "type": "repeater"
+    },
+    {
+      "id": "cs-result-value",
+      "label": "Value",
+      "name": "value",
+      "options": null,
+      "type": "text",
+      "parent": "results"
+    },
+    {
+      "id": "cs-result-label",
+      "label": "Label",
+      "name": "label",
+      "options": null,
+      "type": "text",
+      "parent": "results"
+    }
+  ]
+}

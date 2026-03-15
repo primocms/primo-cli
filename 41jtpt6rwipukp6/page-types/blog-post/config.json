@@ -1,0 +1,61 @@
+{
+  "allowed_blocks": [
+    "r37xm1yfttk9iv4",
+    "hero",
+    "page-header",
+    "article-header",
+    "basic",
+    "cta",
+    "call-to-action",
+    "faq",
+    "footer"
+  ],
+  "color": "#6366f1",
+  "fields": [
+    {
+      "id": "blog-title",
+      "label": "Page Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "blog-description",
+      "label": "Meta Description",
+      "name": "description",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "s74w8bmh7e6pxuh",
+      "label": "Featured Image",
+      "name": "featured_image",
+      "options": null,
+      "type": "image"
+    },
+    {
+      "id": "kaf5d90e87d2irc",
+      "label": "Excerpt",
+      "name": "excerpt",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "p3kgalmruligak3",
+      "label": "Author",
+      "name": "author",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "publish-date",
+      "label": "Publish Date",
+      "name": "publish_date",
+      "options": null,
+      "type": "text"
+    }
+  ],
+  "icon": "iconoir:page",
+  "id": "os0b961osqkd1p1",
+  "name": "Blog Post"
+}

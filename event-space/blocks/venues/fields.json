@@ -1,0 +1,82 @@
+{
+  "id": "event-venues",
+  "name": "Venues",
+  "fields": [
+    {
+      "id": "venues-badge",
+      "name": "badge",
+      "label": "Badge",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "venues-title",
+      "name": "title",
+      "label": "Title",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "venues-subtitle",
+      "name": "subtitle",
+      "label": "Subtitle",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "venues-list",
+      "name": "venues",
+      "label": "Venues",
+      "type": "repeater",
+      "options": null
+    },
+    {
+      "id": "venue-image",
+      "name": "image",
+      "label": "Image",
+      "type": "image",
+      "parent": "venues",
+      "options": null
+    },
+    {
+      "id": "venue-name",
+      "name": "name",
+      "label": "Venue Name",
+      "type": "text",
+      "parent": "venues",
+      "options": null
+    },
+    {
+      "id": "venue-capacity",
+      "name": "capacity",
+      "label": "Capacity",
+      "type": "text",
+      "parent": "venues",
+      "options": null
+    },
+    {
+      "id": "venue-size",
+      "name": "size",
+      "label": "Size (sq ft)",
+      "type": "text",
+      "parent": "venues",
+      "options": null
+    },
+    {
+      "id": "venue-description",
+      "name": "description",
+      "label": "Description",
+      "type": "text",
+      "parent": "venues",
+      "options": null
+    },
+    {
+      "id": "venue-link",
+      "name": "link",
+      "label": "Link",
+      "type": "link",
+      "parent": "venues",
+      "options": null
+    }
+  ]
+}

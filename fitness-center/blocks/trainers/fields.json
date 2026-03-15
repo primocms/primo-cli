@@ -1,0 +1,74 @@
+{
+  "id": "gym-trainers",
+  "name": "Trainers",
+  "fields": [
+    {
+      "id": "trainers-badge",
+      "label": "Badge",
+      "name": "badge",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "trainers-title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "trainers-subtitle",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "trainers-list",
+      "label": "Trainers",
+      "name": "trainers",
+      "options": null,
+      "type": "repeater"
+    },
+    {
+      "id": "trainer-image",
+      "label": "Photo",
+      "name": "photo",
+      "options": null,
+      "parent": "trainers",
+      "type": "image"
+    },
+    {
+      "id": "trainer-name",
+      "label": "Name",
+      "name": "name",
+      "options": null,
+      "parent": "trainers",
+      "type": "text"
+    },
+    {
+      "id": "trainer-role",
+      "label": "Role/Specialty",
+      "name": "role",
+      "options": null,
+      "parent": "trainers",
+      "type": "text"
+    },
+    {
+      "id": "trainer-bio",
+      "label": "Bio",
+      "name": "bio",
+      "options": null,
+      "parent": "trainers",
+      "type": "text"
+    },
+    {
+      "id": "trainer-instagram",
+      "label": "Instagram URL",
+      "name": "instagram",
+      "options": null,
+      "parent": "trainers",
+      "type": "url"
+    }
+  ]
+}

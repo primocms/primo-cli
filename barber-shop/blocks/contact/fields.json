@@ -1,0 +1,34 @@
+{
+  "id": "bs-contact",
+  "name": "Contact",
+  "fields": [
+    {
+      "id": "bs-contact-title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "bs-contact-subtitle",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "bs-contact-map-embed",
+      "label": "Map Embed URL",
+      "name": "map_embed",
+      "options": null,
+      "type": "url"
+    },
+    {
+      "id": "bs-contact-booking-cta",
+      "label": "Booking CTA",
+      "name": "booking_cta",
+      "options": null,
+      "type": "link"
+    }
+  ]
+}

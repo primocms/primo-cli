@@ -1,0 +1,35 @@
+logo_text: "SaaSify"
+logo:
+  type: text
+  text: "SaaSify"
+  image:
+    url: ""
+    alt: ""
+cta:
+  label: "Get Started"
+  url: "#signup"
+header_cta:
+  label: "Get Started"
+  url: "#signup"
+nav_items:
+  - label: "Features"
+    url: "#features"
+  - label: "Pricing"
+    url: "#pricing"
+  - label: "About"
+    url: "/about"
+  - label: "Contact"
+    url: "/contact"
+nav_links:
+  - link:
+      label: "Features"
+      url: "#features"
+  - link:
+      label: "Pricing"
+      url: "#pricing"
+  - link:
+      label: "About"
+      url: "/about"
+  - link:
+      label: "Contact"
+      url: "/contact"

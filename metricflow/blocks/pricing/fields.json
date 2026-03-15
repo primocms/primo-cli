@@ -1,0 +1,90 @@
+{
+  "id": "mf-pricing",
+  "name": "Pricing",
+  "fields": [
+    {
+      "id": "mf-pricing-badge",
+      "name": "badge",
+      "label": "Badge",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "mf-pricing-title",
+      "name": "title",
+      "label": "Title",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "mf-pricing-subtitle",
+      "name": "subtitle",
+      "label": "Subtitle",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "mf-pricing-plans",
+      "name": "plans",
+      "label": "Plans",
+      "type": "repeater",
+      "options": null
+    },
+    {
+      "id": "mf-plan-name",
+      "name": "plan_name",
+      "label": "Plan Name",
+      "type": "text",
+      "parent": "plans",
+      "options": null
+    },
+    {
+      "id": "mf-plan-description",
+      "name": "description",
+      "label": "Description",
+      "type": "text",
+      "parent": "plans",
+      "options": null
+    },
+    {
+      "id": "mf-plan-price-monthly",
+      "name": "price_monthly",
+      "label": "Monthly Price",
+      "type": "text",
+      "parent": "plans",
+      "options": null
+    },
+    {
+      "id": "mf-plan-price-annual",
+      "name": "price_annual",
+      "label": "Annual Price",
+      "type": "text",
+      "parent": "plans",
+      "options": null
+    },
+    {
+      "id": "mf-plan-features",
+      "name": "features_text",
+      "label": "Features (one per line)",
+      "type": "text",
+      "parent": "plans",
+      "options": null
+    },
+    {
+      "id": "mf-plan-cta",
+      "name": "cta",
+      "label": "CTA Button",
+      "type": "link",
+      "parent": "plans",
+      "options": null
+    },
+    {
+      "id": "mf-plan-popular",
+      "name": "popular",
+      "label": "Popular",
+      "type": "switch",
+      "parent": "plans",
+      "options": null
+    }
+  ]
+}

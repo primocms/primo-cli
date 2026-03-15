@@ -1,0 +1,35 @@
+{
+  "$schema": "../../.schemas/fields.schema.json",
+  "id": "cs-location",
+  "name": "Location",
+  "fields": [
+    {
+      "id": "cs-loc-title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "cs-loc-subtitle",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "cs-loc-map-embed",
+      "label": "Map Embed URL",
+      "name": "map_embed",
+      "options": null,
+      "type": "url"
+    },
+    {
+      "id": "cs-loc-cta",
+      "label": "Directions Link",
+      "name": "cta",
+      "options": null,
+      "type": "link"
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "id": "pp-gallery",
+  "name": "Gallery",
+  "fields": [
+    {
+      "id": "pp-gallery-title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "pp-gallery-subtitle",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "pp-gallery-items",
+      "label": "Gallery Items",
+      "name": "items",
+      "options": null,
+      "type": "repeater"
+    },
+    {
+      "id": "pp-gallery-item-image",
+      "label": "Image",
+      "name": "image",
+      "options": null,
+      "parent": "items",
+      "type": "image"
+    },
+    {
+      "id": "pp-gallery-item-category",
+      "label": "Category",
+      "name": "category",
+      "options": null,
+      "parent": "items",
+      "type": "text"
+    },
+    {
+      "id": "pp-gallery-item-title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "parent": "items",
+      "type": "text"
+    },
+    {
+      "id": "pp-gallery-item-size",
+      "label": "Size",
+      "name": "size",
+      "options": {
+        "options": [
+          { "icon": "", "label": "Normal", "value": "normal" },
+          { "icon": "", "label": "Wide", "value": "wide" },
+          { "icon": "", "label": "Tall", "value": "tall" }
+        ]
+      },
+      "parent": "items",
+      "type": "select"
+    }
+  ]
+}

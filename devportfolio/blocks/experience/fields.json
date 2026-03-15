@@ -1,0 +1,82 @@
+{
+  "id": "experience-block",
+  "name": "Experience",
+  "fields": [
+    {
+      "id": "experience-badge",
+      "label": "Badge",
+      "name": "badge",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "experience-title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "experience-subtitle",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "experience-jobs",
+      "label": "Jobs",
+      "name": "jobs",
+      "options": null,
+      "type": "repeater"
+    },
+    {
+      "id": "job-company",
+      "label": "Company",
+      "name": "company",
+      "options": null,
+      "parent": "jobs",
+      "type": "text"
+    },
+    {
+      "id": "job-logo",
+      "label": "Company Logo",
+      "name": "logo",
+      "options": null,
+      "parent": "jobs",
+      "type": "image"
+    },
+    {
+      "id": "job-role",
+      "label": "Role/Title",
+      "name": "role",
+      "options": null,
+      "parent": "jobs",
+      "type": "text"
+    },
+    {
+      "id": "job-period",
+      "label": "Period (e.g. Jan 2022 - Present)",
+      "name": "period",
+      "options": null,
+      "parent": "jobs",
+      "type": "text"
+    },
+    {
+      "id": "job-description",
+      "label": "Description",
+      "name": "description",
+      "options": null,
+      "parent": "jobs",
+      "type": "rich-text"
+    },
+    {
+      "id": "job-is-current",
+      "label": "Current Position",
+      "name": "is_current",
+      "options": null,
+      "parent": "jobs",
+      "type": "switch"
+    }
+  ]
+}

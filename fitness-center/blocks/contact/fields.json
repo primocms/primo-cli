@@ -1,0 +1,64 @@
+{
+  "id": "gym-contact",
+  "name": "Contact",
+  "fields": [
+    {
+      "id": "contact-title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "contact-subtitle",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "contact-address",
+      "label": "Address",
+      "name": "address",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "contact-phone",
+      "label": "Phone",
+      "name": "phone",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "contact-email",
+      "label": "Email",
+      "name": "email",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "contact-hours",
+      "label": "Hours",
+      "name": "hours",
+      "options": null,
+      "type": "repeater"
+    },
+    {
+      "id": "hours-day",
+      "label": "Day",
+      "name": "day",
+      "options": null,
+      "parent": "hours",
+      "type": "text"
+    },
+    {
+      "id": "hours-time",
+      "label": "Time",
+      "name": "time",
+      "options": null,
+      "parent": "hours",
+      "type": "text"
+    }
+  ]
+}

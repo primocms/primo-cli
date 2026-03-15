@@ -1,0 +1,41 @@
+{
+  "allowed_blocks": [
+    "header",
+    "hero",
+    "features",
+    "classes",
+    "trainers",
+    "pricing",
+    "testimonials",
+    "cta",
+    "contact",
+    "footer"
+  ],
+  "color": "",
+  "fields": [
+    {
+      "id": "page-title",
+      "label": "Page Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "page-description",
+      "label": "Meta Description",
+      "name": "description",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "page-og-image",
+      "label": "Social Share Image",
+      "name": "og_image",
+      "options": null,
+      "type": "image"
+    }
+  ],
+  "icon": "iconoir:page",
+  "id": "fitness-default",
+  "name": "Default"
+}

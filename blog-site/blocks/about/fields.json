@@ -1,0 +1,41 @@
+{
+  "id": "about-block",
+  "name": "About",
+  "fields": [
+    {
+      "id": "about-image",
+      "label": "Image",
+      "name": "image",
+      "options": null,
+      "type": "image"
+    },
+    {
+      "id": "about-label",
+      "label": "Section Label",
+      "name": "section_label",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "about-title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "about-content",
+      "label": "Content",
+      "name": "content",
+      "options": null,
+      "type": "rich-text"
+    },
+    {
+      "id": "about-cta",
+      "label": "CTA Button",
+      "name": "cta",
+      "options": null,
+      "type": "link"
+    }
+  ]
+}

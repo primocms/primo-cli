@@ -1,0 +1,172 @@
+id: venues
+name: Venues
+slug: venues
+page_type: default
+fields:
+  title: "Our Venues - The Grand Hall"
+  description: "Explore our stunning event spaces including the Grand Ballroom, Garden Terrace, and Executive Suite."
+sections:
+  - block: header
+    content:
+      show_topbar: true
+
+  - block: hero
+    content:
+      headline: "Find Your Perfect Venue"
+      subheadline: "From intimate gatherings to grand galas, we have a space that's just right for your celebration."
+      background_image:
+        url: "https://images.unsplash.com/photo-1464366400600-7168b8af9bc3?w=1920"
+        alt: "Garden venue"
+      primary_cta:
+        label: "Book a Tour"
+        url: "/contact"
+      secondary_cta:
+        label: "View Pricing"
+        url: "#pricing"
+
+  - block: venues
+    content:
+      badge: "The Grand Ballroom"
+      title: "Our Flagship Venue"
+      subtitle: "An architectural masterpiece perfect for weddings, galas, and large celebrations."
+      venues:
+        - image:
+            url: "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=800"
+            alt: "Grand Ballroom main"
+          name: "Main Hall"
+          capacity: "Up to 500 guests"
+          size: "8,000 sq ft"
+          description: "Featuring 30-foot ceilings, crystal chandeliers, and floor-to-ceiling windows overlooking the gardens."
+          link:
+            label: "Request Info"
+            url: "/contact"
+        - image:
+            url: "https://images.unsplash.com/photo-1478146896981-b80fe463b330?w=800"
+            alt: "Ballroom foyer"
+          name: "Grand Foyer"
+          capacity: "Up to 150 guests"
+          size: "2,000 sq ft"
+          description: "Elegant pre-function space with marble floors, perfect for cocktail hours and registration."
+          link:
+            label: "Request Info"
+            url: "/contact"
+
+  - block: venues
+    content:
+      badge: "Garden Terrace"
+      title: "Outdoor Elegance"
+      subtitle: "Surrounded by manicured gardens and natural beauty."
+      venues:
+        - image:
+            url: "https://images.unsplash.com/photo-1464366400600-7168b8af9bc3?w=800"
+            alt: "Garden Terrace"
+          name: "Garden Terrace"
+          capacity: "Up to 200 guests"
+          size: "4,000 sq ft"
+          description: "Open-air venue with covered pavilion, string lighting, and stunning garden views."
+          link:
+            label: "Request Info"
+            url: "/contact"
+        - image:
+            url: "https://images.unsplash.com/photo-1529543544599-3f9c1aa06f66?w=800"
+            alt: "Rose Garden"
+          name: "Rose Garden"
+          capacity: "Up to 100 guests"
+          size: "2,000 sq ft"
+          description: "Intimate garden setting ideal for ceremonies surrounded by blooming roses."
+          link:
+            label: "Request Info"
+            url: "/contact"
+
+  - block: venues
+    content:
+      badge: "Executive Suite"
+      title: "Intimate & Professional"
+      subtitle: "Perfect for corporate events and private dinners."
+      venues:
+        - image:
+            url: "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800"
+            alt: "Executive Suite"
+          name: "Executive Suite"
+          capacity: "Up to 80 guests"
+          size: "2,000 sq ft"
+          description: "Modern boardroom-style setup with built-in AV, perfect for meetings and workshops."
+          link:
+            label: "Request Info"
+            url: "/contact"
+        - image:
+            url: "https://images.unsplash.com/photo-1517457373958-b7bdd4587205?w=800"
+            alt: "Private Dining"
+          name: "Private Dining Room"
+          capacity: "Up to 24 guests"
+          size: "600 sq ft"
+          description: "Elegant private dining for intimate dinners and exclusive gatherings."
+          link:
+            label: "Request Info"
+            url: "/contact"
+
+  - block: pricing
+    content:
+      badge: "Packages"
+      title: "Venue Rental Packages"
+      subtitle: "Flexible options to suit your needs and budget."
+      packages:
+        - name: "Essential"
+          price: "From $3,500"
+          description: "Perfect for intimate gatherings."
+          featured: false
+          features:
+            - feature: "Executive Suite venue"
+            - feature: "4-hour venue rental"
+            - feature: "Basic AV setup"
+            - feature: "Tables and chairs"
+            - feature: "On-site coordinator"
+          cta:
+            label: "Get Quote"
+            url: "/contact"
+        - name: "Premium"
+          price: "From $8,500"
+          description: "Our most popular package."
+          featured: true
+          features:
+            - feature: "Grand Ballroom venue"
+            - feature: "8-hour venue rental"
+            - feature: "Full AV package"
+            - feature: "Custom lighting"
+            - feature: "Catering consultation"
+            - feature: "Dedicated event manager"
+          cta:
+            label: "Get Quote"
+            url: "/contact"
+        - name: "Luxury"
+          price: "From $15,000"
+          description: "The ultimate experience."
+          featured: false
+          features:
+            - feature: "Full venue access"
+            - feature: "12-hour venue rental"
+            - feature: "Premium catering"
+            - feature: "Entertainment coordination"
+            - feature: "Full planning services"
+            - feature: "Complimentary bridal suite"
+          cta:
+            label: "Get Quote"
+            url: "/contact"
+
+  - block: cta
+    content:
+      title: "See Our Venues in Person"
+      subtitle: "Schedule a private tour and let us help you envision your perfect event."
+      background_image:
+        url: "https://images.unsplash.com/photo-1505236858219-8359eb29e329?w=1920"
+        alt: "Event venue"
+      primary_cta:
+        label: "Schedule a Tour"
+        url: "/contact"
+      secondary_cta:
+        label: "Call Us"
+        url: "tel:+15551234567"
+
+  - block: footer
+    content:
+      tagline: "Creating unforgettable moments in our stunning venues since 1998."

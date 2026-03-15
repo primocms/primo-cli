@@ -1,0 +1,74 @@
+{
+  "id": "mf-testimonials",
+  "name": "Testimonials",
+  "fields": [
+    {
+      "id": "mf-testimonials-badge",
+      "name": "badge",
+      "label": "Badge",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "mf-testimonials-title",
+      "name": "title",
+      "label": "Title",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "mf-testimonials-subtitle",
+      "name": "subtitle",
+      "label": "Subtitle",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "mf-testimonials-list",
+      "name": "testimonials",
+      "label": "Testimonials",
+      "type": "repeater",
+      "options": null
+    },
+    {
+      "id": "mf-testimonial-quote",
+      "name": "quote",
+      "label": "Quote",
+      "type": "text",
+      "parent": "testimonials",
+      "options": null
+    },
+    {
+      "id": "mf-testimonial-author",
+      "name": "author",
+      "label": "Author Name",
+      "type": "text",
+      "parent": "testimonials",
+      "options": null
+    },
+    {
+      "id": "mf-testimonial-role",
+      "name": "role",
+      "label": "Role & Company",
+      "type": "text",
+      "parent": "testimonials",
+      "options": null
+    },
+    {
+      "id": "mf-testimonial-avatar",
+      "name": "avatar",
+      "label": "Avatar",
+      "type": "image",
+      "parent": "testimonials",
+      "options": null
+    },
+    {
+      "id": "mf-testimonial-rating",
+      "name": "rating",
+      "label": "Rating (1-5)",
+      "type": "number",
+      "parent": "testimonials",
+      "options": null
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+title: "Services"
+subtitle: "Professional photography tailored to your vision"
+services:
+  - image:
+      url: "https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80"
+      alt: "Wedding photography"
+    title: "Wedding Photography"
+    description: "Full-day coverage capturing every precious moment of your special day, from preparation to reception."
+    price: "$3,500"
+  - image:
+      url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800&q=80"
+      alt: "Portrait photography"
+    title: "Portrait Sessions"
+    description: "Professional headshots and creative portraits for individuals, couples, and families."
+    price: "$450"
+  - image:
+      url: "https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800&q=80"
+      alt: "Commercial photography"
+    title: "Commercial & Editorial"
+    description: "High-end imagery for brands, magazines, and advertising campaigns."
+    price: "$1,200"

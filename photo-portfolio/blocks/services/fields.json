@@ -1,0 +1,59 @@
+{
+  "id": "pp-services",
+  "name": "Services",
+  "fields": [
+    {
+      "id": "pp-services-title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "pp-services-subtitle",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "pp-services-items",
+      "label": "Services",
+      "name": "services",
+      "options": null,
+      "type": "repeater"
+    },
+    {
+      "id": "pp-service-image",
+      "label": "Image",
+      "name": "image",
+      "options": null,
+      "parent": "services",
+      "type": "image"
+    },
+    {
+      "id": "pp-service-title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "parent": "services",
+      "type": "text"
+    },
+    {
+      "id": "pp-service-description",
+      "label": "Description",
+      "name": "description",
+      "options": null,
+      "parent": "services",
+      "type": "text"
+    },
+    {
+      "id": "pp-service-price",
+      "label": "Starting Price",
+      "name": "price",
+      "options": null,
+      "parent": "services",
+      "type": "text"
+    }
+  ]
+}

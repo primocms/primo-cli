@@ -1,0 +1,59 @@
+id: w4tlrza6rmsj4xe
+name: Terms of Service
+slug: terms
+page_type: default
+fields:
+  title: Terms of Service - SaaSify
+  description: Terms and conditions for using SaaSify services.
+sections:
+  - block: page-header
+    content:
+      title: "Terms of Service"
+      subtitle: "Last updated March 2026"
+
+  - block: basic
+    content:
+      content: |
+        <h2>Agreement to Terms</h2>
+        <p>By accessing or using SaaSify, you agree to be bound by these Terms of Service. If you disagree with any part of these terms, you may not access our services.</p>
+
+        <h2>Description of Service</h2>
+        <p>SaaSify provides a cloud-based platform for building, deploying, and scaling applications. Features and availability may vary based on your subscription plan.</p>
+
+        <h2>Account Terms</h2>
+        <ul>
+          <li>You must be 18 years or older to use this service</li>
+          <li>You must provide accurate and complete registration information</li>
+          <li>You are responsible for maintaining the security of your account</li>
+          <li>You are responsible for all activities that occur under your account</li>
+          <li>You must notify us immediately of any unauthorized use</li>
+        </ul>
+
+        <h2>Acceptable Use</h2>
+        <p>You agree not to:</p>
+        <ul>
+          <li>Use the service for any illegal purpose</li>
+          <li>Violate any laws in your jurisdiction</li>
+          <li>Attempt to gain unauthorized access to the service</li>
+          <li>Interfere with or disrupt the service</li>
+          <li>Upload malicious code or content</li>
+          <li>Resell or redistribute the service without permission</li>
+        </ul>
+
+        <h2>Payment Terms</h2>
+        <p>Paid plans are billed in advance on a monthly or annual basis. All fees are non-refundable except as required by law or as explicitly stated in these terms. We offer a 30-day money-back guarantee for annual plans.</p>
+
+        <h2>Intellectual Property</h2>
+        <p>The service and its original content, features, and functionality are owned by SaaSify and are protected by international copyright, trademark, and other intellectual property laws. You retain ownership of any content you create using our platform.</p>
+
+        <h2>Limitation of Liability</h2>
+        <p>To the maximum extent permitted by law, SaaSify shall not be liable for any indirect, incidental, special, consequential, or punitive damages arising from your use of the service.</p>
+
+        <h2>Service Level Agreement</h2>
+        <p>We commit to 99.9% uptime for our Pro and Enterprise plans. Details of our SLA, including credits for downtime, are available in our Service Level Agreement documentation.</p>
+
+        <h2>Changes to Terms</h2>
+        <p>We reserve the right to modify these terms at any time. We will provide notice of material changes via email or through the service. Continued use after changes constitutes acceptance.</p>
+
+        <h2>Contact</h2>
+        <p>Questions about these terms should be directed to <a href="mailto:legal@saasify.com">legal@saasify.com</a>.</p>

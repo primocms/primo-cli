@@ -1,0 +1,48 @@
+{
+  "id": "gym-hero",
+  "name": "Hero",
+  "fields": [
+    {
+      "id": "hero-badge",
+      "label": "Badge Text",
+      "name": "badge",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "hero-headline",
+      "label": "Headline",
+      "name": "headline",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "hero-subheadline",
+      "label": "Subheadline",
+      "name": "subheadline",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "hero-primary-cta",
+      "label": "Primary CTA",
+      "name": "primary_cta",
+      "options": null,
+      "type": "link"
+    },
+    {
+      "id": "hero-secondary-cta",
+      "label": "Secondary CTA",
+      "name": "secondary_cta",
+      "options": null,
+      "type": "link"
+    },
+    {
+      "id": "hero-background-image",
+      "label": "Background Image",
+      "name": "background_image",
+      "options": null,
+      "type": "image"
+    }
+  ]
+}

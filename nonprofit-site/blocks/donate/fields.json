@@ -1,0 +1,57 @@
+{
+  "id": "np-donate",
+  "name": "Donate CTA",
+  "fields": [
+    {
+      "id": "np-donate-title",
+      "name": "title",
+      "label": "Title",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "np-donate-subtitle",
+      "name": "subtitle",
+      "label": "Subtitle",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "np-donate-amounts",
+      "name": "amounts",
+      "label": "Suggested Amounts",
+      "type": "repeater",
+      "options": null
+    },
+    {
+      "id": "np-donate-amount-value",
+      "name": "value",
+      "label": "Amount",
+      "type": "text",
+      "parent": "amounts",
+      "options": null
+    },
+    {
+      "id": "np-donate-amount-label",
+      "name": "amount_label",
+      "label": "Impact Description",
+      "type": "text",
+      "parent": "amounts",
+      "options": null
+    },
+    {
+      "id": "np-donate-cta",
+      "name": "cta",
+      "label": "Donate Button",
+      "type": "link",
+      "options": null
+    },
+    {
+      "id": "np-donate-note",
+      "name": "note",
+      "label": "Note",
+      "type": "text",
+      "options": null
+    }
+  ]
+}

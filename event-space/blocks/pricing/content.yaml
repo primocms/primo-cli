@@ -1,0 +1,46 @@
+badge: "Packages"
+title: "Event Packages"
+subtitle: "Flexible options to suit your needs and budget. All packages can be customized."
+packages:
+  - name: "Essential"
+    price: "From $3,500"
+    description: "Perfect for intimate gatherings and small celebrations."
+    featured: false
+    features:
+      - feature: "Executive Suite venue (up to 80 guests)"
+      - feature: "4-hour venue rental"
+      - feature: "Basic audio visual setup"
+      - feature: "Tables and chairs included"
+      - feature: "On-site coordinator"
+    cta:
+      label: "Get Quote"
+      url: "/contact"
+  - name: "Premium"
+    price: "From $8,500"
+    description: "Our most popular package for weddings and corporate events."
+    featured: true
+    features:
+      - feature: "Grand Ballroom venue (up to 300 guests)"
+      - feature: "8-hour venue rental"
+      - feature: "Full audio visual package"
+      - feature: "Custom lighting design"
+      - feature: "Catering consultation"
+      - feature: "Dedicated event manager"
+    cta:
+      label: "Get Quote"
+      url: "/contact"
+  - name: "Luxury"
+    price: "From $15,000"
+    description: "The ultimate experience for unforgettable celebrations."
+    featured: false
+    features:
+      - feature: "Full venue access (up to 500 guests)"
+      - feature: "12-hour venue rental"
+      - feature: "Premium catering package"
+      - feature: "Live entertainment coordination"
+      - feature: "Floral and decor design"
+      - feature: "Full planning services"
+      - feature: "Complimentary bridal suite"
+    cta:
+      label: "Get Quote"
+      url: "/contact"

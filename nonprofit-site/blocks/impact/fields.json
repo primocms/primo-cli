@@ -1,0 +1,58 @@
+{
+  "id": "np-impact",
+  "name": "Impact",
+  "fields": [
+    {
+      "id": "np-impact-badge",
+      "name": "badge",
+      "label": "Badge",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "np-impact-title",
+      "name": "title",
+      "label": "Title",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "np-impact-subtitle",
+      "name": "subtitle",
+      "label": "Subtitle",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "np-impact-stats",
+      "name": "stats",
+      "label": "Statistics",
+      "type": "repeater",
+      "options": null
+    },
+    {
+      "id": "np-impact-stat-number",
+      "name": "number",
+      "label": "Number",
+      "type": "text",
+      "parent": "stats",
+      "options": null
+    },
+    {
+      "id": "np-impact-stat-label",
+      "name": "stat_label",
+      "label": "Label",
+      "type": "text",
+      "parent": "stats",
+      "options": null
+    },
+    {
+      "id": "np-impact-stat-icon",
+      "name": "icon",
+      "label": "Icon",
+      "type": "icon",
+      "parent": "stats",
+      "options": null
+    }
+  ]
+}

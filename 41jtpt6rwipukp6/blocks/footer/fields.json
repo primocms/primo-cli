@@ -1,0 +1,78 @@
+{
+  "id": "footer",
+  "name": "Footer",
+  "fields": [
+    {
+      "id": "footer-logo",
+      "label": "Logo",
+      "name": "logo",
+      "options": {
+        "field": "37qzukvulhnhbl4"
+      },
+      "type": "site-field"
+    },
+    {
+      "id": "footer-tagline",
+      "label": "Tagline",
+      "name": "tagline",
+      "options": {
+        "field": "zhpv3p9m1iqk493"
+      },
+      "type": "site-field"
+    },
+    {
+      "id": "footer-social-links",
+      "label": "Social Links",
+      "name": "social_links",
+      "options": {
+        "field": "upab7c7eums3mbl"
+      },
+      "type": "site-field"
+    },
+    {
+      "id": "footer-newsletter-title",
+      "label": "Newsletter Title",
+      "name": "newsletter_title",
+      "options": {
+        "field": "gihak5w5ij3wr6m"
+      },
+      "type": "site-field"
+    },
+    {
+      "id": "footer-newsletter-text",
+      "label": "Newsletter Text",
+      "name": "newsletter_text",
+      "options": {
+        "field": "nqcpuwqnv6g4kh6"
+      },
+      "type": "site-field"
+    },
+    {
+      "id": "footer-newsletter-endpoint",
+      "label": "Newsletter Endpoint",
+      "name": "newsletter_endpoint",
+      "options": {
+        "field": "un06wa1bqpa8wr4"
+      },
+      "type": "site-field"
+    },
+    {
+      "id": "footer-link-groups",
+      "label": "Link Groups",
+      "name": "link_groups",
+      "options": {
+        "field": "skja3icg5845qp2"
+      },
+      "type": "site-field"
+    },
+    {
+      "id": "footer-copyright",
+      "label": "Copyright Text",
+      "name": "copyright",
+      "options": {
+        "field": "jun2dxf3ux4n4rn"
+      },
+      "type": "site-field"
+    }
+  ]
+}

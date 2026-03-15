@@ -1,0 +1,13 @@
+{
+  "id": "ao8bxqevqjkhsuf",
+  "name": "Basic",
+  "fields": [
+    {
+      "id": "45m6jxbzie4kazk",
+      "label": "Content",
+      "name": "content",
+      "options": null,
+      "type": "rich-text"
+    }
+  ]
+}

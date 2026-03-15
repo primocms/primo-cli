@@ -1,0 +1,41 @@
+id: contact-page
+name: Contact
+slug: contact
+page_type: default
+fields:
+  title: "Contact - The Daily Muse"
+  description: "Get in touch with Jordan Mitchell."
+sections:
+  - block: header
+    content:
+      sticky: true
+  - block: hero
+    content:
+      greeting: "Say Hello"
+      headline: "Let's Connect"
+      subheadline: "Have a question, feedback, or just want to say hi? I'd love to hear from you."
+      show_socials: true
+  - block: about
+    content:
+      section_label: "Get in Touch"
+      title: "How to Reach Me"
+      content: |
+        <p>The best way to reach me is via email at <a href="mailto:hello@dailymuse.com">hello@dailymuse.com</a>. I read every message and try to respond within a few days.</p>
+        <p>You can also find me on social media:</p>
+        <ul>
+          <li><strong>Twitter/X:</strong> @dailymuse — where I share quick thoughts and links</li>
+          <li><strong>LinkedIn:</strong> For professional connections and collaborations</li>
+          <li><strong>GitHub:</strong> Where I occasionally share code and side projects</li>
+        </ul>
+        <p>For speaking inquiries, collaborations, or press requests, please include relevant details in your email and I'll get back to you as soon as possible.</p>
+  - block: newsletter
+    content:
+      title: "Or Subscribe to Updates"
+      description: "Get new posts delivered directly to your inbox."
+      placeholder: "your@email.com"
+      button_text: "Subscribe"
+      success_message: "You're subscribed!"
+      privacy_text: "No spam. Unsubscribe anytime."
+  - block: footer
+    content:
+      show_newsletter: false

@@ -1,0 +1,50 @@
+{
+  "id": "mf-faq",
+  "name": "FAQ",
+  "fields": [
+    {
+      "id": "mf-faq-badge",
+      "name": "badge",
+      "label": "Badge",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "mf-faq-title",
+      "name": "title",
+      "label": "Title",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "mf-faq-subtitle",
+      "name": "subtitle",
+      "label": "Subtitle",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "mf-faq-items",
+      "name": "items",
+      "label": "FAQ Items",
+      "type": "repeater",
+      "options": null
+    },
+    {
+      "id": "mf-faq-question",
+      "name": "question",
+      "label": "Question",
+      "type": "text",
+      "parent": "items",
+      "options": null
+    },
+    {
+      "id": "mf-faq-answer",
+      "name": "answer",
+      "label": "Answer",
+      "type": "text",
+      "parent": "items",
+      "options": null
+    }
+  ]
+}

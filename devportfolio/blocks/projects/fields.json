@@ -1,0 +1,89 @@
+{
+  "id": "projects-block",
+  "name": "Projects",
+  "fields": [
+    {
+      "id": "projects-badge",
+      "label": "Badge",
+      "name": "badge",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "projects-title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "projects-subtitle",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "projects-list",
+      "label": "Projects",
+      "name": "projects",
+      "options": null,
+      "type": "repeater"
+    },
+    {
+      "id": "project-image",
+      "label": "Image",
+      "name": "image",
+      "options": null,
+      "parent": "projects",
+      "type": "image"
+    },
+    {
+      "id": "project-title",
+      "label": "Title",
+      "name": "project_title",
+      "options": null,
+      "parent": "projects",
+      "type": "text"
+    },
+    {
+      "id": "project-description",
+      "label": "Description",
+      "name": "description",
+      "options": null,
+      "parent": "projects",
+      "type": "text"
+    },
+    {
+      "id": "project-tags",
+      "label": "Tags (comma separated)",
+      "name": "tags",
+      "options": null,
+      "parent": "projects",
+      "type": "text"
+    },
+    {
+      "id": "project-live-url",
+      "label": "Live URL",
+      "name": "live_url",
+      "options": null,
+      "parent": "projects",
+      "type": "url"
+    },
+    {
+      "id": "project-github-url",
+      "label": "GitHub URL",
+      "name": "github_url",
+      "options": null,
+      "parent": "projects",
+      "type": "url"
+    },
+    {
+      "id": "projects-cta",
+      "label": "View All CTA",
+      "name": "view_all_cta",
+      "options": null,
+      "type": "link"
+    }
+  ]
+}

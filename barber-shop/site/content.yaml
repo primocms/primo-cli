@@ -1,0 +1,40 @@
+site_name: "Sharp Cuts"
+logo:
+  type: "text"
+  text: "Sharp Cuts"
+  image:
+    url: ""
+    alt: ""
+tagline: "Classic cuts. Modern style. Since 1985."
+phone: "(555) 867-5309"
+email: "book@sharpcutsbarbershop.com"
+address: "1234 Main Street, Brooklyn, NY 11201"
+nav_links:
+  - link:
+      label: "Services"
+      url: "#services"
+  - link:
+      label: "Gallery"
+      url: "#gallery"
+  - link:
+      label: "Team"
+      url: "#team"
+  - link:
+      label: "Contact"
+      url: "#contact"
+header_cta:
+  label: "Book Now"
+  url: "#contact"
+social_links:
+  - platform: "instagram"
+    url: "https://instagram.com/sharpcutsbk"
+  - platform: "facebook"
+    url: "https://facebook.com/sharpcutsbk"
+hours:
+  - days: "Tuesday - Friday"
+    time: "9:00 AM - 7:00 PM"
+  - days: "Saturday"
+    time: "8:00 AM - 5:00 PM"
+  - days: "Sunday - Monday"
+    time: "Closed"
+copyright: "2026 Sharp Cuts Barbershop. All rights reserved."

@@ -1,0 +1,191 @@
+id: fitness-home
+name: Home
+slug: ""
+page_type: default
+fields:
+  title: FitZone Gym - Transform Your Body, Elevate Your Mind
+  description: Join FitZone Gym for world-class fitness training, expert coaches, and a supportive community. Start your transformation today.
+sections:
+  - block: header
+    content: {}
+
+  - block: hero
+    content:
+      badge: "Limited Time: 50% Off First Month"
+      headline: "Transform Your Body, Elevate Your Mind"
+      subheadline: "Join the most advanced fitness center in the city. Expert trainers, cutting-edge equipment, and a community that pushes you to be your best."
+      primary_cta:
+        label: "Start Free Trial"
+        url: "#pricing"
+      secondary_cta:
+        label: "View Classes"
+        url: "#classes"
+
+  - block: features
+    content:
+      badge: "Why FitZone"
+      title: "Everything You Need to Succeed"
+      subtitle: "State-of-the-art facilities and programs designed to help you reach your fitness goals"
+      features:
+        - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6.5 6.5h11v11h-11z"/><path d="M6.5 6.5L3 3m14 3.5L20.5 3M6.5 17.5L3 21m14-3.5l3.5 3.5"/></svg>'
+          feature_title: "Modern Equipment"
+          description: "Over 200 pieces of premium fitness equipment from leading brands, maintained daily for peak performance."
+        - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
+          feature_title: "Expert Trainers"
+          description: "Certified personal trainers with years of experience ready to guide you through your fitness journey."
+        - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'
+          feature_title: "24/7 Access"
+          description: "Train on your schedule with round-the-clock access to all facilities and equipment."
+        - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>'
+          feature_title: "Nutrition Plans"
+          description: "Personalized meal plans and nutritional guidance to complement your training."
+        - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>'
+          feature_title: "Progress Tracking"
+          description: "Advanced body composition analysis and workout tracking to monitor your progress."
+        - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>'
+          feature_title: "Group Classes"
+          description: "50+ weekly group classes from HIIT to yoga, led by motivating instructors."
+
+  - block: classes
+    content:
+      badge: "Our Classes"
+      title: "Find Your Perfect Workout"
+      subtitle: "From high-intensity training to mindful movement, we have classes for every fitness level"
+      classes:
+        - class_name: "HIIT Extreme"
+          duration: "45 min"
+          intensity: "advanced"
+          description: "High-intensity interval training that torches calories and builds endurance."
+        - class_name: "Power Yoga"
+          duration: "60 min"
+          intensity: "intermediate"
+          description: "Dynamic yoga flow that builds strength, flexibility, and mental focus."
+        - class_name: "Spin Cycle"
+          duration: "45 min"
+          intensity: "intermediate"
+          description: "Indoor cycling set to energizing music for a cardio blast."
+        - class_name: "Strength Training"
+          duration: "50 min"
+          intensity: "beginner"
+          description: "Learn proper form and build muscle with guided weight training."
+        - class_name: "Boxing Fit"
+          duration: "60 min"
+          intensity: "advanced"
+          description: "Boxing-inspired workout combining cardio, strength, and agility."
+        - class_name: "Stretch & Recovery"
+          duration: "30 min"
+          intensity: "beginner"
+          description: "Gentle stretching and mobility work for recovery days."
+
+  - block: trainers
+    content:
+      badge: "Meet The Team"
+      title: "Expert Trainers"
+      subtitle: "Our certified trainers are passionate about helping you achieve your goals"
+      trainers:
+        - name: "Alex Martinez"
+          role: "Head Coach & Strength Specialist"
+          bio: "15+ years experience, NSCA certified, former competitive powerlifter."
+        - name: "Sarah Chen"
+          role: "HIIT & Cardio Specialist"
+          bio: "Certified group fitness instructor with a passion for high-energy workouts."
+        - name: "Marcus Johnson"
+          role: "Boxing & MMA Coach"
+          bio: "Professional boxing background, specializing in fitness boxing programs."
+        - name: "Emma Williams"
+          role: "Yoga & Wellness Coach"
+          bio: "RYT-500 certified yoga instructor focused on mind-body connection."
+
+  - block: pricing
+    content:
+      badge: "Membership Plans"
+      title: "Choose Your Plan"
+      subtitle: "Flexible membership options to fit your lifestyle and budget"
+      plans:
+        - plan_name: "Basic"
+          price: "$29"
+          period: "month"
+          description: "Perfect for getting started"
+          features_text: |
+            Access to gym floor
+            Standard equipment
+            Locker room access
+            Mobile app
+          cta:
+            label: "Get Started"
+            url: "#contact"
+          popular: false
+        - plan_name: "Pro"
+          price: "$59"
+          period: "month"
+          description: "Our most popular choice"
+          features_text: |
+            Everything in Basic
+            All group classes
+            Personal training session monthly
+            Nutrition consultation
+            24/7 access
+          cta:
+            label: "Join Pro"
+            url: "#contact"
+          popular: true
+        - plan_name: "Elite"
+          price: "$99"
+          period: "month"
+          description: "For serious athletes"
+          features_text: |
+            Everything in Pro
+            Unlimited PT sessions
+            Priority class booking
+            Guest passes (4/month)
+            Premium locker
+            Recovery zone access
+          cta:
+            label: "Go Elite"
+            url: "#contact"
+          popular: false
+
+  - block: testimonials
+    content:
+      badge: "Success Stories"
+      title: "Real Results, Real People"
+      subtitle: "Hear from members who have transformed their lives at FitZone"
+      testimonials:
+        - quote: "I've lost 30 pounds in 6 months and gained so much confidence. The trainers here genuinely care about your progress."
+          name: "Jennifer R."
+          info: "Member since 2023"
+        - quote: "Best gym I've ever been to. The variety of classes keeps me motivated and the community is incredibly supportive."
+          name: "David K."
+          info: "Member since 2022"
+        - quote: "As a beginner, I was intimidated by gyms. FitZone made me feel welcome from day one. Now I can't imagine life without it."
+          name: "Maria S."
+          info: "Member since 2024"
+
+  - block: cta
+    content:
+      title: "Ready to Start Your Transformation?"
+      subtitle: "Join FitZone today and get your first month at 50% off. No contracts, cancel anytime."
+      primary_cta:
+        label: "Claim Your Free Trial"
+        url: "#contact"
+      secondary_cta:
+        label: "Take a Tour"
+        url: "#contact"
+
+  - block: contact
+    content:
+      title: "Visit Us"
+      subtitle: "Drop by for a tour or get in touch with any questions"
+      address: "123 Fitness Boulevard, Downtown, CA 90210"
+      phone: "(555) 123-4567"
+      email: "info@fitzone-gym.com"
+      hours:
+        - day: "Monday - Friday"
+          time: "5:00 AM - 11:00 PM"
+        - day: "Saturday"
+          time: "6:00 AM - 10:00 PM"
+        - day: "Sunday"
+          time: "7:00 AM - 9:00 PM"
+
+  - block: footer
+    content: {}

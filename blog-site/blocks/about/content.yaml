@@ -1,0 +1,9 @@
+section_label: "About"
+title: "Hi, I'm Jordan"
+content: |
+  <p>I'm a writer and creative technologist based in San Francisco. By day, I work with startups on product strategy. By night, I explore the ideas that fascinate me most.</p>
+  <p>This blog is my space for thinking out loud—about technology's impact on our lives, the books that shape my worldview, and the small experiments in living better.</p>
+  <p>When I'm not writing, you'll find me hiking the Marin headlands, experimenting with espresso ratios, or getting lost in a good novel.</p>
+cta:
+  label: "Get in touch"
+  url: "/contact"

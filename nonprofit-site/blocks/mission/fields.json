@@ -1,0 +1,65 @@
+{
+  "id": "np-mission",
+  "name": "Mission",
+  "fields": [
+    {
+      "id": "np-mission-badge",
+      "name": "badge",
+      "label": "Badge",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "np-mission-title",
+      "name": "title",
+      "label": "Title",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "np-mission-description",
+      "name": "description",
+      "label": "Description",
+      "type": "rich-text",
+      "options": null
+    },
+    {
+      "id": "np-mission-image",
+      "name": "image",
+      "label": "Image",
+      "type": "image",
+      "options": null
+    },
+    {
+      "id": "np-mission-values",
+      "name": "values",
+      "label": "Core Values",
+      "type": "repeater",
+      "options": null
+    },
+    {
+      "id": "np-mission-value-icon",
+      "name": "icon",
+      "label": "Icon",
+      "type": "icon",
+      "parent": "values",
+      "options": null
+    },
+    {
+      "id": "np-mission-value-title",
+      "name": "value_title",
+      "label": "Title",
+      "type": "text",
+      "parent": "values",
+      "options": null
+    },
+    {
+      "id": "np-mission-value-desc",
+      "name": "value_description",
+      "label": "Description",
+      "type": "text",
+      "parent": "values",
+      "options": null
+    }
+  ]
+}

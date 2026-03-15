@@ -1,0 +1,19 @@
+{
+  "name": "Default",
+  "fields": [
+    {
+      "id": "bs-page-title",
+      "label": "Page Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "bs-page-desc",
+      "label": "Meta Description",
+      "name": "description",
+      "options": null,
+      "type": "text"
+    }
+  ]
+}

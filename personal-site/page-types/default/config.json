@@ -1,0 +1,37 @@
+{
+  "id": "default-page",
+  "name": "Default",
+  "icon": "iconoir:page",
+  "color": "",
+  "fields": [
+    {
+      "id": "page-title",
+      "label": "Page Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "meta-description",
+      "label": "Meta Description",
+      "name": "description",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "og-image",
+      "label": "Social Share Image",
+      "name": "og_image",
+      "options": null,
+      "type": "image"
+    }
+  ],
+  "allowed_blocks": [
+    "header",
+    "hero",
+    "about",
+    "projects",
+    "contact",
+    "footer"
+  ]
+}

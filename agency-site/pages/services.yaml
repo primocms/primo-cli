@@ -1,0 +1,54 @@
+id: services
+name: Services
+slug: services
+page_type: default
+fields:
+  title: "Our Services - Apex Creative"
+  description: "Full-service digital agency offering brand strategy, web design, development, and digital marketing."
+sections:
+  - block: header
+    content: {}
+
+  - block: hero
+    content:
+      badge: "Our Services"
+      headline: "End-to-End Digital Solutions"
+      subheadline: "From brand strategy to development, we offer comprehensive services designed to help your business grow and thrive in the digital landscape."
+      primary_cta:
+        label: "Get a Quote"
+        url: "/contact"
+
+  - block: services
+    content:
+      title: "What We Offer"
+      subtitle: "Comprehensive solutions tailored to your unique needs."
+      services:
+        - icon: "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path d='M12 2L2 7l10 5 10-5-10-5z'/><path d='M2 17l10 5 10-5'/><path d='M2 12l10 5 10-5'/></svg>"
+          service_title: "Brand Strategy"
+          description: "We help you define your brand's core purpose, values, and positioning to create meaningful connections with your audience. Our strategic approach ensures your brand stands out in a crowded marketplace."
+        - icon: "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><circle cx='12' cy='12' r='10'/><path d='M12 16v-4'/><path d='M12 8h.01'/></svg>"
+          service_title: "Brand Identity"
+          description: "From logo design to complete visual systems, we create cohesive brand identities that communicate your values and resonate with your target audience across all touchpoints."
+        - icon: "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><rect x='3' y='3' width='18' height='18' rx='2'/><path d='M3 9h18'/><path d='M9 21V9'/></svg>"
+          service_title: "Web Design"
+          description: "We design beautiful, intuitive websites that not only look stunning but also deliver exceptional user experiences. Our designs are strategically crafted to convert visitors into customers."
+        - icon: "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><polyline points='16 18 22 12 16 6'/><polyline points='8 6 2 12 8 18'/></svg>"
+          service_title: "Web Development"
+          description: "We build fast, secure, and scalable websites using modern technologies. From simple marketing sites to complex web applications, we bring your digital vision to life."
+        - icon: "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path d='M12 20V10'/><path d='M18 20V4'/><path d='M6 20v-4'/></svg>"
+          service_title: "Digital Marketing"
+          description: "We develop data-driven marketing strategies that increase visibility, drive traffic, and generate leads. Our approach combines SEO, content marketing, and paid advertising for maximum impact."
+        - icon: "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><rect x='2' y='3' width='20' height='14' rx='2'/><line x1='8' y1='21' x2='16' y2='21'/><line x1='12' y1='17' x2='12' y2='21'/></svg>"
+          service_title: "UI/UX Design"
+          description: "We create user-centered designs that make complex products simple and enjoyable to use. Our UX process ensures every interaction is intuitive and meaningful."
+
+  - block: cta
+    content:
+      title: "Let's Discuss Your Project"
+      subtitle: "Ready to take your brand to the next level? We'd love to hear about your goals."
+      primary_cta:
+        label: "Contact Us"
+        url: "/contact"
+
+  - block: footer
+    content: {}

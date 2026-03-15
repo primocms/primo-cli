@@ -1,0 +1,34 @@
+{
+  "id": "pp-contact",
+  "name": "Contact",
+  "fields": [
+    {
+      "id": "pp-contact-title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "pp-contact-subtitle",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "pp-contact-endpoint",
+      "label": "Form Endpoint URL",
+      "name": "endpoint",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "pp-contact-image",
+      "label": "Background Image",
+      "name": "image",
+      "options": null,
+      "type": "image"
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "id": "event-gallery",
+  "name": "Gallery",
+  "fields": [
+    {
+      "id": "gallery-badge",
+      "name": "badge",
+      "label": "Badge",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "gallery-title",
+      "name": "title",
+      "label": "Title",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "gallery-subtitle",
+      "name": "subtitle",
+      "label": "Subtitle",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "gallery-images",
+      "name": "images",
+      "label": "Gallery Images",
+      "type": "repeater",
+      "options": null
+    },
+    {
+      "id": "gallery-image",
+      "name": "image",
+      "label": "Image",
+      "type": "image",
+      "parent": "images",
+      "options": null
+    },
+    {
+      "id": "gallery-caption",
+      "name": "caption",
+      "label": "Caption",
+      "type": "text",
+      "parent": "images",
+      "options": null
+    }
+  ]
+}

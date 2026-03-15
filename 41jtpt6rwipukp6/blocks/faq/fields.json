@@ -1,0 +1,43 @@
+{
+  "id": "faq",
+  "name": "FAQ",
+  "fields": [
+    {
+      "id": "faq-title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "faq-subtitle",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "faq-items",
+      "label": "Questions",
+      "name": "items",
+      "options": null,
+      "type": "repeater"
+    },
+    {
+      "id": "faq-question",
+      "label": "Question",
+      "name": "question",
+      "options": null,
+      "type": "text",
+      "parent": "items"
+    },
+    {
+      "id": "faq-answer",
+      "label": "Answer",
+      "name": "answer",
+      "options": null,
+      "type": "text",
+      "parent": "items"
+    }
+  ]
+}

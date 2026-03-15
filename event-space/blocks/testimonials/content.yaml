@@ -1,0 +1,21 @@
+badge: "Kind Words"
+title: "What Our Clients Say"
+testimonials:
+  - quote: "The Grand Hall made our wedding day absolutely perfect. Every detail was taken care of, and our guests are still talking about how beautiful everything was."
+    author: "Sarah & Michael Thompson"
+    event_type: "Wedding Reception"
+    image:
+      url: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200"
+      alt: "Sarah Thompson"
+  - quote: "We've hosted our annual gala at The Grand Hall for three years running. The team's professionalism and attention to detail is unmatched."
+    author: "David Chen"
+    event_type: "Corporate Gala"
+    image:
+      url: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200"
+      alt: "David Chen"
+  - quote: "From the catering to the decor, everything exceeded our expectations. The Grand Hall transformed our vision into reality."
+    author: "Emily Rodriguez"
+    event_type: "50th Anniversary Celebration"
+    image:
+      url: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=200"
+      alt: "Emily Rodriguez"

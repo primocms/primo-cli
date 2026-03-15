@@ -1,0 +1,169 @@
+id: 4mbhkrcruiwg6l7
+name: Home
+slug: ""
+page_type: default
+fields:
+  description: Northstar Solutions - Strategic consulting for growing businesses
+  title: Northstar Solutions
+sections:
+  - block: hero
+    content:
+      headline: Navigate Your Business Forward
+      subtext: We partner with ambitious companies to solve complex challenges, drive sustainable growth, and build lasting competitive advantages.
+      cta:
+        url: /services
+        label: Explore Our Services
+  - block: logos
+    content:
+      title: Trusted by innovative companies worldwide
+      logos:
+        - image:
+            url: https://placehold.co/200x80/1e293b/94a3b8?text=Acme+Corp
+            alt: Acme Corp
+        - image:
+            url: https://placehold.co/200x80/1e293b/94a3b8?text=TechFlow
+            alt: TechFlow
+        - image:
+            url: https://placehold.co/200x80/1e293b/94a3b8?text=Innovate+Inc
+            alt: Innovate Inc
+        - image:
+            url: https://placehold.co/200x80/1e293b/94a3b8?text=Global+Dynamics
+            alt: Global Dynamics
+        - image:
+            url: https://placehold.co/200x80/1e293b/94a3b8?text=Peak+Solutions
+            alt: Peak Solutions
+        - image:
+            url: https://placehold.co/200x80/1e293b/94a3b8?text=Horizon+Labs
+            alt: Horizon Labs
+  - block: services
+    content:
+      title: What We Do
+      subtitle: Comprehensive solutions tailored to your unique business challenges
+      items:
+        - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>'
+          service_title: Strategy Consulting
+          description: From market entry to digital transformation, we help you make informed decisions that position your company for long-term success.
+        - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>'
+          service_title: Operations Excellence
+          description: Streamline processes, reduce costs, and improve efficiency across your organization with our proven operational frameworks.
+        - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>'
+          service_title: Growth Advisory
+          description: Scale your business confidently with data-driven insights, market analysis, and strategic planning that accelerates sustainable growth.
+  - block: stats
+    content:
+      title: Results That Speak
+      subtitle: Our track record of delivering measurable impact
+      stats:
+        - value: "150+"
+          label: Clients Served
+        - value: "94%"
+          label: Client Retention
+        - value: "$50M+"
+          label: Cost Savings Delivered
+        - value: "25+"
+          label: Industry Sectors
+  - block: testimonials
+    content:
+      title: Trusted by Industry Leaders
+      content:
+        type: doc
+        content:
+          - type: bulletList
+            content:
+              - type: listItem
+                content:
+                  - type: blockquote
+                    content:
+                      - type: paragraph
+                        content:
+                          - type: text
+                            text: Northstar helped us identify $2.3M in operational savings within the first quarter. Their team became an extension of ours.
+                  - type: paragraph
+                    content:
+                      - type: text
+                        marks:
+                          - type: bold
+                        text: Sarah Chen
+                      - type: text
+                        text: " "
+                      - type: text
+                        marks:
+                          - type: italic
+                        text: COO, Meridian Tech
+              - type: listItem
+                content:
+                  - type: blockquote
+                    content:
+                      - type: paragraph
+                        content:
+                          - type: text
+                            text: The strategic roadmap they developed guided our successful expansion into three new markets. Exceptional work.
+                  - type: paragraph
+                    content:
+                      - type: text
+                        marks:
+                          - type: bold
+                        text: Marcus Rodriguez
+                      - type: text
+                        text: " "
+                      - type: text
+                        marks:
+                          - type: italic
+                        text: CEO, Atlas Industries
+              - type: listItem
+                content:
+                  - type: blockquote
+                    content:
+                      - type: paragraph
+                        content:
+                          - type: text
+                            text: Their hands-on approach and deep industry knowledge made all the difference in our digital transformation journey.
+                  - type: paragraph
+                    content:
+                      - type: text
+                        marks:
+                          - type: bold
+                        text: Jennifer Park
+                      - type: text
+                        text: " "
+                      - type: text
+                        marks:
+                          - type: italic
+                        text: VP Operations, Cascade Health
+  - block: contact-form
+    content:
+      title: Get in Touch
+      subtitle: Ready to discuss your business challenges? Fill out the form and we'll get back to you within 24 hours.
+      button_text: Schedule a Consultation
+      endpoint: ""
+      rows:
+        - fields:
+            - label: Full Name
+              name: name
+              input_type: text
+              required: "true"
+            - label: Email Address
+              name: email
+              input_type: email
+              required: "true"
+        - fields:
+            - label: Company
+              name: company
+              input_type: text
+              required: "false"
+            - label: Phone
+              name: phone
+              input_type: tel
+              required: "false"
+        - fields:
+            - label: Message
+              name: message
+              input_type: textarea
+              required: "true"
+  - block: cta
+    content:
+      title: Ready to Transform Your Business?
+      subtitle: Schedule a free consultation with our team to discuss your challenges and opportunities.
+      button:
+        url: /contact
+        label: Get Started Today

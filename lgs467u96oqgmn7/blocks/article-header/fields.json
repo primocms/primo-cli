@@ -1,0 +1,42 @@
+{
+  "$schema": "../../.schemas/fields.schema.json",
+  "id": "xohtmhd98pe4gpf",
+  "name": "Article Header",
+  "fields": [
+    {
+      "id": "ilh35h2vb04we2s",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "5a9wyrr7dgy5d7d",
+      "label": "Excerpt",
+      "name": "excerpt",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "c2knccetuxk8wdr",
+      "label": "Author",
+      "name": "author",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "da6ts7e9h1hj2w3",
+      "label": "Date",
+      "name": "date",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "z7jmt7psg0nrcqq",
+      "label": "Featured Image",
+      "name": "image",
+      "options": null,
+      "type": "image"
+    }
+  ]
+}

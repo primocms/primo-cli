@@ -1,0 +1,6 @@
+{
+  "$schema": "../../.schemas/fields.schema.json",
+  "id": "cs-footer",
+  "name": "Footer",
+  "fields": []
+}

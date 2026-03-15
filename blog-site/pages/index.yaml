@@ -1,0 +1,86 @@
+id: home-page
+name: Home
+slug: ""
+page_type: default
+fields:
+  title: "The Daily Muse - Personal Blog"
+  description: "Exploring ideas at the intersection of technology, creativity, and everyday life."
+sections:
+  - block: header
+    content:
+      sticky: true
+  - block: hero
+    content:
+      greeting: "Hey, I'm"
+      headline: "Jordan Mitchell"
+      subheadline: "Writer, thinker, and explorer sharing stories about technology, creativity, and the art of living well."
+      primary_cta:
+        label: "Read the Blog"
+        url: "/blog"
+      secondary_cta:
+        label: "About Me"
+        url: "/about"
+      show_socials: true
+  - block: featured-posts
+    content:
+      section_label: "Latest Thoughts"
+      section_title: "Featured Posts"
+      section_description: "Exploring ideas at the intersection of technology, creativity, and everyday life."
+      posts:
+        - image:
+            url: "https://placehold.co/800x500/6366f1/ffffff?text=AI+Future"
+            alt: "AI and the future"
+          category: "Technology"
+          title: "The Quiet Revolution: How AI is Reshaping Creative Work"
+          excerpt: "From writing assistants to image generators, AI tools are fundamentally changing how we approach creative tasks."
+          date: "March 10, 2026"
+          read_time: "8 min read"
+          link:
+            url: "/blog/ai-creative-work"
+            label: "Read more"
+        - image:
+            url: "https://placehold.co/400x300/10b981/ffffff?text=Morning"
+            alt: "Morning routine"
+          category: "Lifestyle"
+          title: "Building a Morning Routine That Actually Works"
+          excerpt: "Forget the 4 AM wake-up calls. Here's a realistic approach to mornings."
+          date: "March 5, 2026"
+          read_time: "5 min read"
+          link:
+            url: "/blog/morning-routine"
+            label: "Read more"
+        - image:
+            url: "https://placehold.co/400x300/f59e0b/ffffff?text=Reading"
+            alt: "Books on desk"
+          category: "Books"
+          title: "5 Books That Changed How I Think About Work"
+          excerpt: "A curated list of books that shifted my perspective on productivity and meaning."
+          date: "February 28, 2026"
+          read_time: "6 min read"
+          link:
+            url: "/blog/books-about-work"
+            label: "Read more"
+      view_all_link:
+        url: "/blog"
+        label: "View all posts"
+  - block: about
+    content:
+      section_label: "About"
+      title: "Hi, I'm Jordan"
+      content: |
+        <p>I'm a writer and creative technologist based in San Francisco. By day, I work with startups on product strategy. By night, I explore the ideas that fascinate me most.</p>
+        <p>This blog is my space for thinking out loud—about technology's impact on our lives, the books that shape my worldview, and the small experiments in living better.</p>
+      cta:
+        label: "Learn more about me"
+        url: "/about"
+  - block: newsletter
+    content:
+      title: "Join the Newsletter"
+      description: "Weekly thoughts on technology, creativity, and living intentionally. No spam, unsubscribe anytime."
+      placeholder: "you@email.com"
+      button_text: "Subscribe"
+      success_message: "Welcome aboard! Check your inbox to confirm."
+      privacy_text: "I respect your privacy. Unsubscribe at any time."
+  - block: footer
+    content:
+      show_newsletter: false

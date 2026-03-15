@@ -1,0 +1,82 @@
+{
+  "id": "agency-team",
+  "name": "Team",
+  "fields": [
+    {
+      "id": "team-badge",
+      "name": "badge",
+      "label": "Badge",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "team-title",
+      "name": "title",
+      "label": "Title",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "team-subtitle",
+      "name": "subtitle",
+      "label": "Subtitle",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "team-members",
+      "name": "members",
+      "label": "Team Members",
+      "type": "repeater",
+      "options": null
+    },
+    {
+      "id": "member-photo",
+      "name": "photo",
+      "label": "Photo",
+      "type": "image",
+      "parent": "members",
+      "options": null
+    },
+    {
+      "id": "member-name",
+      "name": "name",
+      "label": "Name",
+      "type": "text",
+      "parent": "members",
+      "options": null
+    },
+    {
+      "id": "member-role",
+      "name": "role",
+      "label": "Role",
+      "type": "text",
+      "parent": "members",
+      "options": null
+    },
+    {
+      "id": "member-bio",
+      "name": "bio",
+      "label": "Bio",
+      "type": "text",
+      "parent": "members",
+      "options": null
+    },
+    {
+      "id": "member-linkedin",
+      "name": "linkedin",
+      "label": "LinkedIn URL",
+      "type": "url",
+      "parent": "members",
+      "options": null
+    },
+    {
+      "id": "member-twitter",
+      "name": "twitter",
+      "label": "Twitter URL",
+      "type": "url",
+      "parent": "members",
+      "options": null
+    }
+  ]
+}

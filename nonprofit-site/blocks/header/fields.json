@@ -1,0 +1,33 @@
+{
+  "id": "np-header",
+  "name": "Header",
+  "fields": [
+    {
+      "id": "np-header-logo",
+      "label": "Logo",
+      "name": "logo",
+      "options": {
+        "field": "np-logo"
+      },
+      "type": "site-field"
+    },
+    {
+      "id": "np-header-nav-links",
+      "label": "Navigation Links",
+      "name": "nav_links",
+      "options": {
+        "field": "np-nav-links"
+      },
+      "type": "site-field"
+    },
+    {
+      "id": "np-header-cta",
+      "label": "Header CTA",
+      "name": "cta",
+      "options": {
+        "field": "np-header-cta"
+      },
+      "type": "site-field"
+    }
+  ]
+}

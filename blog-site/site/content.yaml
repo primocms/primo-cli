@@ -1,0 +1,28 @@
+site_name: "The Daily Muse"
+logo:
+  type: text
+  text: "TDM"
+nav_links:
+  - link:
+      label: "Home"
+      url: "/"
+  - link:
+      label: "Blog"
+      url: "/blog"
+  - link:
+      label: "About"
+      url: "/about"
+  - link:
+      label: "Contact"
+      url: "/contact"
+social_links:
+  - platform: twitter
+    url: "https://twitter.com/dailymuse"
+  - platform: linkedin
+    url: "https://linkedin.com/in/dailymuse"
+  - platform: github
+    url: "https://github.com/dailymuse"
+  - platform: email
+    url: "mailto:hello@dailymuse.com"
+footer_bio: "Sharing thoughts on technology, creativity, and life's curiosities."
+copyright: "2026 The Daily Muse. All rights reserved."

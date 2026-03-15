@@ -1,0 +1,140 @@
+id: home
+name: Home
+slug: ""
+page_type: default
+fields:
+  title: "Apex Creative - Digital Agency"
+  description: "We craft bold digital experiences that drive growth. Strategy, design, and development for ambitious brands."
+sections:
+  - block: header
+    content:
+      announcement: "Now accepting new projects for Q2 2025"
+      announcement_link:
+        label: "Get in touch"
+        url: "/contact"
+
+  - block: hero
+    content:
+      badge: "Award-Winning Agency"
+      headline: "We Build Brands That Move People"
+      subheadline: "Apex Creative is a full-service digital agency specializing in brand strategy, web design, and development for ambitious companies ready to make an impact."
+      primary_cta:
+        label: "Start Your Project"
+        url: "/contact"
+      secondary_cta:
+        label: "View Our Work"
+        url: "/work"
+
+  - block: clients
+    content:
+      title: "Trusted by innovative brands worldwide"
+      clients:
+        - name: "Acme Corp"
+        - name: "TechStart"
+        - name: "Nexus"
+        - name: "Elevate"
+        - name: "Horizon"
+        - name: "Pulse"
+
+  - block: services
+    content:
+      badge: "What We Do"
+      title: "Services That Drive Growth"
+      subtitle: "From strategy to execution, we offer end-to-end solutions that help your brand stand out and succeed."
+      services:
+        - icon: "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path d='M12 2L2 7l10 5 10-5-10-5z'/><path d='M2 17l10 5 10-5'/><path d='M2 12l10 5 10-5'/></svg>"
+          service_title: "Brand Strategy"
+          description: "Define your brand's purpose, positioning, and personality to connect with your audience on a deeper level."
+          link:
+            label: "Learn more"
+            url: "/services#brand"
+        - icon: "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><rect x='3' y='3' width='18' height='18' rx='2'/><path d='M3 9h18'/><path d='M9 21V9'/></svg>"
+          service_title: "Web Design"
+          description: "Create stunning, user-centered websites that captivate visitors and convert them into customers."
+          link:
+            label: "Learn more"
+            url: "/services#web"
+        - icon: "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><polyline points='16 18 22 12 16 6'/><polyline points='8 6 2 12 8 18'/></svg>"
+          service_title: "Development"
+          description: "Build fast, scalable, and secure web applications using modern technologies and best practices."
+          link:
+            label: "Learn more"
+            url: "/services#dev"
+
+  - block: portfolio
+    content:
+      badge: "Our Work"
+      title: "Projects That Speak For Themselves"
+      subtitle: "Explore our portfolio of award-winning work across various industries."
+      projects:
+        - category: "Brand Identity"
+          project_title: "Elevate Fitness"
+          description: "Complete brand overhaul for a premium fitness studio chain."
+          link:
+            label: "View Case Study"
+            url: "/work/elevate-fitness"
+        - category: "Web Design"
+          project_title: "TechStart Platform"
+          description: "SaaS landing page and product design for a B2B startup."
+          link:
+            label: "View Case Study"
+            url: "/work/techstart"
+        - category: "E-commerce"
+          project_title: "Luxe Skincare"
+          description: "Premium e-commerce experience for a luxury skincare brand."
+          link:
+            label: "View Case Study"
+            url: "/work/luxe"
+
+  - block: process
+    content:
+      badge: "How We Work"
+      title: "Our Proven Process"
+      subtitle: "A collaborative approach that delivers results."
+      steps:
+        - icon: "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><circle cx='12' cy='12' r='10'/><path d='M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3'/><path d='M12 17h.01'/></svg>"
+          step_title: "Discovery"
+          description: "We dive deep into your business, audience, and goals to understand what success looks like for you."
+        - icon: "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path d='M12 20h9'/><path d='M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z'/></svg>"
+          step_title: "Strategy"
+          description: "We craft a tailored roadmap that aligns your brand vision with actionable tactics and measurable outcomes."
+        - icon: "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><polygon points='12 2 2 7 12 12 22 7 12 2'/><polyline points='2 17 12 22 22 17'/><polyline points='2 12 12 17 22 12'/></svg>"
+          step_title: "Design"
+          description: "We bring your brand to life with stunning visuals and intuitive user experiences."
+        - icon: "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path d='M22 11.08V12a10 10 0 1 1-5.93-9.14'/><polyline points='22 4 12 14.01 9 11.01'/></svg>"
+          step_title: "Launch"
+          description: "We deploy your project and ensure everything runs smoothly, with ongoing support when you need it."
+
+  - block: testimonials
+    content:
+      badge: "Client Love"
+      title: "What Our Clients Say"
+      subtitle: "Don't just take our word for it."
+      testimonials:
+        - quote: "Apex transformed our brand and exceeded every expectation. Their strategic approach and creative execution are unmatched."
+          author: "Sarah Chen"
+          role: "CEO"
+          company: "TechStart"
+        - quote: "Working with Apex was a game-changer. They understood our vision and brought it to life in ways we couldn't have imagined."
+          author: "Marcus Johnson"
+          role: "Founder"
+          company: "Elevate Fitness"
+        - quote: "The team at Apex is incredible. Professional, creative, and truly invested in our success. Highly recommend."
+          author: "Emily Rodriguez"
+          role: "Marketing Director"
+          company: "Luxe Skincare"
+
+  - block: cta
+    content:
+      title: "Ready to Transform Your Brand?"
+      subtitle: "Let's create something extraordinary together. Get in touch to start your project."
+      primary_cta:
+        label: "Start a Project"
+        url: "/contact"
+      secondary_cta:
+        label: "View Our Work"
+        url: "/work"
+
+  - block: footer
+    content:
+      description: "We craft bold digital experiences that drive growth for ambitious brands."

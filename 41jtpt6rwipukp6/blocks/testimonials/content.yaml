@@ -1,0 +1,16 @@
+title: What Our Clients Say
+content: |
+  <div class="testimonial-grid">
+    <blockquote>
+      <p>"Working with this team transformed our operations. Their strategic insights helped us scale efficiently while maintaining quality."</p>
+      <cite>— Jennifer Martinez, CEO at TechFlow</cite>
+    </blockquote>
+    <blockquote>
+      <p>"The results exceeded our expectations. They truly understand how to drive meaningful organizational change."</p>
+      <cite>— David Kim, VP Operations at GrowthCo</cite>
+    </blockquote>
+    <blockquote>
+      <p>"Professional, insightful, and results-driven. They helped us navigate a complex transformation with confidence."</p>
+      <cite>— Rachel Thompson, Director at InnovateLabs</cite>
+    </blockquote>
+  </div>

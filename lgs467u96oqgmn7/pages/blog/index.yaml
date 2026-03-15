@@ -1,0 +1,26 @@
+id: blog-index-001
+name: Blog
+slug: blog
+page_type: default
+fields:
+  title: Blog - SaaSify
+  description: Insights, tutorials, and best practices from the SaaSify team.
+sections:
+  - block: page-header
+    content:
+      title: "Blog"
+      subtitle: "Insights, tutorials, and best practices to help you build better products."
+
+  - block: blog-listing
+    content: {}
+
+  - block: cta
+    content:
+      title: "Want more insights?"
+      subtitle: "Subscribe to our newsletter for weekly tips and updates."
+      primary_cta:
+        label: "Subscribe"
+        url: "#subscribe"
+      secondary_cta:
+        label: "Follow on Twitter"
+        url: "https://twitter.com"

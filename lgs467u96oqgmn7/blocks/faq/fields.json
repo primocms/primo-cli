@@ -1,0 +1,51 @@
+{
+  "$schema": "../../.schemas/fields.schema.json",
+  "id": "su4qytm6dov9ovp",
+  "name": "FAQ",
+  "fields": [
+    {
+      "id": "qb5zh6t0mlwzcfc",
+      "label": "Badge",
+      "name": "badge",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "1yugx1nsxlg62xl",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "36zj2spv3ag45qs",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "yh1ibkby8mmakuk",
+      "label": "Questions",
+      "name": "items",
+      "options": null,
+      "type": "repeater"
+    },
+    {
+      "id": "mmxebjbqr8fn217",
+      "label": "Question",
+      "name": "question",
+      "options": null,
+      "parent": "items",
+      "type": "text"
+    },
+    {
+      "id": "rlqqm1mkcok3i63",
+      "label": "Answer",
+      "name": "answer",
+      "options": null,
+      "parent": "items",
+      "type": "text"
+    }
+  ]
+}

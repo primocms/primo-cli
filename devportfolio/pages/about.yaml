@@ -1,0 +1,107 @@
+id: about-page
+name: About
+slug: about
+page_type: default
+fields:
+  title: About - Alex Chen
+  description: Learn more about Alex Chen, a full-stack developer with a passion for creating exceptional digital experiences.
+sections:
+  - block: header
+    content: {}
+
+  - block: hero
+    content:
+      greeting: "Hello!"
+      name: "I'm Alex Chen"
+      role: "Full-Stack Developer & Designer"
+      tagline: "Based in San Francisco, I've spent the last 5+ years building products that help businesses grow and users succeed."
+      primary_cta:
+        label: "Download Resume"
+        url: "/resume.pdf"
+      secondary_cta:
+        label: "Contact Me"
+        url: "/contact"
+      show_socials: true
+
+  - block: about
+    content:
+      badge: "My Story"
+      title: "From Curiosity to Career"
+      bio: "<p>My journey into tech started with curiosity—taking apart gadgets as a kid and wondering how they worked. That curiosity evolved into a passion for building things on the web.</p><p>After graduating with a degree in Computer Science from UC Berkeley, I joined a fast-paced startup where I learned the importance of shipping fast without sacrificing quality. Since then, I've worked with companies ranging from scrappy startups to Fortune 500 enterprises.</p><p>I believe great software is built at the intersection of technical excellence and deep user empathy. Every line of code I write is in service of solving real problems for real people.</p>"
+      stats:
+        - value: "5+"
+          label: "Years Experience"
+        - value: "50+"
+          label: "Projects Delivered"
+        - value: "100%"
+          label: "Client Satisfaction"
+
+  - block: skills
+    content:
+      badge: "Expertise"
+      title: "What I Bring to the Table"
+      subtitle: "A comprehensive skill set built through years of hands-on experience"
+      categories:
+        - name: "Languages"
+          skills:
+            - skill_name: "JavaScript"
+            - skill_name: "TypeScript"
+            - skill_name: "Python"
+            - skill_name: "Go"
+            - skill_name: "SQL"
+        - name: "Frameworks"
+          skills:
+            - skill_name: "React"
+            - skill_name: "Next.js"
+            - skill_name: "Svelte"
+            - skill_name: "Express"
+            - skill_name: "FastAPI"
+        - name: "Databases"
+          skills:
+            - skill_name: "PostgreSQL"
+            - skill_name: "MongoDB"
+            - skill_name: "Redis"
+            - skill_name: "SQLite"
+        - name: "Cloud & DevOps"
+          skills:
+            - skill_name: "AWS"
+            - skill_name: "Docker"
+            - skill_name: "Kubernetes"
+            - skill_name: "GitHub Actions"
+            - skill_name: "Terraform"
+
+  - block: experience
+    content:
+      badge: "Career"
+      title: "Work Experience"
+      subtitle: "A timeline of my professional journey"
+      jobs:
+        - company: "TechCorp Inc."
+          role: "Senior Full-Stack Developer"
+          period: "Jan 2023 - Present"
+          description: "<ul><li>Lead development of customer-facing web applications serving 500K+ users</li><li>Architected and implemented microservices infrastructure reducing deployment time by 60%</li><li>Mentored junior developers and established coding standards across the team</li></ul>"
+          is_current: true
+        - company: "StartupXYZ"
+          role: "Full-Stack Developer"
+          period: "Mar 2021 - Dec 2022"
+          description: "<ul><li>Built and launched the company's flagship SaaS product from scratch</li><li>Implemented real-time collaboration features using WebSockets</li><li>Optimized database queries resulting in 3x performance improvement</li></ul>"
+          is_current: false
+        - company: "Digital Agency Co."
+          role: "Frontend Developer"
+          period: "Jun 2019 - Feb 2021"
+          description: "<ul><li>Developed responsive web applications for diverse client portfolio</li><li>Introduced component-based architecture that improved code reusability by 40%</li><li>Collaborated with design team to implement pixel-perfect UI implementations</li></ul>"
+          is_current: false
+
+  - block: cta
+    content:
+      title: "Ready to Collaborate?"
+      subtitle: "I'm always interested in hearing about new projects and opportunities."
+      primary_cta:
+        label: "Start a Conversation"
+        url: "/contact"
+      secondary_cta:
+        label: "View Projects"
+        url: "/projects"
+
+  - block: footer
+    content: {}

@@ -1,0 +1,14 @@
+{
+  "$schema": "../../.schemas/fields.schema.json",
+  "id": "xyltghb2d385bc2",
+  "name": "Bridge",
+  "fields": [
+    {
+      "id": "8o1n3p5id66ogn4",
+      "label": "Text",
+      "name": "text",
+      "options": null,
+      "type": "rich-text"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "$schema": "../../.schemas/fields.schema.json",
+  "id": "z4ycag98rxwcrg7",
+  "name": "Site Footer",
+  "fields": [
+    {
+      "id": "cj21kun2hpq2a58",
+      "label": "Footer Text",
+      "name": "text",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "hxgrhvfe4raf9vo",
+      "label": "Links",
+      "name": "links",
+      "options": {
+        "fields": [
+          {
+            "label": "Link",
+            "name": "link",
+            "type": "link"
+          }
+        ]
+      },
+      "type": "repeater"
+    }
+  ]
+}

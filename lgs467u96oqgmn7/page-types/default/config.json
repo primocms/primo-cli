@@ -1,0 +1,48 @@
+{
+  "$schema": "../../.schemas/page-type-config.schema.json",
+  "allowed_blocks": [
+    "header",
+    "hero",
+    "logo-cloud",
+    "features",
+    "how-it-works",
+    "testimonials",
+    "pricing",
+    "faq",
+    "cta",
+    "footer",
+    "page-header",
+    "basic-content",
+    "team",
+    "contact-form",
+    "blog-listing",
+    "article-header"
+  ],
+  "color": "",
+  "fields": [
+    {
+      "id": "dmlcs5zfvckwgqu",
+      "label": "Page Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "073qsms0cv05xcq",
+      "label": "Meta Description",
+      "name": "description",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "2hz2439ekpoga0m",
+      "label": "Social Share Image",
+      "name": "og_image",
+      "options": null,
+      "type": "image"
+    }
+  ],
+  "icon": "iconoir:page",
+  "id": "hq3iqfpcn0tss7l",
+  "name": "Default"
+}

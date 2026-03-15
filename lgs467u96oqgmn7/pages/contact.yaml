@@ -1,0 +1,25 @@
+id: 0y3qflghpjq83y1
+name: Contact
+slug: contact
+page_type: default
+fields:
+  title: Contact Us - SaaSify
+  description: Get in touch with the SaaSify team.
+sections:
+  - block: page-header
+    content:
+      title: "Contact Us"
+      subtitle: "We'd love to hear from you."
+
+  - block: contact-form
+    content:
+      title: "Send us a message"
+      subtitle: "Fill out the form below and we'll get back to you within 24 hours."
+
+  - block: basic
+    content:
+      content: |
+        <h2>Other ways to reach us</h2>
+        <p><strong>Email:</strong> <a href="mailto:hello@saasify.com">hello@saasify.com</a></p>
+        <p><strong>Twitter:</strong> <a href="https://twitter.com/saasify">@saasify</a></p>
+        <p><strong>Support:</strong> <a href="mailto:support@saasify.com">support@saasify.com</a></p>

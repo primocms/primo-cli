@@ -1,0 +1,13 @@
+{
+  "id": "26hovmo9v3t6u8j",
+  "name": "Built For",
+  "fields": [
+    {
+      "id": "898q0dkzeb5hgvr",
+      "label": "Text",
+      "name": "text",
+      "options": null,
+      "type": "rich-text"
+    }
+  ]
+}

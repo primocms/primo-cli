@@ -1,0 +1,55 @@
+{
+  "id": "newsletter-block",
+  "name": "Newsletter",
+  "fields": [
+    {
+      "id": "newsletter-title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "newsletter-description",
+      "label": "Description",
+      "name": "description",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "newsletter-placeholder",
+      "label": "Email Placeholder",
+      "name": "placeholder",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "newsletter-button-text",
+      "label": "Button Text",
+      "name": "button_text",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "newsletter-endpoint",
+      "label": "Form Endpoint URL",
+      "name": "endpoint",
+      "options": null,
+      "type": "url"
+    },
+    {
+      "id": "newsletter-success-message",
+      "label": "Success Message",
+      "name": "success_message",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "newsletter-privacy-text",
+      "label": "Privacy Note",
+      "name": "privacy_text",
+      "options": null,
+      "type": "text"
+    }
+  ]
+}

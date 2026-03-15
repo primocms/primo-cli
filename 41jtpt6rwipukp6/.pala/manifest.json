@@ -1,0 +1,66 @@
+{
+  "block_fields": {
+    "basic": {
+      "content": "45m6jxbzie4kazk"
+    },
+    "call-to-action": {
+      "button": "8krcoupdxtvd10m",
+      "subtitle": "6o6wemk85ezngj4",
+      "title": "gkyxr7k5ovgfl9c"
+    },
+    "features": {
+      "content": "3091ehrqynkstul",
+      "title": "018aydmetfaos0d"
+    },
+    "hero": {
+      "cta": "ymk8czx374zpig3",
+      "headline": "g9ng20kjxcbbgyy",
+      "subtext": "lucjn9jluo1f2xx"
+    },
+    "r37xm1yfttk9iv4": {
+      "logo": "hu327b2c4xnftn5",
+      "site_navigation_links": "ppr802zwm62lyto"
+    }
+  },
+  "blocks": {
+    "basic": "ao8bxqevqjkhsuf",
+    "call-to-action": "x4oxj7k0sr3xchg",
+    "features": "0l3oqf9q1niplnx",
+    "hero": "hpor5cp03jx1hyp",
+    "r37xm1yfttk9iv4": "r37xm1yfttk9iv4"
+  },
+  "page_type_fields": {
+    "blog-post": {
+      "author": "p3kgalmruligak3",
+      "excerpt": "kaf5d90e87d2irc",
+      "featured_image": "s74w8bmh7e6pxuh",
+      "publish_date": "q8zroes23uphz0p"
+    },
+    "default": {
+      "description": "lvb10dpbct2l5m2",
+      "title": "lvd1y0m4rv6omjk"
+    }
+  },
+  "page_types": {
+    "blog-post": "os0b961osqkd1p1",
+    "default": "g6vgqf40lu67l1w"
+  },
+  "pages": {
+    "about": "147n25h5hhcjrou",
+    "blog": "ygtczuwkuru0g37",
+    "blog/building-blocks": "qp81lz6xx4q90ou",
+    "blog/deployment-guide": "onnoc6rgihhhoi6",
+    "blog/getting-started": "aqxlhz3fx76u2te",
+    "index": "nlt2ayf3yikvlfd"
+  },
+  "site_fields": {
+    "favicon": "dr6rhlbded30dle",
+    "image": "qb8rfbz7imbx28e",
+    "link": "jp0qz53r8bdniwb",
+    "logo": "37qzukvulhnhbl4",
+    "site_name": "vyu16byk3j5954w",
+    "site_navigation_links": "eyperqi0s17knkw",
+    "text": "toeqyf23f1meh2i",
+    "type": "qysj92hxz3y6qqo"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "id": "cta",
+  "name": "Call to Action",
+  "fields": [
+    {
+      "id": "cta_title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "cta_subtitle",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "cta_button",
+      "label": "Button",
+      "name": "button",
+      "options": null,
+      "type": "link"
+    }
+  ]
+}

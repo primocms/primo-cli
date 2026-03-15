@@ -1,0 +1,57 @@
+{
+  "id": "pp-about",
+  "name": "About",
+  "fields": [
+    {
+      "id": "pp-about-image",
+      "label": "Photo",
+      "name": "image",
+      "options": null,
+      "type": "image"
+    },
+    {
+      "id": "pp-about-title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "pp-about-content",
+      "label": "Content",
+      "name": "content",
+      "options": null,
+      "type": "rich-text"
+    },
+    {
+      "id": "pp-about-stats",
+      "label": "Stats",
+      "name": "stats",
+      "options": null,
+      "type": "repeater"
+    },
+    {
+      "id": "pp-about-stat-number",
+      "label": "Number",
+      "name": "number",
+      "options": null,
+      "parent": "stats",
+      "type": "text"
+    },
+    {
+      "id": "pp-about-stat-label",
+      "label": "Label",
+      "name": "label",
+      "options": null,
+      "parent": "stats",
+      "type": "text"
+    },
+    {
+      "id": "pp-about-cta",
+      "label": "CTA Button",
+      "name": "cta",
+      "options": null,
+      "type": "link"
+    }
+  ]
+}

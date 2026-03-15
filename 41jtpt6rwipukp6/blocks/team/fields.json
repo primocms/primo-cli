@@ -1,0 +1,70 @@
+{
+  "id": "team",
+  "name": "Team",
+  "fields": [
+    {
+      "id": "team-title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "team-subtitle",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "team-members",
+      "label": "Team Members",
+      "name": "members",
+      "options": null,
+      "type": "repeater"
+    },
+    {
+      "id": "team-member-photo",
+      "label": "Photo",
+      "name": "photo",
+      "options": {
+        "maxSizeMB": 2,
+        "maxWidthOrHeight": 800
+      },
+      "type": "image",
+      "parent": "members"
+    },
+    {
+      "id": "team-member-name",
+      "label": "Name",
+      "name": "name",
+      "options": null,
+      "type": "text",
+      "parent": "members"
+    },
+    {
+      "id": "team-member-role",
+      "label": "Role",
+      "name": "role",
+      "options": null,
+      "type": "text",
+      "parent": "members"
+    },
+    {
+      "id": "team-member-bio",
+      "label": "Bio",
+      "name": "bio",
+      "options": null,
+      "type": "text",
+      "parent": "members"
+    },
+    {
+      "id": "team-member-linkedin",
+      "label": "LinkedIn URL",
+      "name": "linkedin",
+      "options": null,
+      "type": "text",
+      "parent": "members"
+    }
+  ]
+}

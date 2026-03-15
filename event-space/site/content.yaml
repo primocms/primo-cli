@@ -1,0 +1,32 @@
+site_name: "The Grand Hall"
+logo:
+  type: "text"
+  text: "The Grand Hall"
+  image: null
+nav_links:
+  - link:
+      label: "Venues"
+      url: "/venues"
+  - link:
+      label: "Services"
+      url: "/services"
+  - link:
+      label: "Gallery"
+      url: "/#gallery"
+  - link:
+      label: "Contact"
+      url: "/contact"
+header_cta:
+  label: "Book a Tour"
+  url: "/contact"
+phone: "(555) 123-4567"
+email: "events@thegrandhall.com"
+address: "123 Celebration Avenue, Downtown District"
+social_links:
+  - platform: "instagram"
+    url: "https://instagram.com/thegrandhall"
+  - platform: "facebook"
+    url: "https://facebook.com/thegrandhall"
+  - platform: "pinterest"
+    url: "https://pinterest.com/thegrandhall"
+copyright: "2025 The Grand Hall. All rights reserved."

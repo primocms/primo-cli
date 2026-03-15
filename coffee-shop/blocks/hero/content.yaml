@@ -1,0 +1,8 @@
+headline: "Crafted with Passion, Served with Love"
+subheadline: "Experience the art of specialty coffee in every cup. Locally roasted, ethically sourced."
+primary_cta:
+  label: "View Our Menu"
+  url: "#menu"
+secondary_cta:
+  label: "Find Us"
+  url: "#location"

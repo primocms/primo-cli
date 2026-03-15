@@ -1,0 +1,34 @@
+{
+  "id": "pp-hero",
+  "name": "Hero",
+  "fields": [
+    {
+      "id": "pp-hero-headline",
+      "label": "Headline",
+      "name": "headline",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "pp-hero-subheadline",
+      "label": "Subheadline",
+      "name": "subheadline",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "pp-hero-cta",
+      "label": "CTA Button",
+      "name": "cta",
+      "options": null,
+      "type": "link"
+    },
+    {
+      "id": "pp-hero-image",
+      "label": "Background Image",
+      "name": "image",
+      "options": null,
+      "type": "image"
+    }
+  ]
+}

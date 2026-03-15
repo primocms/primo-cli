@@ -1,0 +1,103 @@
+{
+  "$schema": "../../.schemas/fields.schema.json",
+  "id": "rc0j7b3dbypba4v",
+  "name": "Footer",
+  "fields": [
+    {
+      "id": "hhi73nkeb8x4yuo",
+      "label": "Logo Text",
+      "name": "logo_text",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "t2h5x64kf459nl3",
+      "label": "Logo",
+      "name": "logo",
+      "options": {
+        "field": "logo"
+      },
+      "type": "site-field"
+    },
+    {
+      "id": "fbsam64hey0asq3",
+      "label": "Tagline",
+      "name": "tagline",
+      "options": {
+        "field": "tagline"
+      },
+      "type": "site-field"
+    },
+    {
+      "id": "9ls2goe75l2hpmy",
+      "label": "Link Groups",
+      "name": "link_groups",
+      "options": null,
+      "type": "repeater"
+    },
+    {
+      "id": "tu3t6sjel544yc9",
+      "label": "Social Links",
+      "name": "social_links",
+      "options": {
+        "field": "social_links"
+      },
+      "type": "site-field"
+    },
+    {
+      "id": "sqapzwq7io07znx",
+      "label": "Group Title",
+      "name": "group_title",
+      "options": null,
+      "parent": "link_groups",
+      "type": "text"
+    },
+    {
+      "id": "oylbxlevph9kw4x",
+      "label": "Link Groups",
+      "name": "footer_link_groups",
+      "options": {
+        "field": "footer_link_groups"
+      },
+      "type": "site-field"
+    },
+    {
+      "id": "vg6p882i56qk1j5",
+      "label": "Links (label|url per line)",
+      "name": "links_text",
+      "options": null,
+      "parent": "link_groups",
+      "type": "text"
+    },
+    {
+      "id": "siiwby2egljxvc4",
+      "label": "Copyright Text",
+      "name": "copyright",
+      "options": {
+        "field": "copyright"
+      },
+      "type": "site-field"
+    },
+    {
+      "id": "5goad38fm40c97a",
+      "label": "Twitter URL",
+      "name": "twitter_url",
+      "options": null,
+      "type": "url"
+    },
+    {
+      "id": "qvmlv698uc1bqlh",
+      "label": "LinkedIn URL",
+      "name": "linkedin_url",
+      "options": null,
+      "type": "url"
+    },
+    {
+      "id": "xjwsy9mwhluwld7",
+      "label": "GitHub URL",
+      "name": "github_url",
+      "options": null,
+      "type": "url"
+    }
+  ]
+}

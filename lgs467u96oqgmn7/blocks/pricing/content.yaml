@@ -1,0 +1,31 @@
+badge: "Pricing"
+title: "Simple, transparent pricing"
+subtitle: "Choose the plan that's right for you. All plans include a 14-day free trial."
+plans:
+  - plan_name: "Starter"
+    price: "$19"
+    period: "/month"
+    description: "Perfect for small teams and side projects."
+    features_text: "Up to 3 team members\n10 deployments per month\nBasic analytics\nCommunity support"
+    cta:
+      label: "Get Started"
+      url: "/signup?plan=starter"
+    popular: false
+  - plan_name: "Pro"
+    price: "$49"
+    period: "/month"
+    description: "For growing teams that need more power."
+    features_text: "Up to 10 team members\nUnlimited deployments\nAdvanced analytics\nPriority support\nCustom domains"
+    cta:
+      label: "Get Started"
+      url: "/signup?plan=pro"
+    popular: true
+  - plan_name: "Enterprise"
+    price: "$149"
+    period: "/month"
+    description: "For large organizations with advanced needs."
+    features_text: "Unlimited team members\nUnlimited deployments\nEnterprise analytics\n24/7 dedicated support\nSSO & SAML\nSLA guarantee"
+    cta:
+      label: "Contact Sales"
+      url: "/contact"
+    popular: false

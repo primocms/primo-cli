@@ -1,0 +1,23 @@
+title: "Our Work"
+subtitle: "A showcase of cuts and styles from our master barbers"
+images:
+  - image:
+      url: ""
+      alt: "Classic fade haircut"
+    caption: "Classic Fade"
+  - image:
+      url: ""
+      alt: "Beard styling"
+    caption: "Beard Styling"
+  - image:
+      url: ""
+      alt: "Modern pompadour"
+    caption: "Modern Pompadour"
+  - image:
+      url: ""
+      alt: "Traditional cut"
+    caption: "Traditional Cut"
+  - image:
+      url: ""
+      alt: "Hot towel shave"
+    caption: "Hot Towel Shave"

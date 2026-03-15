@@ -1,0 +1,11 @@
+industry: Technology
+service: Digital Transformation
+title: Successful Cloud Migration
+description: We helped a Fortune 500 company migrate their entire infrastructure to the cloud, resulting in significant cost savings and improved performance.
+results:
+  - value: "50%"
+    label: Cost Reduction
+  - value: "99.9%"
+    label: Uptime
+  - value: "2x"
+    label: Performance Gain

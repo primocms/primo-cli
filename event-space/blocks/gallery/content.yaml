@@ -1,0 +1,28 @@
+badge: "Gallery"
+title: "Moments We've Helped Create"
+subtitle: "Browse through some of the beautiful events hosted at The Grand Hall."
+images:
+  - image:
+      url: "https://images.unsplash.com/photo-1519741497674-611481863552?w=800"
+      alt: "Wedding reception"
+    caption: "Elegant Wedding Reception"
+  - image:
+      url: "https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800"
+      alt: "Corporate event"
+    caption: "Annual Gala Dinner"
+  - image:
+      url: "https://images.unsplash.com/photo-1478146896981-b80fe463b330?w=800"
+      alt: "Table setting"
+    caption: "Exquisite Table Settings"
+  - image:
+      url: "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=800"
+      alt: "Concert event"
+    caption: "Live Entertainment"
+  - image:
+      url: "https://images.unsplash.com/photo-1529543544599-3f9c1aa06f66?w=800"
+      alt: "Outdoor ceremony"
+    caption: "Garden Ceremony"
+  - image:
+      url: "https://images.unsplash.com/photo-1464366400600-7168b8af9bc3?w=800"
+      alt: "Cocktail hour"
+    caption: "Terrace Cocktail Hour"

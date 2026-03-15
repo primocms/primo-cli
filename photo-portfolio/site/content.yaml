@@ -1,0 +1,35 @@
+site_name: "Lumen Photography"
+logo:
+  type: "text"
+  text: "LUMEN"
+  image:
+    url: ""
+    alt: ""
+tagline: "Capturing moments that last forever"
+email: "hello@lumenphotography.com"
+phone: "(555) 123-4567"
+location: "Los Angeles, CA"
+nav_links:
+  - link:
+      label: "Work"
+      url: "#gallery"
+  - link:
+      label: "About"
+      url: "#about"
+  - link:
+      label: "Services"
+      url: "#services"
+  - link:
+      label: "Contact"
+      url: "#contact"
+header_cta:
+  label: "Book a Session"
+  url: "#contact"
+social_links:
+  - platform: "instagram"
+    url: "https://instagram.com/lumenphotography"
+  - platform: "behance"
+    url: "https://behance.net/lumenphotography"
+  - platform: "pinterest"
+    url: "https://pinterest.com/lumenphotography"
+copyright: "2026 Lumen Photography. All rights reserved."

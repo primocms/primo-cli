@@ -1,0 +1,23 @@
+{
+  "$schema": "../../.schemas/fields.schema.json",
+  "id": "2e4ygy1wpikf3u6",
+  "name": "Blog Listing",
+  "fields": [
+    {
+      "id": "blog-listing-title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "fgjrz3vm52vmokg",
+      "label": "Blog Posts",
+      "name": "posts",
+      "options": {
+        "page_type": "blog-post"
+      },
+      "type": "page-list"
+    }
+  ]
+}

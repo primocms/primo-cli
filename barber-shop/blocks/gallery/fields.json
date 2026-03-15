@@ -1,0 +1,43 @@
+{
+  "id": "bs-gallery",
+  "name": "Gallery",
+  "fields": [
+    {
+      "id": "bs-gallery-title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "bs-gallery-subtitle",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "bs-gallery-images",
+      "label": "Images",
+      "name": "images",
+      "options": null,
+      "type": "repeater"
+    },
+    {
+      "id": "bs-gallery-image",
+      "label": "Image",
+      "name": "image",
+      "options": null,
+      "parent": "images",
+      "type": "image"
+    },
+    {
+      "id": "bs-gallery-caption",
+      "label": "Caption",
+      "name": "caption",
+      "options": null,
+      "parent": "images",
+      "type": "text"
+    }
+  ]
+}

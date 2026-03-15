@@ -1,0 +1,53 @@
+{
+  "$schema": "../../.schemas/fields.schema.json",
+  "id": "8s8xmqiona5uzcp",
+  "name": "How It Works",
+  "fields": [
+    {
+      "id": "xv8qxzwipp1st0e",
+      "label": "Section Label",
+      "name": "label",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "kgawzs03yxw5r0k",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "mamle0ptqiralmb",
+      "label": "Description",
+      "name": "description",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "4iteu8dj069lm9h",
+      "label": "Steps",
+      "name": "steps",
+      "options": {
+        "fields": [
+          {
+            "label": "Number",
+            "name": "number",
+            "type": "text"
+          },
+          {
+            "label": "Title",
+            "name": "title",
+            "type": "text"
+          },
+          {
+            "label": "Description",
+            "name": "description",
+            "type": "text"
+          }
+        ]
+      },
+      "type": "repeater"
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+site_name: FitZone Gym
+logo:
+  type: text
+  text: FitZone
+tagline: Transform your body, elevate your mind. Join the fitness revolution.
+header_cta:
+  label: Join Now
+  url: "#pricing"
+nav_links:
+  - link:
+      label: Classes
+      url: "#classes"
+  - link:
+      label: Trainers
+      url: "#trainers"
+  - link:
+      label: Pricing
+      url: "#pricing"
+  - link:
+      label: Contact
+      url: "#contact"
+social_links:
+  - platform: facebook
+    url: https://facebook.com/fitzone
+  - platform: instagram
+    url: https://instagram.com/fitzone
+  - platform: youtube
+    url: https://youtube.com/fitzone
+footer_link_groups:
+  - title: Quick Links
+    links:
+      - link:
+          label: Home
+          url: /
+      - link:
+          label: Classes
+          url: "#classes"
+      - link:
+          label: Pricing
+          url: "#pricing"
+  - title: Programs
+    links:
+      - link:
+          label: Personal Training
+          url: "#trainers"
+      - link:
+          label: Group Classes
+          url: "#classes"
+      - link:
+          label: Nutrition Coaching
+          url: "#contact"
+  - title: Support
+    links:
+      - link:
+          label: Contact Us
+          url: "#contact"
+      - link:
+          label: FAQs
+          url: /faq
+      - link:
+          label: Membership Terms
+          url: /terms
+copyright: "© 2024 FitZone Gym. All rights reserved."

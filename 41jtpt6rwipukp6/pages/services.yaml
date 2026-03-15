@@ -1,0 +1,166 @@
+id: services_page_001
+name: Services
+slug: services
+page_type: default
+fields:
+  description: Explore our consulting services - Strategy, Operations, Growth, and Digital Transformation
+  title: Our Services - Northstar Solutions
+sections:
+  - block: page-header
+    content:
+      title: Services That Drive Results
+      subtitle: From strategic planning to hands-on implementation, we provide the expertise and support your business needs to thrive.
+  - block: logos
+    content:
+      title: Trusted by industry leaders across sectors
+      logos:
+        - image:
+            url: https://placehold.co/200x80/1e293b/94a3b8?text=Acme+Corp
+            alt: Acme Corp
+        - image:
+            url: https://placehold.co/200x80/1e293b/94a3b8?text=TechFlow
+            alt: TechFlow
+        - image:
+            url: https://placehold.co/200x80/1e293b/94a3b8?text=Innovate+Inc
+            alt: Innovate Inc
+        - image:
+            url: https://placehold.co/200x80/1e293b/94a3b8?text=Global+Dynamics
+            alt: Global Dynamics
+        - image:
+            url: https://placehold.co/200x80/1e293b/94a3b8?text=Peak+Solutions
+            alt: Peak Solutions
+        - image:
+            url: https://placehold.co/200x80/1e293b/94a3b8?text=Horizon+Labs
+            alt: Horizon Labs
+  - block: services
+    content:
+      title: Strategy Consulting
+      subtitle: Chart your course with confidence
+      items:
+        - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>'
+          service_title: Market Entry Strategy
+          description: Comprehensive market analysis, competitive positioning, and go-to-market planning for new products, services, or geographic expansion.
+        - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>'
+          service_title: Corporate Strategy
+          description: Portfolio optimization, M&A advisory, and long-term strategic planning to maximize shareholder value and competitive position.
+        - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>'
+          service_title: Growth Strategy
+          description: Identify and prioritize growth opportunities, develop scaling playbooks, and create sustainable competitive advantages.
+  - block: services
+    content:
+      title: Operations Excellence
+      subtitle: Optimize performance across your organization
+      items:
+        - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>'
+          service_title: Process Optimization
+          description: Streamline workflows, eliminate bottlenecks, and implement lean methodologies to improve efficiency and reduce costs.
+        - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>'
+          service_title: Supply Chain Management
+          description: End-to-end supply chain analysis, vendor optimization, and resilience planning for complex global operations.
+        - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>'
+          service_title: Performance Management
+          description: Design and implement KPI frameworks, dashboards, and accountability systems that drive measurable results.
+  - block: services
+    content:
+      title: Digital Transformation
+      subtitle: Embrace technology as a competitive advantage
+      items:
+        - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>'
+          service_title: Digital Strategy
+          description: Develop a comprehensive digital roadmap aligned with business objectives, from customer experience to internal systems.
+        - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>'
+          service_title: Technology Assessment
+          description: Evaluate your technology stack, identify gaps and opportunities, and create a prioritized implementation plan.
+        - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
+          service_title: Change Management
+          description: Navigate organizational change with proven frameworks for communication, training, and adoption that ensure transformation success.
+  - block: testimonials
+    content:
+      title: What Our Clients Say
+      content:
+        type: doc
+        content:
+          - type: bulletList
+            content:
+              - type: listItem
+                content:
+                  - type: blockquote
+                    content:
+                      - type: paragraph
+                        content:
+                          - type: text
+                            text: Their strategic framework helped us prioritize effectively and avoid costly missteps during our expansion.
+                  - type: paragraph
+                    content:
+                      - type: text
+                        marks:
+                          - type: bold
+                        text: Michael Torres
+                      - type: text
+                        text: " "
+                      - type: text
+                        marks:
+                          - type: italic
+                        text: CEO, Pinnacle Logistics
+              - type: listItem
+                content:
+                  - type: blockquote
+                    content:
+                      - type: paragraph
+                        content:
+                          - type: text
+                            text: The operations assessment uncovered inefficiencies we didn't know existed. ROI was achieved within 6 months.
+                  - type: paragraph
+                    content:
+                      - type: text
+                        marks:
+                          - type: bold
+                        text: Dr. Amanda Liu
+                      - type: text
+                        text: " "
+                      - type: text
+                        marks:
+                          - type: italic
+                        text: COO, Horizon Healthcare
+              - type: listItem
+                content:
+                  - type: blockquote
+                    content:
+                      - type: paragraph
+                        content:
+                          - type: text
+                            text: Northstar guided our digital transformation with clarity and precision. Our team is now 40% more productive.
+                  - type: paragraph
+                    content:
+                      - type: text
+                        marks:
+                          - type: bold
+                        text: Robert Kim
+                      - type: text
+                        text: " "
+                      - type: text
+                        marks:
+                          - type: italic
+                        text: CTO, Velocity Finance
+  - block: faq
+    content:
+      title: Frequently Asked Questions
+      subtitle: Get answers to common questions about working with us
+      items:
+        - question: How long does a typical engagement last?
+          answer: Engagements vary based on scope and complexity. Strategy projects typically run 8-12 weeks, while transformation initiatives may span 6-12 months. We'll provide a clear timeline during our initial consultation.
+        - question: What industries do you specialize in?
+          answer: We have deep expertise in technology, healthcare, financial services, and manufacturing. However, our frameworks and methodologies are adaptable to any industry facing strategic or operational challenges.
+        - question: How do you measure success?
+          answer: We establish clear KPIs at the start of every engagement aligned with your business objectives. These might include revenue growth, cost reduction, efficiency gains, or market share improvements. We track progress continuously and adjust as needed.
+        - question: What makes Northstar different from other consulting firms?
+          answer: We combine the analytical rigor of top-tier consulting with a hands-on implementation approach. Our consultants don't just deliver recommendations—we work alongside your team to drive real change and measurable results.
+        - question: How do we get started?
+          answer: It begins with a free consultation call. We'll discuss your challenges, explore potential approaches, and determine if we're the right fit for your needs. There's no obligation—just a conversation to see how we can help.
+  - block: cta
+    content:
+      title: Not Sure Where to Start?
+      subtitle: Our team will help you identify the right approach for your specific challenges.
+      button:
+        url: /contact
+        label: Book a Free Consultation

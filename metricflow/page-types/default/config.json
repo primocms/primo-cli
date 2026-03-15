@@ -1,0 +1,19 @@
+{
+  "name": "Default",
+  "fields": [
+    {
+      "id": "mf-page-title",
+      "name": "title",
+      "label": "Page Title",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "mf-page-description",
+      "name": "description",
+      "label": "Page Description",
+      "type": "text",
+      "options": null
+    }
+  ]
+}

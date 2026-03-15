@@ -1,0 +1,51 @@
+{
+  "id": "gym-footer",
+  "name": "Footer",
+  "fields": [
+    {
+      "id": "footer-logo",
+      "label": "Logo",
+      "name": "logo",
+      "options": {
+        "field": "logo"
+      },
+      "type": "site-field"
+    },
+    {
+      "id": "footer-tagline",
+      "label": "Tagline",
+      "name": "tagline",
+      "options": {
+        "field": "tagline"
+      },
+      "type": "site-field"
+    },
+    {
+      "id": "footer-link-groups",
+      "label": "Footer Link Groups",
+      "name": "footer_link_groups",
+      "options": {
+        "field": "footer_link_groups"
+      },
+      "type": "site-field"
+    },
+    {
+      "id": "footer-social-links",
+      "label": "Social Links",
+      "name": "social_links",
+      "options": {
+        "field": "social_links"
+      },
+      "type": "site-field"
+    },
+    {
+      "id": "footer-copyright",
+      "label": "Copyright Text",
+      "name": "copyright",
+      "options": {
+        "field": "copyright"
+      },
+      "type": "site-field"
+    }
+  ]
+}

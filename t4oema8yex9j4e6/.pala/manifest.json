@@ -1,0 +1,92 @@
+{
+  "block_fields": {
+    "bridge": {
+      "text": "8o1n3p5id66ogn4"
+    },
+    "built-for": {
+      "text": "898q0dkzeb5hgvr"
+    },
+    "compatible-with": {
+      "icon": "9fkcfm1zitjk868",
+      "items": "v27a13q4o9iyolw",
+      "label": "cm4de9u5ttjapcw",
+      "name": "ugy0tc8dcewsb22",
+      "tagline": "kjjhayr1gau1v0v",
+      "title": "3ku3p6e9ooalc2o"
+    },
+    "cta": {
+      "command": "g0ps0df2jwx3yd6",
+      "description": "j5g06vbqliqcgd8",
+      "link": "j5jo5qeiqhp9bd4",
+      "links": "khn02lld1xlkqok",
+      "title": "wwvj7nhqk187sp2"
+    },
+    "features": {
+      "description": "crhaz9rt1o2hwr7",
+      "icon": "sm2j0riw2hbx96r",
+      "items": "56glbcuvw6xmrjn",
+      "label": "oaom6xoh12bt8hy",
+      "title": "dxucehghdfv8kdx"
+    },
+    "hero": {
+      "badges": "6y20swwzz1qw7by",
+      "compatible_tools": "5elgx4gim25dbei",
+      "cta_primary": "ii6omr4eod6lwck",
+      "cta_secondary": "nc3gevfnwv8o6on",
+      "github_stars": "jzmcg4kzo7haz9i",
+      "github_url": "ziudjs3jnbvo0e5",
+      "headline": "7vpet6ijklqc4h9",
+      "headline_highlight": "vp5u6u7ljqrnxri",
+      "headline_suffix": "bhuhse23gcop7sr",
+      "name": "b01ku5mc0kf11g3",
+      "subheadline": "u9mwqlobbnho0e9",
+      "text": "x3hhcoyuwyoq9qu"
+    },
+    "how-it-works": {
+      "description": "99kc4p6g5sftxe5",
+      "label": "xv8qxzwipp1st0e",
+      "number": "ntgyphkfv6mand2",
+      "steps": "4iteu8dj069lm9h",
+      "title": "r0mcszuimoxcua7"
+    },
+    "problem": {
+      "text_1": "g6gkuqy45ra1xhb",
+      "text_2": "m7jflmca98siftm"
+    },
+    "site-footer": {
+      "link": "xmnw7qg0t524ktf",
+      "links": "hxgrhvfe4raf9vo",
+      "text": "cj21kun2hpq2a58"
+    },
+    "testimonials": {
+      "items": "kbzkfsxaeif6h3w",
+      "label": "pkhth7mz7eyzpv3",
+      "name": "5oi8ildv6rosx7f",
+      "quote": "v2s8qinyodpu9ms",
+      "role": "if0plauk9etps8r",
+      "title": "4q8235hkf44r0kc"
+    }
+  },
+  "blocks": {
+    "bridge": "xyltghb2d385bc2",
+    "built-for": "26hovmo9v3t6u8j",
+    "compatible-with": "qp844mzngusz7lz",
+    "cta": "0uh1ybgucecthvi",
+    "features": "ryuxsri9503v113",
+    "hero": "7k1uvsni17wxn1s",
+    "how-it-works": "8s8xmqiona5uzcp",
+    "problem": "v5fg9vs0x5rbjru",
+    "site-footer": "z4ycag98rxwcrg7",
+    "testimonials": "hkgmh98cv4d8ex6"
+  },
+  "page_type_fields": {
+    "default": {}
+  },
+  "page_types": {
+    "default": "nli82xwam5mrykc"
+  },
+  "pages": {
+    "index": "hneyuke8qo4vov2"
+  },
+  "site_fields": {}
+}

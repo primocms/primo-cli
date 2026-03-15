@@ -1,0 +1,15 @@
+{
+  "id": "blog-listing",
+  "name": "Blog Listing",
+  "fields": [
+    {
+      "id": "blog-posts",
+      "label": "Blog Posts",
+      "name": "posts",
+      "options": {
+        "page_type": "os0b961osqkd1p1"
+      },
+      "type": "page-list"
+    }
+  ]
+}

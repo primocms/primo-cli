@@ -1,0 +1,11 @@
+headline: "Unforgettable Events Begin Here"
+subheadline: "The Grand Hall offers stunning venues for weddings, corporate events, galas, and celebrations of all kinds."
+background_image:
+  url: "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=1920"
+  alt: "Elegant event venue"
+primary_cta:
+  label: "Book a Tour"
+  url: "/contact"
+secondary_cta:
+  label: "View Venues"
+  url: "/venues"

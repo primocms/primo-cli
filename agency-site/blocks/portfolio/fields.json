@@ -1,0 +1,74 @@
+{
+  "id": "agency-portfolio",
+  "name": "Portfolio",
+  "fields": [
+    {
+      "id": "portfolio-badge",
+      "name": "badge",
+      "label": "Badge",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "portfolio-title",
+      "name": "title",
+      "label": "Title",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "portfolio-subtitle",
+      "name": "subtitle",
+      "label": "Subtitle",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "portfolio-projects",
+      "name": "projects",
+      "label": "Projects",
+      "type": "repeater",
+      "options": null
+    },
+    {
+      "id": "project-image",
+      "name": "image",
+      "label": "Image",
+      "type": "image",
+      "parent": "projects",
+      "options": null
+    },
+    {
+      "id": "project-category",
+      "name": "category",
+      "label": "Category",
+      "type": "text",
+      "parent": "projects",
+      "options": null
+    },
+    {
+      "id": "project-title",
+      "name": "project_title",
+      "label": "Title",
+      "type": "text",
+      "parent": "projects",
+      "options": null
+    },
+    {
+      "id": "project-description",
+      "name": "description",
+      "label": "Description",
+      "type": "text",
+      "parent": "projects",
+      "options": null
+    },
+    {
+      "id": "project-link",
+      "name": "link",
+      "label": "Link",
+      "type": "link",
+      "parent": "projects",
+      "options": null
+    }
+  ]
+}

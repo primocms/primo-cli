@@ -1,0 +1,90 @@
+{
+  "id": "gym-pricing",
+  "name": "Pricing",
+  "fields": [
+    {
+      "id": "pricing-badge",
+      "label": "Badge",
+      "name": "badge",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "pricing-title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "pricing-subtitle",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "pricing-plans",
+      "label": "Plans",
+      "name": "plans",
+      "options": null,
+      "type": "repeater"
+    },
+    {
+      "id": "plan-name",
+      "label": "Plan Name",
+      "name": "plan_name",
+      "options": null,
+      "parent": "plans",
+      "type": "text"
+    },
+    {
+      "id": "plan-price",
+      "label": "Price",
+      "name": "price",
+      "options": null,
+      "parent": "plans",
+      "type": "text"
+    },
+    {
+      "id": "plan-period",
+      "label": "Period",
+      "name": "period",
+      "options": null,
+      "parent": "plans",
+      "type": "text"
+    },
+    {
+      "id": "plan-description",
+      "label": "Description",
+      "name": "description",
+      "options": null,
+      "parent": "plans",
+      "type": "text"
+    },
+    {
+      "id": "plan-features",
+      "label": "Features (one per line)",
+      "name": "features_text",
+      "options": null,
+      "parent": "plans",
+      "type": "text"
+    },
+    {
+      "id": "plan-cta",
+      "label": "CTA Button",
+      "name": "cta",
+      "options": null,
+      "parent": "plans",
+      "type": "link"
+    },
+    {
+      "id": "plan-popular",
+      "label": "Popular",
+      "name": "popular",
+      "options": null,
+      "parent": "plans",
+      "type": "switch"
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+id: about
+name: About
+slug: about
+page_type: default
+fields:
+  title: "About Us - Apex Creative"
+  description: "Meet the team behind Apex Creative. We're a passionate group of strategists, designers, and developers."
+sections:
+  - block: header
+    content: {}
+
+  - block: hero
+    content:
+      badge: "About Us"
+      headline: "Passionate Creators, Strategic Thinkers"
+      subheadline: "We're a team of creatives, strategists, and technologists united by a shared passion for building brands that matter. Founded in 2018, we've helped over 100 companies transform their digital presence."
+      primary_cta:
+        label: "Work With Us"
+        url: "/contact"
+      secondary_cta:
+        label: "View Our Work"
+        url: "/work"
+
+  - block: process
+    content:
+      badge: "Our Values"
+      title: "What Drives Us"
+      subtitle: "The principles that guide everything we do."
+      steps:
+        - icon: "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path d='M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z'/><path d='m9 12 2 2 4-4'/></svg>"
+          step_title: "Excellence"
+          description: "We're not satisfied with good enough. We push boundaries and strive for excellence in every project we undertake."
+        - icon: "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path d='M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2'/><circle cx='9' cy='7' r='4'/><path d='M23 21v-2a4 4 0 0 0-3-3.87'/><path d='M16 3.13a4 4 0 0 1 0 7.75'/></svg>"
+          step_title: "Collaboration"
+          description: "We believe the best work happens when we work together. Our clients are partners, not just customers."
+        - icon: "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><polygon points='13 2 3 14 12 14 11 22 21 10 12 10 13 2'/></svg>"
+          step_title: "Innovation"
+          description: "We stay ahead of the curve, embracing new technologies and approaches to deliver cutting-edge solutions."
+        - icon: "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/></svg>"
+          step_title: "Integrity"
+          description: "We're honest, transparent, and always put our clients' interests first. Trust is the foundation of everything we do."
+
+  - block: team
+    content:
+      badge: "The Team"
+      title: "Meet the Minds Behind Apex"
+      subtitle: "A diverse team of talented individuals passionate about creating amazing work."
+      members:
+        - name: "Alex Morgan"
+          role: "Founder & CEO"
+          bio: "15+ years of experience leading creative teams and building brands."
+          linkedin: "https://linkedin.com"
+          twitter: "https://twitter.com"
+        - name: "Jordan Lee"
+          role: "Creative Director"
+          bio: "Award-winning designer with a passion for bold, impactful visual storytelling."
+          linkedin: "https://linkedin.com"
+        - name: "Sam Taylor"
+          role: "Head of Strategy"
+          bio: "Strategic thinker who transforms business challenges into growth opportunities."
+          linkedin: "https://linkedin.com"
+          twitter: "https://twitter.com"
+        - name: "Casey Rivera"
+          role: "Lead Developer"
+          bio: "Full-stack developer focused on building fast, scalable web applications."
+          linkedin: "https://linkedin.com"
+
+  - block: testimonials
+    content:
+      badge: "What Clients Say"
+      title: "Trusted by Industry Leaders"
+      testimonials:
+        - quote: "The Apex team doesn't just execute—they think strategically about every aspect of your brand. True partners in every sense."
+          author: "David Kim"
+          role: "Founder"
+          company: "Horizon Ventures"
+        - quote: "Apex helped us completely reimagine our digital presence. The results exceeded our expectations."
+          author: "Lisa Chen"
+          role: "CMO"
+          company: "Pulse Analytics"
+
+  - block: cta
+    content:
+      title: "Join Our Team"
+      subtitle: "We're always looking for talented people to join our growing team."
+      primary_cta:
+        label: "View Open Positions"
+        url: "/careers"
+      secondary_cta:
+        label: "Contact Us"
+        url: "/contact"
+
+  - block: footer
+    content: {}

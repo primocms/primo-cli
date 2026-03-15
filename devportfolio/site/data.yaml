@@ -1,0 +1,28 @@
+site_name: "Alex Chen"
+logo:
+  type: text
+  text: "AC"
+nav_links:
+  - link:
+      label: "About"
+      url: "/about"
+  - link:
+      label: "Projects"
+      url: "/projects"
+  - link:
+      label: "Contact"
+      url: "/contact"
+header_cta:
+  label: "Resume"
+  url: "/resume.pdf"
+social_links:
+  - platform: github
+    url: "https://github.com/alexchen"
+  - platform: linkedin
+    url: "https://linkedin.com/in/alexchen"
+  - platform: twitter
+    url: "https://twitter.com/alexchen"
+  - platform: email
+    url: "mailto:hello@alexchen.dev"
+tagline: "Full-stack developer crafting digital experiences"
+copyright: "2026 Alex Chen. All rights reserved."

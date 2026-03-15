@@ -1,0 +1,25 @@
+site_name: "Jordan Rivera"
+logo:
+  type: text
+  text: "JR"
+nav_links:
+  - link:
+      label: "About"
+      url: "#about"
+  - link:
+      label: "Projects"
+      url: "#projects"
+  - link:
+      label: "Contact"
+      url: "#contact"
+social_links:
+  - platform: github
+    url: "https://github.com/jordanrivera"
+  - platform: linkedin
+    url: "https://linkedin.com/in/jordanrivera"
+  - platform: twitter
+    url: "https://twitter.com/jordanrivera"
+  - platform: email
+    url: "mailto:hello@jordanrivera.dev"
+footer_text: "Crafting digital experiences with code and creativity"
+copyright: "2026 Jordan Rivera. All rights reserved."

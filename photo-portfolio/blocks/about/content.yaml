@@ -1,0 +1,18 @@
+image:
+  url: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&q=80"
+  alt: "Photographer portrait"
+title: "About Me"
+content: |
+  <p>I'm a visual storyteller based in Los Angeles, specializing in portrait, landscape, and wedding photography. With over a decade behind the lens, I've developed a distinctive style that blends natural light with authentic emotion.</p>
+  <p>My approach is simple: I believe every moment holds a story waiting to be told. Whether capturing the quiet intimacy of a couple's first dance or the raw beauty of a mountain sunrise, I strive to create images that resonate on a deeper level.</p>
+  <p>When I'm not shooting, you'll find me exploring new locations, teaching workshops, or working on personal projects that push my creative boundaries.</p>
+stats:
+  - number: "12+"
+    label: "Years Experience"
+  - number: "500+"
+    label: "Projects Completed"
+  - number: "50+"
+    label: "Awards Won"
+cta:
+  label: "Get in Touch"
+  url: "#contact"

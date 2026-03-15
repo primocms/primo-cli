@@ -1,0 +1,16 @@
+label: HOW IT WORKS
+title: "Describe it. Deploy it. Keep going."
+description: "Tell an AI agent what you want. Hand it off to your team. Come back anytime and change anything."
+steps:
+  - number: "01"
+    title: "Describe what you want"
+    description: "Tell Claude Code, Cursor, or any AI agent to build you a site with Pala. Describe the pages, the design, the content. It creates the components, writes the copy, and structures everything. Push it live in one command."
+    mockup_type: terminal
+  - number: "02"
+    title: "Your team manages it visually"
+    description: "Hand off the site to your client or team. They drag blocks onto pages, edit text and images inline, rearrange sections, and publish — all within the guardrails you defined. No code access, no broken layouts."
+    mockup_type: editor
+  - number: "03"
+    title: "Come back and change anything"
+    description: "Months later, your client wants a blog and online ordering. Pull the site down, tell your AI agent what to add, push it back. Ten minutes, not ten days. The visual editor updates instantly."
+    mockup_type: terminal

@@ -1,0 +1,68 @@
+{
+  "$schema": "../../.schemas/fields.schema.json",
+  "id": "yykigopdv9br00l",
+  "name": "Team",
+  "fields": [
+    {
+      "id": "ezzkqnmfumja8yz",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "lzk9s0z7d0zek42",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "rzoofoqu7120fy0",
+      "label": "Team Members",
+      "name": "members",
+      "options": null,
+      "type": "repeater"
+    },
+    {
+      "id": "3iev7kynoiuu1rf",
+      "label": "Name",
+      "name": "name",
+      "options": null,
+      "parent": "members",
+      "type": "text"
+    },
+    {
+      "id": "g2b71a7ugk6l29z",
+      "label": "Role",
+      "name": "role",
+      "options": null,
+      "parent": "members",
+      "type": "text"
+    },
+    {
+      "id": "dep6og2xhai70vn",
+      "label": "Bio",
+      "name": "bio",
+      "options": null,
+      "parent": "members",
+      "type": "text"
+    },
+    {
+      "id": "aqyg5z89y0z1b3o",
+      "label": "Photo",
+      "name": "photo",
+      "options": null,
+      "parent": "members",
+      "type": "image"
+    },
+    {
+      "id": "b57z0zutpvv3w5x",
+      "label": "LinkedIn URL",
+      "name": "linkedin",
+      "options": null,
+      "parent": "members",
+      "type": "url"
+    }
+  ]
+}

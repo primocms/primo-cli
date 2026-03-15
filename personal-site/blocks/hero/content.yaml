@@ -1,0 +1,11 @@
+greeting: "Hi, I'm"
+name: "Jordan Rivera"
+title: "Designer & Developer"
+bio: "I create thoughtful digital experiences that blend design and technology. Currently crafting products that make a difference."
+primary_cta:
+  label: "View My Work"
+  url: "#projects"
+secondary_cta:
+  label: "Get In Touch"
+  url: "#contact"
+show_socials: true

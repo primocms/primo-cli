@@ -1,0 +1,48 @@
+{
+  "id": "contact",
+  "name": "Contact",
+  "fields": [
+    {
+      "id": "contact_title",
+      "label": "Section Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "contact_subtitle",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "contact_email",
+      "label": "Email",
+      "name": "email",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "contact_phone",
+      "label": "Phone",
+      "name": "phone",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "contact_address",
+      "label": "Address",
+      "name": "address",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "contact_form_endpoint",
+      "label": "Form Endpoint URL",
+      "name": "form_endpoint",
+      "options": null,
+      "type": "text"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+badge: "Features"
+title: "Everything you need to ship faster"
+subtitle: "Powerful features designed to help your team build, deploy, and scale applications."
+features:
+  - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>'
+    title: "Deploy in seconds"
+    description: "Push your code and let us handle the rest. Automatic builds, previews, and rollbacks."
+  - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>'
+    title: "Scale effortlessly"
+    description: "From zero to millions of users. Our infrastructure grows with your success."
+  - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>'
+    title: "Secure by default"
+    description: "Enterprise-grade security without the enterprise complexity."

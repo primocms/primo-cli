@@ -1,0 +1,67 @@
+{
+  "id": "bs-team",
+  "name": "Team",
+  "fields": [
+    {
+      "id": "bs-team-title",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "bs-team-subtitle",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "bs-team-members",
+      "label": "Team Members",
+      "name": "members",
+      "options": null,
+      "type": "repeater"
+    },
+    {
+      "id": "bs-team-member-name",
+      "label": "Name",
+      "name": "name",
+      "options": null,
+      "parent": "members",
+      "type": "text"
+    },
+    {
+      "id": "bs-team-member-role",
+      "label": "Role",
+      "name": "role",
+      "options": null,
+      "parent": "members",
+      "type": "text"
+    },
+    {
+      "id": "bs-team-member-bio",
+      "label": "Bio",
+      "name": "bio",
+      "options": null,
+      "parent": "members",
+      "type": "text"
+    },
+    {
+      "id": "bs-team-member-photo",
+      "label": "Photo",
+      "name": "photo",
+      "options": null,
+      "parent": "members",
+      "type": "image"
+    },
+    {
+      "id": "bs-team-member-instagram",
+      "label": "Instagram",
+      "name": "instagram",
+      "options": null,
+      "parent": "members",
+      "type": "url"
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+site_name: Northstar Solutions
+logo:
+  type: text
+  text: Northstar
+  image:
+    url: ""
+    alt: ""
+favicon:
+  url: ""
+  alt: ""
+site_navigation_links:
+  - link:
+      label: Home
+      url: /
+  - link:
+      label: Services
+      url: /services
+  - link:
+      label: About
+      url: /about
+  - link:
+      label: Contact
+      url: /contact
+tagline: Empowering businesses through strategic consulting and innovative solutions.
+social_links:
+  - platform: linkedin
+    url: https://linkedin.com/company/northstar
+  - platform: twitter
+    url: https://twitter.com/northstar
+  - platform: facebook
+    url: https://facebook.com/northstar
+newsletter_title: Stay Updated
+newsletter_text: Subscribe to our newsletter for insights and updates.
+newsletter_endpoint: https://example.com/api/newsletter
+link_groups:
+  - title: Company
+    links:
+      - link:
+          label: About Us
+          url: /about
+      - link:
+          label: Careers
+          url: /careers
+      - link:
+          label: Case Studies
+          url: /case-studies
+  - title: Services
+    links:
+      - link:
+          label: Strategy Consulting
+          url: /services#strategy
+      - link:
+          label: Operations Excellence
+          url: /services#operations
+      - link:
+          label: Digital Transformation
+          url: /services#digital
+  - title: Resources
+    links:
+      - link:
+          label: Blog
+          url: /blog
+      - link:
+          label: Contact
+          url: /contact
+  - title: Legal
+    links:
+      - link:
+          label: Privacy Policy
+          url: /privacy
+      - link:
+          label: Terms of Service
+          url: /terms
+copyright: © 2025 Northstar Solutions. All rights reserved.

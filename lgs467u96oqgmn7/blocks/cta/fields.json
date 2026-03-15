@@ -1,0 +1,35 @@
+{
+  "$schema": "../../.schemas/fields.schema.json",
+  "id": "ukf5l6aatwkenty",
+  "name": "CTA",
+  "fields": [
+    {
+      "id": "iz42jratts5lzfp",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "rwjbqx6brvlrsli",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "i5zptgjdmazoeo2",
+      "label": "Primary Button",
+      "name": "primary_cta",
+      "options": null,
+      "type": "link"
+    },
+    {
+      "id": "ay7elifhnc1qq3x",
+      "label": "Secondary Button",
+      "name": "secondary_cta",
+      "options": null,
+      "type": "link"
+    }
+  ]
+}

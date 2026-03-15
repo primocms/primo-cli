@@ -1,0 +1,65 @@
+{
+  "$schema": "../../.schemas/page-type-config.schema.json",
+  "allowed_blocks": [
+    "header",
+    "article-header",
+    "basic-content",
+    "cta",
+    "footer"
+  ],
+  "color": "#6366f1",
+  "fields": [
+    {
+      "id": "a6q91f3jq0pn9it",
+      "label": "Page Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "tu6zlsdx7tz14mk",
+      "label": "Meta Description",
+      "name": "description",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "6z0cdbfqgfirvon",
+      "label": "Social Share Image",
+      "name": "og_image",
+      "options": null,
+      "type": "image"
+    },
+    {
+      "id": "s7j35bheliabu6b",
+      "label": "Featured Image",
+      "name": "featured_image",
+      "options": null,
+      "type": "image"
+    },
+    {
+      "id": "cxs8u0bnay0onmq",
+      "label": "Excerpt",
+      "name": "excerpt",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "o7bb5ia4mxc264p",
+      "label": "Author",
+      "name": "author",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "4z5q53wenyo898w",
+      "label": "Publish Date",
+      "name": "publish_date",
+      "options": null,
+      "type": "date"
+    }
+  ],
+  "icon": "iconoir:journal-page",
+  "id": "5rcy2ts350n9np7",
+  "name": "Blog Post"
+}

@@ -1,0 +1,29 @@
+{
+  "id": "mf-stats",
+  "name": "Stats",
+  "fields": [
+    {
+      "id": "mf-stats-list",
+      "name": "stats",
+      "label": "Statistics",
+      "type": "repeater",
+      "options": null
+    },
+    {
+      "id": "mf-stat-value",
+      "name": "value",
+      "label": "Value",
+      "type": "text",
+      "parent": "stats",
+      "options": null
+    },
+    {
+      "id": "mf-stat-label",
+      "name": "label",
+      "label": "Label",
+      "type": "text",
+      "parent": "stats",
+      "options": null
+    }
+  ]
+}

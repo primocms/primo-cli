@@ -1,0 +1,90 @@
+{
+  "id": "event-pricing",
+  "name": "Pricing",
+  "fields": [
+    {
+      "id": "pricing-badge",
+      "name": "badge",
+      "label": "Badge",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "pricing-title",
+      "name": "title",
+      "label": "Title",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "pricing-subtitle",
+      "name": "subtitle",
+      "label": "Subtitle",
+      "type": "text",
+      "options": null
+    },
+    {
+      "id": "pricing-packages",
+      "name": "packages",
+      "label": "Packages",
+      "type": "repeater",
+      "options": null
+    },
+    {
+      "id": "package-name",
+      "name": "name",
+      "label": "Package Name",
+      "type": "text",
+      "parent": "packages",
+      "options": null
+    },
+    {
+      "id": "package-price",
+      "name": "price",
+      "label": "Starting Price",
+      "type": "text",
+      "parent": "packages",
+      "options": null
+    },
+    {
+      "id": "package-description",
+      "name": "description",
+      "label": "Description",
+      "type": "text",
+      "parent": "packages",
+      "options": null
+    },
+    {
+      "id": "package-features",
+      "name": "features",
+      "label": "Features",
+      "type": "repeater",
+      "parent": "packages",
+      "options": null
+    },
+    {
+      "id": "feature-text",
+      "name": "feature",
+      "label": "Feature",
+      "type": "text",
+      "parent": "features",
+      "options": null
+    },
+    {
+      "id": "package-featured",
+      "name": "featured",
+      "label": "Featured Package",
+      "type": "switch",
+      "parent": "packages",
+      "options": null
+    },
+    {
+      "id": "package-cta",
+      "name": "cta",
+      "label": "CTA Button",
+      "type": "link",
+      "parent": "packages",
+      "options": null
+    }
+  ]
+}

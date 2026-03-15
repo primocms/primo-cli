@@ -1,0 +1,14 @@
+{
+  "$schema": "../../.schemas/fields.schema.json",
+  "id": "basic",
+  "name": "Basic Content",
+  "fields": [
+    {
+      "id": "basic-content",
+      "label": "Content",
+      "name": "content",
+      "options": null,
+      "type": "rich-text"
+    }
+  ]
+}

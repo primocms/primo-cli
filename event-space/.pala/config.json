@@ -1,0 +1,13 @@
+{
+  "theme": {
+    "primary": "#B8860B",
+    "primary_dark": "#8B6914",
+    "background": "#FDFBF7",
+    "background_secondary": "#F5F1E8",
+    "text": "#1a1a1a",
+    "text_muted": "#666666",
+    "border_color": "#E8E0D0",
+    "heading_font": "'Playfair Display', Georgia, serif",
+    "body_font": "'Inter', system-ui, sans-serif"
+  }
+}

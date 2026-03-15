@@ -1,0 +1,116 @@
+id: bs-home
+name: Home
+slug: ""
+page_type: default
+fields:
+  title: "Sharp Cuts Barbershop - Classic Cuts in Brooklyn"
+  description: "Experience the art of barbering at Sharp Cuts. Classic cuts, modern style, and premium grooming services in Brooklyn since 1985."
+sections:
+  - block: header
+    content: {}
+
+  - block: hero
+    content:
+      headline: "Classic Cuts. Modern Style."
+      subheadline: "Where tradition meets precision. Experience the art of barbering at Brooklyn's finest shop."
+      primary_cta:
+        label: "Book Appointment"
+        url: "#contact"
+      secondary_cta:
+        label: "View Services"
+        url: "#services"
+
+  - block: services
+    content:
+      title: "Our Services"
+      subtitle: "Premium grooming services by master barbers"
+      services:
+        - service_name: "Classic Haircut"
+          description: "Precision cut with hot towel finish"
+          price: "$35"
+          duration: "30 min"
+        - service_name: "Beard Trim"
+          description: "Shape and line-up with straight razor"
+          price: "$20"
+          duration: "20 min"
+        - service_name: "Haircut & Beard"
+          description: "Complete grooming package"
+          price: "$50"
+          duration: "45 min"
+        - service_name: "Hot Towel Shave"
+          description: "Traditional straight razor shave"
+          price: "$40"
+          duration: "30 min"
+        - service_name: "Kids Cut"
+          description: "For ages 12 and under"
+          price: "$25"
+          duration: "20 min"
+        - service_name: "Senior Cut"
+          description: "For ages 65 and over"
+          price: "$28"
+          duration: "25 min"
+
+  - block: gallery
+    content:
+      title: "Our Work"
+      subtitle: "A showcase of cuts and styles from our master barbers"
+      images:
+        - image:
+            url: ""
+            alt: "Classic fade haircut"
+          caption: "Classic Fade"
+        - image:
+            url: ""
+            alt: "Beard styling"
+          caption: "Beard Styling"
+        - image:
+            url: ""
+            alt: "Modern pompadour"
+          caption: "Modern Pompadour"
+        - image:
+            url: ""
+            alt: "Traditional cut"
+          caption: "Traditional Cut"
+        - image:
+            url: ""
+            alt: "Hot towel shave"
+          caption: "Hot Towel Shave"
+
+  - block: team
+    content:
+      title: "Meet The Barbers"
+      subtitle: "Skilled craftsmen dedicated to their trade"
+      members:
+        - name: "Marcus Thompson"
+          role: "Owner & Master Barber"
+          bio: "40 years behind the chair. Trained in classic techniques, perfected through decades of practice."
+          photo:
+            url: ""
+            alt: "Marcus Thompson"
+          instagram: "https://instagram.com"
+        - name: "James Rivera"
+          role: "Senior Barber"
+          bio: "Specializes in modern fades and detailed line work. 15 years experience."
+          photo:
+            url: ""
+            alt: "James Rivera"
+          instagram: "https://instagram.com"
+        - name: "DeShawn Williams"
+          role: "Barber"
+          bio: "Expert in beard styling and hot towel shaves. Award-winning barber since 2018."
+          photo:
+            url: ""
+            alt: "DeShawn Williams"
+          instagram: "https://instagram.com"
+
+  - block: contact
+    content:
+      title: "Visit Us"
+      subtitle: "Walk-ins welcome. Appointments recommended on weekends."
+      map_embed: ""
+      booking_cta:
+        label: "Book Your Appointment"
+        url: "tel:+15558675309"
+
+  - block: footer
+    content: {}

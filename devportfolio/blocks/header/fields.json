@@ -1,0 +1,13 @@
+{
+  "id": "header-block",
+  "name": "Header",
+  "fields": [
+    {
+      "id": "header-info",
+      "label": "Header uses site-level navigation and logo settings",
+      "name": "info",
+      "options": null,
+      "type": "info"
+    }
+  ]
+}

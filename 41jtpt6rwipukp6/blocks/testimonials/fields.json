@@ -1,0 +1,20 @@
+{
+  "id": "testimonials",
+  "name": "Testimonials",
+  "fields": [
+    {
+      "id": "testimonials_title",
+      "label": "Section Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "testimonials_content",
+      "label": "Testimonials",
+      "name": "content",
+      "options": null,
+      "type": "rich-text"
+    }
+  ]
+}

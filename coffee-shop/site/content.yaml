@@ -1,0 +1,35 @@
+site_name: "Ember & Brew"
+logo:
+  type: "text"
+  text: "Ember & Brew"
+  image:
+    url: ""
+    alt: ""
+tagline: "Artisan coffee roasted with care, served with love."
+phone: "(555) 234-5678"
+email: "hello@emberandbrew.com"
+address: "742 Oak Street, Portland, OR 97205"
+nav_links:
+  - link:
+      label: "Menu"
+      url: "#menu"
+  - link:
+      label: "About"
+      url: "#about"
+  - link:
+      label: "Visit"
+      url: "#location"
+header_cta:
+  label: "Order Online"
+  url: "#order"
+social_links:
+  - platform: "instagram"
+    url: "https://instagram.com/emberandbrew"
+  - platform: "facebook"
+    url: "https://facebook.com/emberandbrew"
+hours:
+  - days: "Monday - Friday"
+    time: "6:00 AM - 7:00 PM"
+  - days: "Saturday - Sunday"
+    time: "7:00 AM - 6:00 PM"
+copyright: "2026 Ember & Brew Coffee. All rights reserved."

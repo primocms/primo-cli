@@ -1,0 +1,63 @@
+site_name: "SaaSify"
+logo:
+  type: "text"
+  text: "SaaSify"
+  image:
+    url: ""
+    alt: ""
+tagline: "The all-in-one platform that helps your team build, deploy, and scale applications without the complexity."
+nav_links:
+  - link:
+      label: "Features"
+      url: "#features"
+  - link:
+      label: "Pricing"
+      url: "#pricing"
+  - link:
+      label: "About"
+      url: "/about"
+  - link:
+      label: "Contact"
+      url: "/contact"
+header_cta:
+  label: "Get Started"
+  url: "#signup"
+social_links:
+  - platform: "twitter"
+    url: "https://twitter.com/saasify"
+  - platform: "linkedin"
+    url: "https://linkedin.com/company/saasify"
+  - platform: "github"
+    url: "https://github.com/saasify"
+footer_link_groups:
+  - title: "Product"
+    links:
+      - link:
+          label: "Features"
+          url: "#features"
+      - link:
+          label: "Pricing"
+          url: "#pricing"
+      - link:
+          label: "Changelog"
+          url: "/changelog"
+  - title: "Company"
+    links:
+      - link:
+          label: "About"
+          url: "/about"
+      - link:
+          label: "Blog"
+          url: "/blog"
+      - link:
+          label: "Contact"
+          url: "/contact"
+  - title: "Legal"
+    links:
+      - link:
+          label: "Privacy"
+          url: "/privacy"
+      - link:
+          label: "Terms"
+          url: "/terms"
+copyright: "© 2026 SaaSify. All rights reserved."

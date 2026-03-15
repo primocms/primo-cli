@@ -1,0 +1,91 @@
+{
+  "$schema": "../../.schemas/fields.schema.json",
+  "id": "n438jquwlku5xka",
+  "name": "Pricing",
+  "fields": [
+    {
+      "id": "gn1e73ph2d0h4yc",
+      "label": "Badge",
+      "name": "badge",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "o8p9wfuqleiue2d",
+      "label": "Title",
+      "name": "title",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "oc10ipcgnx7xfn0",
+      "label": "Subtitle",
+      "name": "subtitle",
+      "options": null,
+      "type": "text"
+    },
+    {
+      "id": "qs8v5id2g18app0",
+      "label": "Plans",
+      "name": "plans",
+      "options": null,
+      "type": "repeater"
+    },
+    {
+      "id": "2tae9p6bh20xerg",
+      "label": "Plan Name",
+      "name": "plan_name",
+      "options": null,
+      "parent": "plans",
+      "type": "text"
+    },
+    {
+      "id": "8rfzxpw6l7ir5w9",
+      "label": "Price",
+      "name": "price",
+      "options": null,
+      "parent": "plans",
+      "type": "text"
+    },
+    {
+      "id": "aflilvtlrn37nab",
+      "label": "Period",
+      "name": "period",
+      "options": null,
+      "parent": "plans",
+      "type": "text"
+    },
+    {
+      "id": "o0khtzfrphgcb93",
+      "label": "Description",
+      "name": "description",
+      "options": null,
+      "parent": "plans",
+      "type": "text"
+    },
+    {
+      "id": "o8aksmg9d41rss6",
+      "label": "Features (one per line)",
+      "name": "features_text",
+      "options": null,
+      "parent": "plans",
+      "type": "text"
+    },
+    {
+      "id": "woyrf08ztuqhobx",
+      "label": "CTA Button",
+      "name": "cta",
+      "options": null,
+      "parent": "plans",
+      "type": "link"
+    },
+    {
+      "id": "7yqcl3dx6yq56qi",
+      "label": "Popular",
+      "name": "popular",
+      "options": null,
+      "parent": "plans",
+      "type": "switch"
+    }
+  ]
+}

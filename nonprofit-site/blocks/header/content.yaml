@@ -1,0 +1,19 @@
+logo:
+  type: "text"
+  text: "Hope Foundation"
+nav_links:
+  - link:
+      label: "About"
+      url: "#mission"
+  - link:
+      label: "Programs"
+      url: "#programs"
+  - link:
+      label: "Impact"
+      url: "#impact"
+  - link:
+      label: "Get Involved"
+      url: "#donate"
+cta:
+  label: "Donate"
+  url: "#donate"
