@@ -1,18 +1,18 @@
-# Pala CLI
+# Primo CLI
 
-Local development CLI for [Pala](https://palacms.com) - build and edit sites with a visual CMS.
+Local development CLI for [Primo](https://primocms.org) - build and edit sites with a visual CMS.
 
 ## Installation
 
 ```bash
-npm install -g pala-cli
+npm install -g primo-cli
 ```
 
 ## Quick Start
 
 ```bash
 # Create a new site
-pala new my-site
+primo new my-site
 
 # This starts the local CMS automatically
 # Edit at: http://my-site.localhost:3000/admin/site
@@ -21,23 +21,23 @@ pala new my-site
 
 ## Commands
 
-### `pala new [name]`
+### `primo new [name]`
 
 Create a new site with starter files.
 
 ```bash
-pala new                    # Interactive prompt for name
-pala new my-site            # Create "my-site" directory
-pala new --skip-dev         # Create files without starting CMS
+primo new                    # Interactive prompt for name
+primo new my-site            # Create "my-site" directory
+primo new --skip-dev         # Create files without starting CMS
 ```
 
-### `pala dev`
+### `primo dev`
 
 Start the local CMS server. Watches for file changes and syncs edits from the CMS back to local files.
 
 ```bash
-pala dev                    # Start in current directory
-pala dev -p 8080            # Use custom port
+primo dev                    # Start in current directory
+primo dev -p 8080            # Use custom port
 ```
 
 Supports multi-site mode - put multiple site folders in one directory with a `server.json`:
@@ -46,13 +46,13 @@ Supports multi-site mode - put multiple site folders in one directory with a `se
 { "port": 3000 }
 ```
 
-### `pala push`
+### `primo push`
 
-Push local files to a hosted Pala instance.
+Push local files to a hosted Primo instance.
 
 ```bash
-pala push -s https://cms.example.com --site abc123
-pala push --preview         # Preview changes without applying
+primo push -s https://cms.example.com --site abc123
+primo push --preview         # Preview changes without applying
 ```
 
 Options:
@@ -62,13 +62,13 @@ Options:
 - `-t, --token <token>` - Auth token
 - `--preview` - Preview only
 
-### `pala pull`
+### `primo pull`
 
-Pull from a hosted Pala instance to local files.
+Pull from a hosted Primo instance to local files.
 
 ```bash
-pala pull -s https://cms.example.com
-pala pull --site abc123 -o ./my-site
+primo pull -s https://cms.example.com
+primo pull --site abc123 -o ./my-site
 ```
 
 Options:
@@ -77,39 +77,39 @@ Options:
 - `-o, --output <dir>` - Output directory (default: `.`)
 - `-t, --token <token>` - Auth token
 
-### `pala login`
+### `primo login`
 
-Authenticate with a hosted Pala instance.
+Authenticate with a hosted Primo instance.
 
 ```bash
-pala login https://cms.example.com
-pala login https://cms.example.com -e user@example.com
+primo login https://cms.example.com
+primo login https://cms.example.com -e user@example.com
 ```
 
-### `pala publish`
+### `primo publish`
 
 Deploy your site with CMS to Railway or Fly.io.
 
 ```bash
-pala publish                # Interactive provider selection
-pala publish -p railway     # Deploy to Railway
-pala publish -p fly         # Deploy to Fly.io
+primo publish                # Interactive provider selection
+primo publish -p railway     # Deploy to Railway
+primo publish -p fly         # Deploy to Fly.io
 ```
 
-### `pala validate`
+### `primo validate`
 
 Check site structure for errors.
 
 ```bash
-pala validate
-pala validate --strict      # Strict mode
+primo validate
+primo validate --strict      # Strict mode
 ```
 
 ## Site Structure
 
 ```
 my-site/
-├── pala.json           # Site config (name, site_id, host)
+├── primo.json          # Site config (name, site_id, host)
 ├── blocks/             # Svelte components
 │   └── hero/
 │       ├── component.svelte
@@ -130,4 +130,4 @@ my-site/
 ## Requirements
 
 - Node.js 18+
-- For `pala publish`: Railway CLI or Fly.io CLI
+- For `primo publish`: Railway CLI or Fly.io CLI
