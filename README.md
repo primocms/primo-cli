@@ -1,227 +1,133 @@
-# Pala Marketing Site
+# Pala CLI
 
-Pala site exported for local development.
+Local development CLI for [Pala](https://palacms.com) - build and edit sites with a visual CMS.
 
-## Structure
+## Installation
 
-```
-blocks/           # Svelte components with content fields
-  {name}/
-    component.svelte
-    fields.json
-    content.yaml  # Default field values (optional)
-page-types/       # Page templates
-  {name}/
-    config.json
-pages/            # Page content (YAML)
-  index.yaml      # Homepage
-  contact.yaml    # Leaf page (/contact)
-  about/          # Section with children
-    index.yaml    # /about
-    team.yaml     # /about/team
-site/             # Site-wide settings
-  fields.json
-  content.yaml
-.pala/            # Internal metadata
+```bash
+npm install -g pala-cli
 ```
 
-## Creating Blocks
+## Quick Start
 
-Each block needs two files:
+```bash
+# Create a new site
+pala new my-site
 
-**component.svelte** - Svelte 5 component:
-```svelte
-<h1>{headline}</h1>
-{#if image?.url}
-  <img src={image.url} alt={image.alt} />
-{/if}
-
-<style>
-  h1 { font-size: 2rem; }
-</style>
+# This starts the local CMS automatically
+# Edit at: http://my-site.localhost:3000/admin/site
+# Preview at: http://my-site.localhost:3000/
 ```
 
-**fields.json** - Field definitions:
+## Commands
+
+### `pala new [name]`
+
+Create a new site with starter files.
+
+```bash
+pala new                    # Interactive prompt for name
+pala new my-site            # Create "my-site" directory
+pala new --skip-dev         # Create files without starting CMS
+```
+
+### `pala dev`
+
+Start the local CMS server. Watches for file changes and syncs edits from the CMS back to local files.
+
+```bash
+pala dev                    # Start in current directory
+pala dev -p 8080            # Use custom port
+```
+
+Supports multi-site mode - put multiple site folders in one directory with a `server.json`:
+
 ```json
-{
-  "name": "Hero",
-  "fields": [
-    { "name": "headline", "label": "Headline", "type": "text" },
-    { "name": "image", "label": "Image", "type": "image" }
-  ]
-}
+{ "port": 3000 }
 ```
 
-## Field Types
+### `pala push`
 
-### text
-Single-line text input.
-```svelte
-<h1>{headline}</h1>
+Push local files to a hosted Pala instance.
+
+```bash
+pala push -s https://cms.example.com --site abc123
+pala push --preview         # Preview changes without applying
 ```
 
-### rich-text
-WYSIWYG editor. Outputs HTML.
-```svelte
-{@html content}
+Options:
+- `-s, --server <url>` - Server URL
+- `--site <id>` - Site ID
+- `-d, --dir <dir>` - Directory (default: `.`)
+- `-t, --token <token>` - Auth token
+- `--preview` - Preview only
+
+### `pala pull`
+
+Pull from a hosted Pala instance to local files.
+
+```bash
+pala pull -s https://cms.example.com
+pala pull --site abc123 -o ./my-site
 ```
 
-### markdown
-Markdown editor. Outputs HTML.
-```svelte
-{@html body}
+Options:
+- `-s, --server <url>` - Server URL (auto-detects local)
+- `--site <id>` - Site ID (interactive if not provided)
+- `-o, --output <dir>` - Output directory (default: `.`)
+- `-t, --token <token>` - Auth token
+
+### `pala login`
+
+Authenticate with a hosted Pala instance.
+
+```bash
+pala login https://cms.example.com
+pala login https://cms.example.com -e user@example.com
 ```
 
-### image
-Image upload. Returns `{ url, alt, width, height }`.
-```svelte
-{#if image?.url}
-  <img src={image.url} alt={image.alt} />
-{/if}
+### `pala publish`
+
+Deploy your site with CMS to Railway or Fly.io.
+
+```bash
+pala publish                # Interactive provider selection
+pala publish -p railway     # Deploy to Railway
+pala publish -p fly         # Deploy to Fly.io
 ```
 
-### link
-URL with label. Returns `{ url, label }`.
-```svelte
-{#if cta?.url}
-  <a href={cta.url}>{cta.label}</a>
-{/if}
+### `pala validate`
+
+Check site structure for errors.
+
+```bash
+pala validate
+pala validate --strict      # Strict mode
 ```
 
-### url
-Plain URL string.
-```svelte
-<a href={website_url}>Visit</a>
+## Site Structure
+
+```
+my-site/
+├── pala.json           # Site config (name, site_id, host)
+├── blocks/             # Svelte components
+│   └── hero/
+│       ├── component.svelte
+│       ├── fields.json
+│       └── content.yaml
+├── pages/              # Page content (YAML)
+│   └── index.yaml
+├── page-types/         # Page templates
+│   └── default/
+│       └── config.json
+├── site/               # Site-wide settings
+│   ├── fields.json
+│   ├── content.yaml
+│   └── head.svelte
+└── uploads/            # Media files
 ```
 
-### icon
-Icon picker. Returns SVG string.
-```svelte
-{@html icon}
-```
+## Requirements
 
-### number
-Numeric input.
-```json
-{ "name": "columns", "type": "number", "options": { "min": 1, "max": 6 } }
-```
-
-### switch
-Boolean toggle.
-```svelte
-{#if show_title}<h1>{title}</h1>{/if}
-```
-
-### select
-Dropdown selection.
-```json
-{ "name": "align", "type": "select", "options": { "choices": ["left", "center", "right"] } }
-```
-```svelte
-<div class="text-{align}">{content}</div>
-```
-
-### repeater
-List of items with nested fields.
-```json
-{
-  "name": "features",
-  "type": "repeater",
-  "options": {
-    "fields": [
-      { "name": "title", "type": "text" },
-      { "name": "description", "type": "text" }
-    ]
-  }
-}
-```
-```svelte
-{#each features as feature}
-  <div>
-    <h3>{feature.title}</h3>
-    <p>{feature.description}</p>
-  </div>
-{/each}
-```
-
-### group
-Nested object of fields.
-```json
-{
-  "name": "author",
-  "type": "group",
-  "options": {
-    "fields": [
-      { "name": "name", "type": "text" },
-      { "name": "avatar", "type": "image" }
-    ]
-  }
-}
-```
-```svelte
-<div>{author.name}</div>
-{#if author.avatar?.url}<img src={author.avatar.url} />{/if}
-```
-
-### page
-Reference to another page. Returns page data with `_meta.url`.
-```json
-{ "name": "featured_post", "type": "page", "options": { "page_type": "blog-post" } }
-```
-
-### page-list
-All pages of a type.
-```json
-{ "name": "posts", "type": "page-list", "options": { "page_type": "blog-post" } }
-```
-
-### page-field
-Reference a field from the current page type.
-
-### site-field
-Reference a site-wide field.
-
-### slider
-Range slider for numeric values.
-```json
-{ "name": "opacity", "type": "slider", "options": { "min": 0, "max": 100, "step": 10 } }
-```
-
-### date
-Date picker.
-
-### info
-Display-only text for editors (not rendered in component).
-
-## Svelte 5 Syntax
-
-Components use Svelte 5:
-- `$state()` for reactive variables
-- `$derived()` for computed values
-- `$effect()` for side effects
-- `onclick={handler}` not `on:click={handler}`
-
-## This Site
-
-### Blocks
-
-- `features` - Features
-- `cta` - CTA
-- `problem` - Problem
-- `how-it-works` - How It Works
-- `site-footer` - Site Footer
-- `compatible-with` - Compatible With
-- `hero` - Hero
-- `bridge` - Bridge
-- `built-for` - Built For
-- `testimonials` - Testimonials
-
-### Page Types
-
-- `default` - Default
-
-## Workflow
-
-1. Edit blocks, pages, or site settings locally
-2. Run `pala dev` to preview changes
-3. Run `pala import` to push changes back to server
+- Node.js 18+
+- For `pala publish`: Railway CLI or Fly.io CLI
