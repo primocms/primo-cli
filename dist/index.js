@@ -1,59 +1,70 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { export_site } from './commands/export.js';
-import { import_site } from './commands/import.js';
+import { new_site } from './commands/new.js';
+import { pull_site } from './commands/pull.js';
+import { push_site } from './commands/push.js';
 import { dev_server } from './commands/dev.js';
 import { login } from './commands/login.js';
 import { validate_site } from './commands/validate.js';
 import { publish } from './commands/publish.js';
+import { build_site } from './commands/build.js';
 const program = new Command();
 program
     .name('pala')
-    .description('CLI for local Pala development')
+    .description('AI builds it, humans edit it')
     .version('0.1.0');
 program
+    .command('new [name]')
+    .description('Create a new site and start local CMS')
+    .option('-t, --template <template>', 'Starter template')
+    .option('--skip-dev', 'Create files only, don\'t start CMS')
+    .action((name, options) => new_site({ name, ...options }));
+program
+    .command('dev')
+    .description('Start local CMS')
+    .option('-d, --dir <dir>', 'Site directory', '.')
+    .option('-p, --port <port>', 'Port', '3000')
+    .action(dev_server);
+program
+    .command('publish')
+    .description('Deploy site with CMS')
+    .option('-d, --dir <dir>', 'Site directory', '.')
+    .option('-p, --provider <provider>', 'Provider (railway, fly)')
+    .action(publish);
+program
+    .command('push')
+    .description('Push local files to hosted CMS')
+    .option('-s, --server <url>', 'Server URL')
+    .option('--site <id>', 'Site ID')
+    .option('-d, --dir <dir>', 'Directory', '.')
+    .option('-t, --token <token>', 'Auth token')
+    .option('--preview', 'Preview only')
+    .action(push_site);
+program
+    .command('pull')
+    .description('Pull from hosted CMS to local files')
+    .option('-s, --server <url>', 'Server URL (auto-detects local)')
+    .option('--site <id>', 'Site ID (interactive if not provided)')
+    .option('-o, --output <dir>', 'Output directory', '.')
+    .option('-t, --token <token>', 'Auth token')
+    .action(pull_site);
+program
     .command('login')
-    .description('Login to a Pala server')
-    .argument('<server>', 'Pala server URL (e.g., pala.example.com)')
-    .option('-e, --email <email>', 'Email address')
+    .description('Login to hosted CMS')
+    .argument('<server>', 'Server URL')
+    .option('-e, --email <email>', 'Email')
     .option('-p, --password <password>', 'Password')
     .action((server, options) => login({ server, ...options }));
 program
-    .command('export')
-    .description('Export a site to local files')
-    .requiredOption('-s, --server <url>', 'Pala server URL (e.g., https://pala.example.com)')
-    .requiredOption('--site <id>', 'Site ID to export')
-    .option('-o, --output <dir>', 'Output directory', '.')
-    .option('-t, --token <token>', 'Authentication token')
-    .action(export_site);
-program
-    .command('import')
-    .description('Import local files back to a Pala server')
-    .option('-s, --server <url>', 'Pala server URL (reads from pala.json if not provided)')
-    .option('--site <id>', 'Site ID (reads from pala.json if not provided)')
-    .option('-d, --dir <dir>', 'Directory to import from', '.')
-    .option('-t, --token <token>', 'Authentication token')
-    .option('--preview', 'Preview changes without applying them')
-    .action(import_site);
-program
-    .command('dev')
-    .description('Start local development server (optionally export from remote first)')
-    .option('-d, --dir <dir>', 'Site directory', '.')
-    .option('-p, --port <port>', 'Port to run on', '3000')
-    .option('-s, --server <url>', 'Pala server URL to export from')
-    .option('--site <id>', 'Site ID to export')
-    .option('-t, --token <token>', 'Authentication token')
-    .action(dev_server);
-program
     .command('validate')
-    .description('Validate site structure and fields')
-    .option('-d, --dir <dir>', 'Site directory to validate', '.')
-    .option('--strict', 'Enable strict validation (warnings as errors)')
+    .description('Validate site structure')
+    .option('-d, --dir <dir>', 'Directory', '.')
+    .option('--strict', 'Strict mode')
     .action(validate_site);
 program
-    .command('publish')
-    .description('Build and publish site to a hosting provider or Primo server')
+    .command('build')
+    .description('Build static site')
     .option('-d, --dir <dir>', 'Site directory', '.')
-    .option('-p, --provider <provider>', 'Provider (vercel, netlify, cloudflare, primo)')
-    .action(publish);
+    .option('-o, --output <dir>', 'Output directory', 'dist')
+    .action(build_site);
 program.parse();

@@ -105,6 +105,29 @@ primo validate
 primo validate --strict      # Strict mode
 ```
 
+### `primo build`
+
+Build static HTML site for deployment to any static host.
+
+```bash
+primo build                  # Output to ./dist
+primo build -o ./public      # Custom output directory
+```
+
+Deploy the output anywhere:
+```bash
+# Netlify
+npx netlify deploy --prod --dir=dist
+
+# Vercel
+npx vercel dist
+
+# Cloudflare Pages
+npx wrangler pages deploy dist
+
+# Or just push to a repo connected to any static host
+```
+
 ## Site Structure
 
 ```
