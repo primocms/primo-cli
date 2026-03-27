@@ -13,17 +13,6 @@ dist/
 .playwright-mcp/
 .claude/
 
-# Site files (shouldn't be in CLI repo)
-blocks/
-pages/
-page-types/
-site/
-uploads/
-schemas/
-primo.json
-pala.json
-server.json
-
 # Logs
 *.log
 
