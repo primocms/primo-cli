@@ -3,36 +3,135 @@ import path from 'path'
 import chalk from 'chalk'
 import ora from 'ora'
 import extract from 'extract-zip'
+import inquirer from 'inquirer'
 import { get_auth_token } from '../utils/auth.js'
 
-interface ExportOptions {
-	server: string
-	site: string
+interface PullOptions {
+	server?: string
+	site?: string
 	output: string
 	token?: string
 }
 
-export async function export_site(options: ExportOptions) {
-	const spinner = ora('Connecting to server...').start()
+async function detect_server(): Promise<string | null> {
+	// Check common local ports
+	const ports = [3000, 8080, 5173]
+
+	for (const port of ports) {
+		try {
+			const url = `http://127.0.0.1:${port}`
+			const response = await fetch(`${url}/api/health`, {
+				signal: AbortSignal.timeout(500)
+			})
+			if (response.ok) {
+				return url
+			}
+		} catch {
+			// Not running on this port
+		}
+	}
+
+	return null
+}
+
+interface Site {
+	id: string
+	name: string
+	host: string
+}
+
+export async function pull_site(options: PullOptions) {
+	const spinner = ora('Connecting...').start()
 
 	try {
-		// Get auth token
-		const token = options.token || await get_auth_token(options.server)
-		if (!token) {
-			spinner.fail('Authentication required. Use --token or run `pala login` first.')
-			process.exit(1)
+		// Detect or use provided server
+		let server: string
+		if (options.server) {
+			server = options.server
+		} else {
+			spinner.text = 'Looking for local server...'
+			const detected = await detect_server()
+			// Default to localhost:3000 if no server detected
+			server = detected || 'http://localhost:3000'
+			spinner.text = `Using ${server}`
 		}
 
-		// Create output directory
-		const output_dir = path.resolve(options.output)
+		// Get auth token (may not be needed for local)
+		const token = options.token || await get_auth_token(server)
+		// Local servers may not require auth
+		const headers: Record<string, string> = {}
+		if (token) {
+			headers['Authorization'] = `Bearer ${token}`
+		}
+
+		let site_id = options.site
+		let site_host: string | undefined
+
+		// If no site specified, show interactive selection
+		if (!site_id) {
+			spinner.text = 'Fetching sites...'
+			const sites_response = await fetch(`${server}/api/collections/sites/records`, {
+				headers
+			})
+
+			if (!sites_response.ok) {
+				spinner.fail('Failed to fetch sites')
+				process.exit(1)
+			}
+
+			const sites_data = await sites_response.json() as { items: Site[] }
+			const sites = sites_data.items || []
+
+			if (sites.length === 0) {
+				spinner.fail('No sites found on this server')
+				process.exit(1)
+			}
+
+			spinner.stop()
+
+			const { selected_site } = await inquirer.prompt([{
+				type: 'list',
+				name: 'selected_site',
+				message: 'Select a site to pull:',
+				choices: sites.map(site => ({
+					name: `${site.name} ${chalk.dim(`(${site.host})`)}`,
+					value: site
+				}))
+			}])
+
+			site_id = selected_site.id
+			site_host = selected_site.host
+
+			spinner.start('Exporting site...')
+		} else {
+			// Fetch site info to get hostname for folder name
+			spinner.text = 'Fetching site info...'
+			const site_response = await fetch(`${server}/api/collections/sites/records/${site_id}`, {
+				headers
+			})
+
+			if (site_response.ok) {
+				const site_data = await site_response.json() as Site
+				site_host = site_data.host
+			}
+		}
+
+		let output_dir = path.resolve(options.output)
+
+		// If output is default (.), use hostname as folder name
+		if (options.output === '.' && site_host) {
+			const hostname = site_host.split(':')[0]
+			if (hostname && hostname !== 'localhost') {
+				output_dir = path.resolve(hostname)
+			}
+		}
+
 		await fs.mkdir(output_dir, { recursive: true })
 
 		// Fetch the export
 		spinner.text = 'Exporting site...'
-		const response = await fetch(`${options.server}/api/palacms/export/${options.site}`, {
-			headers: {
-				'Authorization': `Bearer ${token}`
-			}
+		const response = await fetch(`${server}/api/palacms/export/${site_id}`, {
+			headers
 		})
 
 		if (!response.ok) {
@@ -43,7 +142,7 @@ export async function export_site(options: ExportOptions) {
 
 		// Save ZIP temporarily
 		const zip_data = await response.arrayBuffer()
-		const temp_zip = path.join(output_dir, '.pala-export.zip')
+		const temp_zip = path.join(output_dir, '.primo-export.zip')
 		await fs.writeFile(temp_zip, Buffer.from(zip_data))
 
 		// Extract ZIP
@@ -71,7 +170,7 @@ export async function export_site(options: ExportOptions) {
 		console.log(chalk.dim(`    pages/      ${files.pages} pages`))
 		console.log('')
 		console.log(chalk.green('  Ready for local development!'))
-		console.log(chalk.dim('  Run `pala dev` to start the local server'))
+		console.log(chalk.dim('  Run `primo dev` to start the local server'))
 
 	} catch (error) {
 		spinner.fail(`Export failed: ${error instanceof Error ? error.message : error}`)

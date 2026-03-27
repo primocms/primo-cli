@@ -8,13 +8,14 @@ import chalk from 'chalk'
 import ora from 'ora'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const PALA_HOME = path.join(os.homedir(), '.pala')
-const BIN_DIR = path.join(PALA_HOME, 'bin')
-const DATA_DIR = path.join(PALA_HOME, 'data')
+const PRIMO_HOME = path.join(os.homedir(), '.primo')
+const BIN_DIR = path.join(PRIMO_HOME, 'bin')
+const DATA_DIR = path.join(PRIMO_HOME, 'data')
 const VERSION = '0.1.0' // TODO: fetch latest from GitHub
 
 // Path to locally built binary (for development)
-const LOCAL_BINARY = path.resolve(__dirname, '..', '..', '..', 'palacms')
+// The binary is at palacms/palacms (inside the palacms repo directory)
+const LOCAL_BINARY = path.resolve(__dirname, '..', '..', '..', 'palacms', 'palacms')
 
 interface PlatformInfo {
 	os: string
@@ -78,15 +79,8 @@ export async function get_binary_path(): Promise<string> {
 	return path.join(BIN_DIR, `palacms${platform.ext}`)
 }
 
-export function get_data_dir(site_name?: string): string {
-	if (site_name) {
-		return path.join(DATA_DIR, site_name)
-	}
-	return DATA_DIR
-}
-
-export async function ensure_data_dir(site_name: string): Promise<string> {
-	const data_dir = get_data_dir(site_name)
+export async function ensure_data_dir(base_dir: string): Promise<string> {
+	const data_dir = path.join(base_dir, '.primo')
 	await fs.mkdir(data_dir, { recursive: true })
 	return data_dir
 }

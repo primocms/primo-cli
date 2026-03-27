@@ -48,14 +48,14 @@ export async function build_site(options: BuildOptions) {
 		const output_dir = path.resolve(options.output)
 
 		// Read site config
-		const config_path = path.join(site_dir, 'pala.json')
+		const config_path = path.join(site_dir, 'primo.json')
 		let config: SiteConfig
 
 		try {
 			const config_data = await fs.readFile(config_path, 'utf-8')
 			config = JSON.parse(config_data)
 		} catch {
-			spinner.fail('No pala.json found. Run `primo new` first.')
+			spinner.fail('No primo.json found. Run `primo new` first.')
 			process.exit(1)
 		}
 

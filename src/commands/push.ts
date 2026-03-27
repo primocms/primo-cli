@@ -5,7 +5,7 @@ import ora from 'ora'
 import archiver from 'archiver'
 import { get_auth_token } from '../utils/auth.js'
 
-interface ImportOptions {
+interface PushOptions {
 	server?: string
 	site?: string
 	dir: string
@@ -20,21 +20,21 @@ interface PalaConfig {
 	server?: string
 }
 
-interface ImportDiff {
+interface PushDiff {
 	blocks: { added: string[]; modified: string[]; deleted: string[] }
 	page_types: { added: string[]; modified: string[]; deleted: string[] }
 	pages: { added: string[]; modified: string[]; deleted: string[] }
 	site: { added: string[]; modified: string[]; deleted: string[] }
 }
 
-export async function import_site(options: ImportOptions) {
+export async function push_site(options: PushOptions) {
 	const spinner = ora('Reading local files...').start()
 
 	try {
 		const site_dir = path.resolve(options.dir)
 
-		// Read pala.json for server/site info
-		const config_path = path.join(site_dir, 'pala.json')
+		// Read primo.json for server/site info
+		const config_path = path.join(site_dir, 'primo.json')
 		let config: PalaConfig | null = null
 
 		try {
@@ -48,19 +48,19 @@ export async function import_site(options: ImportOptions) {
 		const site_id = options.site || config?.site_id
 
 		if (!server) {
-			spinner.fail('Server URL required. Use --server or ensure pala.json has server field.')
+			spinner.fail('Server URL required. Use --server or add server field to primo.json.')
 			process.exit(1)
 		}
 
 		if (!site_id) {
-			spinner.fail('Site ID required. Use --site or ensure pala.json has site_id field.')
+			spinner.fail('Site ID required. Use --site or add site_id field to primo.json.')
 			process.exit(1)
 		}
 
 		// Get auth token
 		const token = options.token || await get_auth_token(server)
 		if (!token) {
-			spinner.fail('Authentication required. Use --token or run `pala login` first.')
+			spinner.fail('Authentication required. Use --token or run `primo login` first.')
 			process.exit(1)
 		}
 
@@ -73,7 +73,7 @@ export async function import_site(options: ImportOptions) {
 			? `${server}/api/palacms/import/${site_id}/preview`
 			: `${server}/api/palacms/import/${site_id}`
 
-		spinner.text = options.preview ? 'Previewing changes...' : 'Importing changes...'
+		spinner.text = options.preview ? 'Previewing changes...' : 'Pushing changes...'
 
 		const form_data = new FormData()
 		form_data.append('file', new Blob([zip_buffer]), 'site.zip')
@@ -88,11 +88,11 @@ export async function import_site(options: ImportOptions) {
 
 		if (!response.ok) {
 			const error = await response.text()
-			spinner.fail(`Import failed: ${error}`)
+			spinner.fail(`Push failed: ${error}`)
 			process.exit(1)
 		}
 
-		const result = await response.json() as { preview?: boolean; success?: boolean; diff: ImportDiff }
+		const result = await response.json() as { preview?: boolean; success?: boolean; diff: PushDiff }
 
 		if (options.preview) {
 			spinner.succeed('Preview complete')
@@ -101,13 +101,13 @@ export async function import_site(options: ImportOptions) {
 			console.log('')
 			console.log(chalk.dim('  Run without --preview to apply these changes'))
 		} else {
-			spinner.succeed('Import complete')
+			spinner.succeed('Push complete')
 			console.log('')
 			print_diff(result.diff)
 		}
 
 	} catch (error) {
-		spinner.fail(`Import failed: ${error instanceof Error ? error.message : error}`)
+		spinner.fail(`Push failed: ${error instanceof Error ? error.message : error}`)
 		process.exit(1)
 	}
 }
@@ -128,14 +128,14 @@ async function create_zip(dir: string): Promise<Buffer> {
 			archive.directory(full_path, subdir)
 		}
 
-		// Add pala.json
-		archive.file(path.join(dir, 'pala.json'), { name: 'pala.json' })
+		// Add primo.json
+		archive.file(path.join(dir, 'primo.json'), { name: 'primo.json' })
 
 		archive.finalize()
 	})
 }
 
-function print_diff(diff: ImportDiff) {
+function print_diff(diff: PushDiff) {
 	let has_changes = false
 
 	for (const [section, changes] of Object.entries(diff)) {
