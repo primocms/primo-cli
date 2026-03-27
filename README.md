@@ -1,6 +1,6 @@
 # Primo CLI
 
-Local development CLI for [Primo](https://primocms.org) - build and edit sites with a visual CMS.
+Local development CLI for [Primo](https://primo.page) - build and edit sites with a visual CMS.
 
 ## Installation
 
@@ -161,7 +161,7 @@ Each site gets its own subdomain: `site-one.localhost:3000`, `site-two.localhost
 
 ## Documentation
 
-Full documentation: [docs.primocms.org](https://docs.primocms.org)
+Full documentation: [primo.page/docs](https://primo.page/docs)
 
 ## Requirements
 

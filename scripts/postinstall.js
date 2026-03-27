@@ -8,7 +8,7 @@ const message = `
 │   Get started:                          │
 │   $ primo new my-site                   │
 │                                         │
-│   Docs: https://primocms.org/docs       │
+│   Docs: https://primo.page/docs         │
 │                                         │
 └─────────────────────────────────────────┘
 `

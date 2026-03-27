@@ -15,7 +15,7 @@ const program = new Command()
 program
 	.name('primo')
 	.description('Build sites visually, edit them anywhere')
-	.version('0.1.2')
+	.version('0.1.3')
 
 program
 	.command('new [name]')
