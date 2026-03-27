@@ -40,12 +40,6 @@ primo dev                    # Start in current directory
 primo dev -p 8080            # Use custom port
 ```
 
-Supports multi-site mode - put multiple site folders in one directory with a `server.json`:
-
-```json
-{ "port": 3000 }
-```
-
 ### `primo push`
 
 Push local files to a hosted Primo instance.
@@ -149,6 +143,39 @@ my-site/
 │   └── head.svelte
 └── uploads/            # Media files
 ```
+
+## Multi-Site Mode
+
+Manage multiple sites from one directory:
+
+```
+workspace/
+├── server.json
+├── site-one/
+│   ├── primo.json
+│   ├── blocks/
+│   └── pages/
+└── site-two/
+    ├── primo.json
+    ├── blocks/
+    └── pages/
+```
+
+```json
+// server.json
+{ "port": 3000 }
+```
+
+```bash
+cd workspace
+primo dev
+```
+
+Each site gets its own subdomain: `site-one.localhost:3000`, `site-two.localhost:3000`
+
+## Documentation
+
+Full documentation: [docs.primocms.org](https://docs.primocms.org)
 
 ## Requirements
 

@@ -1,35 +1,52 @@
 {
-  "name": "pala-cli",
+  "name": "primo-cli",
   "version": "0.1.0",
-  "description": "CLI for local Pala development",
+  "description": "Local development CLI for Primo CMS",
   "type": "module",
   "bin": {
-    "pala": "./dist/index.js"
+    "primo": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "start": "node dist/index.js"
+    "prepublishOnly": "npm run build"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/primocms/cli.git"
+  },
+  "homepage": "https://primocms.org",
+  "bugs": {
+    "url": "https://github.com/primocms/cli/issues"
+  },
+  "keywords": [
+    "primo",
+    "cms",
+    "svelte",
+    "static-site",
+    "cli"
+  ],
+  "author": "Primo",
+  "license": "MIT",
   "dependencies": {
-    "@sveltejs/vite-plugin-svelte": "^4.0.0",
     "archiver": "^7.0.1",
     "chalk": "^5.3.0",
     "chokidar": "^3.6.0",
     "commander": "^12.1.0",
     "extract-zip": "^2.0.1",
-    "node-fetch": "^3.3.2",
-    "ora": "^8.0.1",
-    "svelte": "^5.0.0",
-    "vite": "^5.4.0"
+    "inquirer": "^13.3.0",
+    "js-yaml": "^4.1.0",
+    "ora": "^8.0.1"
   },
   "devDependencies": {
     "@types/archiver": "^6.0.2",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.11.0",
-    "js-yaml": "^4.1.1",
     "typescript": "^5.3.3"
   },
+  "files": [
+    "dist"
+  ],
   "engines": {
     "node": ">=18.0.0"
   }
