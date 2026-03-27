@@ -1,7 +1,7 @@
 {
   "name": "primo-cli",
-  "version": "0.1.0",
-  "description": "Local development CLI for Primo CMS",
+  "version": "0.1.1",
+  "description": "Local development CLI for Primo",
   "type": "module",
   "bin": {
     "primo": "./dist/index.js"
