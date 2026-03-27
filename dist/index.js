@@ -12,7 +12,7 @@ const program = new Command();
 program
     .name('primo')
     .description('Build sites visually, edit them anywhere')
-    .version('0.1.1');
+    .version('0.1.2');
 program
     .command('new [name]')
     .description('Create a new site and start local CMS')

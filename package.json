@@ -1,6 +1,6 @@
 {
   "name": "primo-cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Local development CLI for Primo",
   "type": "module",
   "bin": {
@@ -9,7 +9,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "postinstall": "node scripts/postinstall.js"
   },
   "repository": {
     "type": "git",
@@ -45,7 +46,8 @@
     "typescript": "^5.3.3"
   },
   "files": [
-    "dist"
+    "dist",
+    "scripts"
   ],
   "engines": {
     "node": ">=18.0.0"
