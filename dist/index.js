@@ -10,8 +10,8 @@ import { publish } from './commands/publish.js';
 import { build_site } from './commands/build.js';
 const program = new Command();
 program
-    .name('pala')
-    .description('AI builds it, humans edit it')
+    .name('primo')
+    .description('Build sites visually, edit them anywhere')
     .version('0.1.0');
 program
     .command('new [name]')

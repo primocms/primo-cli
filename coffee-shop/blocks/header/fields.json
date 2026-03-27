@@ -1,6 +1,0 @@
-{
-  "$schema": "../../.schemas/fields.schema.json",
-  "id": "cs-header",
-  "name": "Header",
-  "fields": []
-}

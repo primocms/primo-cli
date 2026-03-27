@@ -1,9 +1,0 @@
-stats:
-  - value: "2,000+"
-    label: "Marketing teams"
-  - value: "$50M+"
-    label: "Ad spend tracked"
-  - value: "99.9%"
-    label: "Uptime SLA"
-  - value: "50+"
-    label: "Integrations"

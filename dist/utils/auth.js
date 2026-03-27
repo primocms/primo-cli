@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
-const CONFIG_DIR = path.join(os.homedir(), '.pala');
+const CONFIG_DIR = path.join(os.homedir(), '.primo');
 const TOKEN_FILE = path.join(CONFIG_DIR, 'tokens.json');
 export async function get_auth_token(server) {
     try {

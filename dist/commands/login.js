@@ -39,8 +39,8 @@ export async function login(options) {
         await save_auth_token(server, data.token);
         spinner.succeed(`Logged in as ${chalk.cyan(data.record.email)}`);
         console.log('');
-        console.log(chalk.dim('  Token saved to ~/.pala/tokens.json'));
-        console.log(chalk.dim('  You can now use `pala export` and `pala dev` without --token'));
+        console.log(chalk.dim('  Token saved to ~/.primo/tokens.json'));
+        console.log(chalk.dim('  You can now use `primo pull` and `primo push` without --token'));
     }
     catch (error) {
         spinner.fail(`Login failed: ${error instanceof Error ? error.message : error}`);

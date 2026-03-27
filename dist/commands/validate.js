@@ -1,6 +1,22 @@
 import fs from 'fs/promises';
 import path from 'path';
 import chalk from 'chalk';
+// Auto-fix common issues without full validation output
+export async function normalize_site(site_dir) {
+    const pages_dir = path.join(site_dir, 'pages');
+    const index_path = path.join(pages_dir, 'index.yaml');
+    try {
+        let content = await fs.readFile(index_path, 'utf-8');
+        const slug_index_pattern = /^slug:\s*index\s*$/m;
+        if (slug_index_pattern.test(content)) {
+            content = content.replace(slug_index_pattern, "slug: ''");
+            await fs.writeFile(index_path, content, 'utf-8');
+        }
+    }
+    catch {
+        // File doesn't exist, skip
+    }
+}
 const VALID_FIELD_TYPES = [
     'text',
     'rich-text',
@@ -407,7 +423,15 @@ async function validate_pages(site_dir) {
     for (const yaml_file of yaml_files) {
         const file_path = path.join(site_dir, yaml_file);
         try {
-            const content = await fs.readFile(file_path, 'utf-8');
+            let content = await fs.readFile(file_path, 'utf-8');
+            // Auto-fix: normalize homepage slug from "index" to ""
+            if (yaml_file === 'pages/index.yaml' || yaml_file === 'pages\\index.yaml') {
+                const slug_index_pattern = /^slug:\s*index\s*$/m;
+                if (slug_index_pattern.test(content)) {
+                    content = content.replace(slug_index_pattern, "slug: ''");
+                    await fs.writeFile(file_path, content, 'utf-8');
+                }
+            }
             // Check for common mistakes
             if (content.includes('\nblocks:') || content.match(/^blocks:/m)) {
                 errors.push({
