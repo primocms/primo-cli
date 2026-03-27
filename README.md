@@ -144,31 +144,17 @@ my-site/
 └── uploads/            # Media files
 ```
 
-## Multi-Site Mode
+## Multiple Sites
 
-Manage multiple sites from one directory:
+Run `primo dev` from a parent folder to work on multiple sites at once:
 
 ```
 workspace/
-├── server.json
+├── server.json         # Optional: { "port": 3000 }
 ├── site-one/
-│   ├── primo.json
-│   ├── blocks/
-│   └── pages/
+│   └── primo.json
 └── site-two/
-    ├── primo.json
-    ├── blocks/
-    └── pages/
-```
-
-```json
-// server.json
-{ "port": 3000 }
-```
-
-```bash
-cd workspace
-primo dev
+    └── primo.json
 ```
 
 Each site gets its own subdomain: `site-one.localhost:3000`, `site-two.localhost:3000`
