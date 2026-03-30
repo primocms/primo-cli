@@ -36,6 +36,7 @@ let sync_interval: NodeJS.Timeout | null = null
 let is_syncing = false
 let is_importing = false
 let is_cleaning_up = false
+let last_import_time = 0  // Timestamp of last import completion
 
 // Track files written by sync to prevent watcher from re-pushing them
 // Map of filepath -> mtime (ms) when we wrote it
@@ -211,6 +212,11 @@ export async function dev_server(options: DevOptions) {
 					clearTimeout(reimport_timeout)
 				}
 				reimport_timeout = setTimeout(async () => {
+					// If already importing, reschedule and wait
+					if (is_importing) {
+						schedule_reimport()
+						return
+					}
 					try {
 						is_importing = true
 						await normalize_site(site.dir)
@@ -220,8 +226,9 @@ export async function dev_server(options: DevOptions) {
 						console.log(chalk.red(`  ✗ ${site.config.name} push failed: ${err}`))
 					} finally {
 						is_importing = false
+						last_import_time = Date.now()  // Track when import finished
 					}
-				}, 300)
+				}, 500)
 			}
 
 			for (const dir of dirs_to_watch) {
@@ -295,8 +302,11 @@ export async function dev_server(options: DevOptions) {
 		}
 
 		// Start polling for CMS changes (sync back to local files)
+		// Wait 3 seconds after import to avoid overwriting just-pushed changes
+		const IMPORT_COOLDOWN_MS = 3000
 		sync_interval = setInterval(async () => {
 			if (is_syncing || is_importing) return
+			if (Date.now() - last_import_time < IMPORT_COOLDOWN_MS) return
 
 			for (const site of sites) {
 				try {

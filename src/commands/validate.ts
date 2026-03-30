@@ -2,23 +2,6 @@ import fs from 'fs/promises'
 import path from 'path'
 import chalk from 'chalk'
 
-// Auto-fix common issues without full validation output
-export async function normalize_site(site_dir: string): Promise<void> {
-	const pages_dir = path.join(site_dir, 'pages')
-	const index_path = path.join(pages_dir, 'index.yaml')
-
-	try {
-		let content = await fs.readFile(index_path, 'utf-8')
-		const slug_index_pattern = /^slug:\s*index\s*$/m
-		if (slug_index_pattern.test(content)) {
-			content = content.replace(slug_index_pattern, "slug: ''")
-			await fs.writeFile(index_path, content, 'utf-8')
-		}
-	} catch {
-		// File doesn't exist, skip
-	}
-}
-
 interface ValidationError {
 	file: string
 	line?: number
@@ -54,6 +37,106 @@ const VALID_FIELD_TYPES = [
 	'info'
 ]
 
+// Warn-only normalization - logs issues but doesn't modify files
+export async function normalize_site(site_dir: string): Promise<void> {
+	const warnings: string[] = []
+
+	// Check homepage slug
+	const pages_dir = path.join(site_dir, 'pages')
+	const index_path = path.join(pages_dir, 'index.yaml')
+	try {
+		const content = await fs.readFile(index_path, 'utf-8')
+		const slug_index_pattern = /^slug:\s*index\s*$/m
+		if (slug_index_pattern.test(content)) {
+			warnings.push(`pages/index.yaml: homepage slug should be '' not 'index'`)
+		}
+	} catch {
+		// File doesn't exist, skip
+	}
+
+	// Check for missing IDs in fields.json files
+	const blocks_dir = path.join(site_dir, 'blocks')
+	try {
+		const block_names = await fs.readdir(blocks_dir)
+		for (const block_name of block_names) {
+			if (block_name.startsWith('.')) continue
+			const fields_path = path.join(blocks_dir, block_name, 'fields.json')
+			const missing = await check_missing_ids(fields_path)
+			if (missing.length > 0) {
+				warnings.push(`blocks/${block_name}/fields.json: missing IDs for fields: ${missing.join(', ')}`)
+			}
+		}
+	} catch {
+		// blocks dir doesn't exist, skip
+	}
+
+	// Check site/fields.json
+	const site_fields_path = path.join(site_dir, 'site/fields.json')
+	const site_missing = await check_missing_ids(site_fields_path)
+	if (site_missing.length > 0) {
+		warnings.push(`site/fields.json: missing IDs for fields: ${site_missing.join(', ')}`)
+	}
+
+	// Check page-types
+	const page_types_dir = path.join(site_dir, 'page-types')
+	try {
+		const page_type_names = await fs.readdir(page_types_dir)
+		for (const page_type_name of page_type_names) {
+			if (page_type_name.startsWith('.')) continue
+			const config_path = path.join(page_types_dir, page_type_name, 'config.json')
+			try {
+				const content = await fs.readFile(config_path, 'utf-8')
+				const config = JSON.parse(content)
+				if (config.fields && Array.isArray(config.fields)) {
+					const missing = find_missing_ids(config.fields)
+					if (missing.length > 0) {
+						warnings.push(`page-types/${page_type_name}/config.json: missing IDs for fields: ${missing.join(', ')}`)
+					}
+				}
+			} catch {
+				// Skip invalid files
+			}
+		}
+	} catch {
+		// page-types dir doesn't exist, skip
+	}
+
+	// Log warnings
+	if (warnings.length > 0) {
+		for (const warning of warnings) {
+			console.log(chalk.yellow(`  ⚠ ${warning}`))
+		}
+	}
+}
+
+// Check for missing IDs without modifying
+async function check_missing_ids(file_path: string): Promise<string[]> {
+	try {
+		const content = await fs.readFile(file_path, 'utf-8')
+		const data = JSON.parse(content)
+		const fields = Array.isArray(data) ? data : data.fields
+		if (!fields || !Array.isArray(fields)) return []
+		return find_missing_ids(fields)
+	} catch {
+		return []
+	}
+}
+
+// Find fields missing IDs (recursively for subfields)
+function find_missing_ids(fields: any[]): string[] {
+	const missing: string[] = []
+	for (const field of fields) {
+		if (!field.id) {
+			missing.push(field.name || '(unnamed)')
+		}
+		if (field.subfields && Array.isArray(field.subfields)) {
+			const nested = find_missing_ids(field.subfields)
+			missing.push(...nested.map(n => `${field.name}.${n}`))
+		}
+	}
+	return missing
+}
+
 export async function validate_site(options: ValidateOptions) {
 	const errors: ValidationError[] = []
 	const warnings: ValidationError[] = []
@@ -68,6 +151,9 @@ export async function validate_site(options: ValidateOptions) {
 		console.log(chalk.red(`✖ Directory not found: ${site_dir}`))
 		process.exit(1)
 	}
+
+	// Check for issues (warn-only, no modifications)
+	await normalize_site(site_dir)
 
 	// Validate blocks
 	const blocks_errors = await validate_blocks(site_dir)
@@ -335,7 +421,7 @@ function validate_fields(fields_json: any, file_path: string): ValidationError[]
 				file: file_path,
 				field: field_name,
 				message: 'Missing required "id" field',
-				severity: 'error'
+				severity: 'warning'
 			})
 		} else {
 			// Check for duplicate IDs
@@ -394,6 +480,38 @@ function validate_fields(fields_json: any, file_path: string): ValidationError[]
 
 			if (field.type === 'repeater' || field.type === 'group') {
 				parent_names.add(field.name)
+
+				// Validate subfields if present
+				if (field.subfields && Array.isArray(field.subfields)) {
+					for (const subfield of field.subfields) {
+						const subfield_name = subfield.name || subfield.id || '(unnamed subfield)'
+
+						if (!subfield.name) {
+							errors.push({
+								file: file_path,
+								field: `${field_name}.${subfield_name}`,
+								message: 'Missing required "name" field in subfield',
+								severity: 'error'
+							})
+						}
+
+						if (!subfield.type) {
+							errors.push({
+								file: file_path,
+								field: `${field_name}.${subfield_name}`,
+								message: 'Missing required "type" field in subfield',
+								severity: 'error'
+							})
+						} else if (!VALID_FIELD_TYPES.includes(subfield.type)) {
+							errors.push({
+								file: file_path,
+								field: `${field_name}.${subfield_name}`,
+								message: `Invalid field type: "${subfield.type}"`,
+								severity: 'error'
+							})
+						}
+					}
+				}
 			}
 		}
 
@@ -416,28 +534,28 @@ function validate_fields(fields_json: any, file_path: string): ValidationError[]
 function validate_select_field(field: any, field_name: string, file_path: string): ValidationError[] {
 	const errors: ValidationError[] = []
 
-	if (!field.options || !field.options.options) {
+	if (!field.config || !field.config.options) {
 		errors.push({
 			file: file_path,
 			field: field_name,
-			message: 'Select field missing "options.options" array',
+			message: 'Select field missing "config.options" array',
 			severity: 'error'
 		})
 		return errors
 	}
 
-	if (!Array.isArray(field.options.options)) {
+	if (!Array.isArray(field.config.options)) {
 		errors.push({
 			file: file_path,
 			field: field_name,
-			message: 'Select field "options.options" must be an array',
+			message: 'Select field "config.options" must be an array',
 			severity: 'error'
 		})
 		return errors
 	}
 
-	for (let i = 0; i < field.options.options.length; i++) {
-		const option = field.options.options[i]
+	for (let i = 0; i < field.config.options.length; i++) {
+		const option = field.config.options[i]
 
 		if (!option.label) {
 			errors.push({
@@ -491,14 +609,17 @@ async function validate_pages(site_dir: string): Promise<ValidationError[]> {
 		const file_path = path.join(site_dir, yaml_file)
 
 		try {
-			let content = await fs.readFile(file_path, 'utf-8')
+			const content = await fs.readFile(file_path, 'utf-8')
 
-			// Auto-fix: normalize homepage slug from "index" to ""
+			// Check homepage slug (warn, don't fix)
 			if (yaml_file === 'pages/index.yaml' || yaml_file === 'pages\\index.yaml') {
 				const slug_index_pattern = /^slug:\s*index\s*$/m
 				if (slug_index_pattern.test(content)) {
-					content = content.replace(slug_index_pattern, "slug: ''")
-					await fs.writeFile(file_path, content, 'utf-8')
+					errors.push({
+						file: yaml_file,
+						message: 'Homepage slug should be \'\' not \'index\'',
+						severity: 'warning'
+					})
 				}
 			}
 
