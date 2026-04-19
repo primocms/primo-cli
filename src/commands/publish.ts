@@ -4,15 +4,11 @@ import chalk from 'chalk'
 import ora from 'ora'
 import inquirer from 'inquirer'
 import { execSync, spawn } from 'child_process'
+import { read_site_config, type SiteConfig, SITE_CONFIG_FILE } from '../utils/site-config.js'
 
 interface PublishOptions {
 	dir: string
 	provider?: string
-}
-
-interface PalaConfig {
-	name: string
-	site_id: string
 }
 
 type Provider = 'railway' | 'fly'
@@ -23,15 +19,13 @@ export async function publish(options: PublishOptions) {
 	try {
 		const site_dir = path.resolve(options.dir)
 
-		// Read primo.json
-		const config_path = path.join(site_dir, 'primo.json')
-		let config: PalaConfig
+		// Read site config
+		let config: SiteConfig
 
 		try {
-			const config_data = await fs.readFile(config_path, 'utf-8')
-			config = JSON.parse(config_data)
+			config = await read_site_config(site_dir)
 		} catch {
-			spinner.fail('No primo.json found. Run `primo new` first.')
+			spinner.fail(`No ${SITE_CONFIG_FILE} found. Run \`primo new\` first.`)
 			process.exit(1)
 		}
 
@@ -102,7 +96,7 @@ async function check_provider_cli(provider: Provider): Promise<boolean> {
 	}
 }
 
-async function generate_dockerfile(site_dir: string, config: PalaConfig) {
+async function generate_dockerfile(site_dir: string, config: SiteConfig) {
 	const dockerfile = `# Pala CMS Deployment
 FROM golang:1.22-alpine AS builder
 
@@ -125,7 +119,7 @@ COPY pages/ /app/pb_data/pages/
 COPY page-types/ /app/pb_data/page-types/
 COPY site/ /app/pb_data/site/
 COPY uploads/ /app/pb_data/uploads/ 2>/dev/null || true
-COPY primo.json /app/pb_data/
+COPY site.yaml /app/pb_data/
 
 RUN chmod +x /app/palacms
 
@@ -147,7 +141,7 @@ CMD ["/app/palacms", "serve", "--http", "0.0.0.0:8080"]
 	await fs.writeFile(path.join(site_dir, '.dockerignore'), dockerignore)
 }
 
-async function generate_fly_toml(site_dir: string, config: PalaConfig) {
+async function generate_fly_toml(site_dir: string, config: SiteConfig) {
 	const app_name = config.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-')
 
 	const fly_toml = `app = "${app_name}"
@@ -178,7 +172,7 @@ primary_region = "sjc"
 	await fs.writeFile(path.join(site_dir, 'fly.toml'), fly_toml)
 }
 
-async function deploy_to_railway(site_dir: string, config: PalaConfig) {
+async function deploy_to_railway(site_dir: string, config: SiteConfig) {
 	console.log('')
 	console.log(chalk.cyan('Deploying to Railway...'))
 
@@ -223,7 +217,7 @@ async function deploy_to_railway(site_dir: string, config: PalaConfig) {
 	})
 }
 
-async function deploy_to_fly(site_dir: string, config: PalaConfig) {
+async function deploy_to_fly(site_dir: string, config: SiteConfig) {
 	console.log('')
 	console.log(chalk.cyan('Deploying to Fly.io...'))
 

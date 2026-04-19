@@ -6,27 +6,24 @@ import { load as load_yaml } from 'js-yaml'
 import { compile } from 'svelte/compiler'
 import * as esbuild from 'esbuild'
 import { fileURLToPath } from 'url'
+import { read_site_config, type SiteConfig, SITE_CONFIG_FILE } from '../utils/site-config.js'
 
 interface BuildOptions {
 	dir: string
 	output: string
 }
 
-interface SiteConfig {
-	name: string
-	site_id: string
-	host?: string
-}
-
 interface PageSection {
+	_id?: string
 	block: string
 	content?: Record<string, unknown>
 }
 
 interface Page {
-	id: string
+	_id?: string
+	id?: string
 	name: string
-	slug: string
+	slug?: string
 	page_type: string
 	sections: PageSection[]
 	fields?: Record<string, unknown>
@@ -35,6 +32,35 @@ interface Page {
 interface Layout {
 	header?: PageSection[]
 	footer?: PageSection[]
+}
+
+interface BlockField {
+	id?: string
+	_id?: string
+	name: string
+	type: string
+	label?: string
+	config?: {
+		field?: string // Name of site field to reference (for site-field type)
+		[key: string]: unknown
+	} | null
+	options?: {
+		field?: string // Backwards compatibility - name of site field
+		[key: string]: unknown
+	} | null
+}
+
+interface SiteField {
+	id?: string
+	_id?: string
+	name: string
+	type: string
+	label?: string
+}
+
+interface SiteData {
+	fields: SiteField[]
+	content: Record<string, unknown>
 }
 
 export async function build_site(options: BuildOptions) {
@@ -46,14 +72,12 @@ export async function build_site(options: BuildOptions) {
 		const temp_dir = path.join(site_dir, '.primo', 'build-temp')
 
 		// Read site config
-		const config_path = path.join(site_dir, 'primo.json')
 		let config: SiteConfig
 
 		try {
-			const config_data = await fs.readFile(config_path, 'utf-8')
-			config = JSON.parse(config_data)
+			config = await read_site_config(site_dir)
 		} catch {
-			spinner.fail('No primo.json found. Run `primo new` first.')
+			spinner.fail(`No ${SITE_CONFIG_FILE} found. Run \`primo new\` first.`)
 			process.exit(1)
 		}
 
@@ -84,12 +108,16 @@ export async function build_site(options: BuildOptions) {
 		// Cache layouts per page type
 		const layout_cache = new Map<string, Layout>()
 
+		// Load site data (fields and content)
+		const site_data = await load_site_data(site_dir)
+
 		// Build each page
 		for (const page_file of page_files) {
 			const page_content = await fs.readFile(page_file, 'utf-8')
 			const page = load_yaml(page_content) as Page
+			const page_path = get_page_path_from_file(site_dir, page_file)
 
-			spinner.text = `Building ${page.name || page.slug || 'home'}...`
+			spinner.text = `Building ${page.name || page_path || 'home'}...`
 
 			const result = await build_page({
 				page,
@@ -98,18 +126,18 @@ export async function build_site(options: BuildOptions) {
 				head_content,
 				site_name: config.name,
 				block_cache,
-				layout_cache
+				layout_cache,
+				site_data
 			})
 
 			if (result.error) {
 				console.log(chalk.yellow(`  Warning: ${page.name}: ${result.error}`))
 			}
 
-			// Determine output path
-			const slug = page.slug || path.basename(page_file, '.yaml')
-			const out_path = slug === '' || slug === 'index'
+			// Determine output path from the page file path.
+			const out_path = page_path === ''
 				? path.join(output_dir, 'index.html')
-				: path.join(output_dir, slug, 'index.html')
+				: path.join(output_dir, page_path, 'index.html')
 
 			await fs.mkdir(path.dirname(out_path), { recursive: true })
 			await fs.writeFile(out_path, result.html)
@@ -156,10 +184,11 @@ interface BuildPageOptions {
 	site_name: string
 	block_cache: Map<string, { js: string; css: string }>
 	layout_cache: Map<string, Layout>
+	site_data: SiteData
 }
 
 async function build_page(options: BuildPageOptions): Promise<{ html: string; error?: string }> {
-	const { page, site_dir, temp_dir, head_content, site_name, block_cache, layout_cache } = options
+	const { page, site_dir, temp_dir, head_content, site_name, block_cache, layout_cache, site_data } = options
 
 	try {
 		// Load layout for this page type
@@ -171,9 +200,10 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 		}
 
 		// Combine header + page sections + footer
-		const header_sections = await resolve_layout_sections(layout.header || [], site_dir)
-		const footer_sections = await resolve_layout_sections(layout.footer || [], site_dir)
-		const all_sections = [...header_sections, ...(page.sections || []), ...footer_sections]
+		const header_sections = await resolve_layout_sections(layout.header || [], site_dir, site_data)
+		const footer_sections = await resolve_layout_sections(layout.footer || [], site_dir, site_data)
+		const page_sections = await resolve_page_sections(page.sections || [], site_dir, site_data)
+		const all_sections = [...header_sections, ...page_sections, ...footer_sections]
 
 		if (all_sections.length === 0) {
 			return { html: generate_empty_page(site_name, page.name, head_content) }
@@ -437,7 +467,7 @@ async function find_pages(pages_dir: string): Promise<string[]> {
 			const full_path = path.join(dir, entry.name)
 			if (entry.isDirectory()) {
 				await scan(full_path)
-			} else if (entry.name.endsWith('.yaml') || entry.name.endsWith('.yml')) {
+			} else if (entry.name.endsWith('.yaml')) {
 				pages.push(full_path)
 			}
 		}
@@ -445,6 +475,23 @@ async function find_pages(pages_dir: string): Promise<string[]> {
 
 	await scan(pages_dir)
 	return pages
+}
+
+function get_page_path_from_file(site_dir: string, page_file: string): string {
+	const pages_dir = path.join(site_dir, 'pages')
+	let relative_path = path.relative(pages_dir, page_file)
+	relative_path = relative_path.replaceAll('\\', '/')
+	relative_path = relative_path.replace(/\.yaml$/i, '')
+
+	if (relative_path === 'index') {
+		return ''
+	}
+
+	if (relative_path.endsWith('/index')) {
+		return relative_path.slice(0, -'/index'.length)
+	}
+
+	return relative_path
 }
 
 function escape_html(str: string): string {
@@ -483,17 +530,31 @@ async function load_layout(site_dir: string, page_type: string): Promise<Layout>
 	}
 }
 
-async function resolve_layout_sections(sections: PageSection[], site_dir: string): Promise<PageSection[]> {
+async function resolve_layout_sections(sections: PageSection[], site_dir: string, site_data: SiteData): Promise<PageSection[]> {
 	// For layout sections without content, load from block's content.yaml
 	const resolved: PageSection[] = []
 	for (const section of sections) {
+		let content: Record<string, unknown>
 		if (section.content && Object.keys(section.content).length > 0) {
-			resolved.push(section)
+			content = section.content
 		} else {
 			// Try to load default content from block's content.yaml
-			const content = await load_block_defaults(site_dir, section.block)
-			resolved.push({ ...section, content })
+			content = await load_block_defaults(site_dir, section.block)
 		}
+		// Resolve any site-field references in the content
+		const resolved_content = await resolve_site_fields(site_dir, section.block, content, site_data)
+		resolved.push({ ...section, content: resolved_content })
+	}
+	return resolved
+}
+
+async function resolve_page_sections(sections: PageSection[], site_dir: string, site_data: SiteData): Promise<PageSection[]> {
+	// Resolve site-field references in page sections
+	const resolved: PageSection[] = []
+	for (const section of sections) {
+		const content = section.content || {}
+		const resolved_content = await resolve_site_fields(site_dir, section.block, content, site_data)
+		resolved.push({ ...section, content: resolved_content })
 	}
 	return resolved
 }
@@ -506,6 +567,113 @@ async function load_block_defaults(site_dir: string, block_name: string): Promis
 	} catch {
 		return {}
 	}
+}
+
+async function load_fields_file(file_path: string): Promise<unknown> {
+	const data = await fs.readFile(file_path, 'utf-8')
+	return load_yaml(data)
+}
+
+function extract_fields_array(data: unknown): BlockField[] {
+	if (Array.isArray(data)) {
+		return data as BlockField[]
+	}
+
+	if (data && typeof data === 'object' && Array.isArray((data as { fields?: unknown[] }).fields)) {
+		return (data as { fields: BlockField[] }).fields
+	}
+
+	return []
+}
+
+function get_field_id(field: { id?: string; _id?: string }): string | undefined {
+	return field._id || field.id
+}
+
+async function load_site_data(site_dir: string): Promise<SiteData> {
+	const fields_path = path.join(site_dir, 'site', 'fields.yaml')
+	const content_path = path.join(site_dir, 'site', 'content.yaml')
+
+	let fields: SiteField[] = []
+	let content: Record<string, unknown> = {}
+
+	try {
+		fields = extract_fields_array(await load_fields_file(fields_path)) as SiteField[]
+	} catch {
+		// No site fields defined
+	}
+
+	try {
+		const content_data = await fs.readFile(content_path, 'utf-8')
+		content = (load_yaml(content_data) as Record<string, unknown>) || {}
+	} catch {
+		// No site content defined
+	}
+
+	return { fields, content }
+}
+
+async function load_block_fields(site_dir: string, block_name: string): Promise<BlockField[]> {
+	const fields_path = path.join(site_dir, 'blocks', block_name, 'fields.yaml')
+
+	try {
+		return extract_fields_array(await load_fields_file(fields_path))
+	} catch {
+		return []
+	}
+}
+
+async function resolve_site_fields(
+	site_dir: string,
+	block_name: string,
+	content: Record<string, unknown>,
+	site_data: SiteData
+): Promise<Record<string, unknown>> {
+	// Load block field definitions to check for site-field types
+	const block_fields = await load_block_fields(site_dir, block_name)
+
+	// Create maps for site field lookup
+	const site_field_id_map = new Map<string, string>() // ID -> name
+	const site_field_name_set = new Set<string>() // names that exist
+	for (const site_field of site_data.fields) {
+		const site_field_id = get_field_id(site_field)
+		if (site_field_id) {
+			site_field_id_map.set(site_field_id, site_field.name)
+		}
+		site_field_name_set.add(site_field.name)
+	}
+
+	// Resolve site-field references in content
+	const resolved: Record<string, unknown> = { ...content }
+
+	// For each block field that is type site-field, resolve its value
+	for (const field of block_fields) {
+		if (field.type !== 'site-field') continue
+
+		const field_ref = field.config?.field
+
+		if (field_ref) {
+			// Field reference can be either a name or an ID
+			// Try as name first (new format)
+			if (site_field_name_set.has(field_ref) && site_data.content[field_ref] !== undefined) {
+				resolved[field.name] = site_data.content[field_ref]
+				continue
+			}
+			// Try as ID (old format)
+			const site_field_name = site_field_id_map.get(field_ref)
+			if (site_field_name && site_data.content[site_field_name] !== undefined) {
+				resolved[field.name] = site_data.content[site_field_name]
+				continue
+			}
+		}
+
+		// Fallback: if block field name matches a site field name, use that value
+		if (site_field_name_set.has(field.name) && site_data.content[field.name] !== undefined) {
+			resolved[field.name] = site_data.content[field.name]
+		}
+	}
+
+	return resolved
 }
 
 async function find_svelte_path(): Promise<string> {

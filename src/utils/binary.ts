@@ -11,7 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PRIMO_HOME = path.join(os.homedir(), '.primo')
 const BIN_DIR = path.join(PRIMO_HOME, 'bin')
 const DATA_DIR = path.join(PRIMO_HOME, 'data')
-const VERSION = '0.1.0' // TODO: fetch latest from GitHub
+const VERSION = '3.1.0' // matches palacms releases
 
 // Path to locally built binary (for development)
 // The binary is at palacms/palacms (inside the palacms repo directory)

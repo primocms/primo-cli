@@ -15,8 +15,10 @@ npm install -g primo-cli
 primo new my-site
 
 # This starts the local CMS automatically
-# Edit at: http://my-site.localhost:3000/admin/site
-# Preview at: http://my-site.localhost:3000/
+# It scaffolds a workspace like:
+# ./server.yaml
+# ./library/
+# ./sites/my-site/
 ```
 
 ## Commands
@@ -27,7 +29,7 @@ Create a new site with starter files.
 
 ```bash
 primo new                    # Interactive prompt for name
-primo new my-site            # Create "my-site" directory
+primo new my-site            # Create "sites/my-site" in the current workspace
 primo new --skip-dev         # Create files without starting CMS
 ```
 
@@ -69,6 +71,34 @@ Options:
 - `-s, --server <url>` - Server URL (auto-detects local)
 - `--site <id>` - Site ID (interactive if not provided)
 - `-o, --output <dir>` - Output directory (default: `.`)
+- `-t, --token <token>` - Auth token
+
+### `primo library pull`
+
+Pull the shared block library into a workspace root.
+
+```bash
+primo library pull -s https://cms.example.com
+primo library pull -o ./my-workspace
+```
+
+Options:
+- `-s, --server <url>` - Server URL (auto-detects local)
+- `-o, --output <dir>` - Workspace output directory (default: `.`)
+- `-t, --token <token>` - Auth token
+
+### `primo library push`
+
+Push the local shared block library back to a hosted Primo instance.
+
+```bash
+primo library push -s https://cms.example.com
+primo library push -s https://cms.example.com -d ./my-workspace
+```
+
+Options:
+- `-s, --server <url>` - Server URL
+- `-d, --dir <dir>` - Workspace directory containing `library/` (default: `.`)
 - `-t, --token <token>` - Auth token
 
 ### `primo login`
@@ -125,39 +155,50 @@ npx wrangler pages deploy dist
 ## Site Structure
 
 ```
-my-site/
-├── primo.json          # Site config (name, site_id, host)
-├── blocks/             # Svelte components
-│   └── hero/
-│       ├── component.svelte
-│       ├── fields.json
-│       └── content.yaml
-├── pages/              # Page content (YAML)
-│   └── index.yaml
-├── page-types/         # Page templates
-│   └── default/
-│       └── config.json
-├── site/               # Site-wide settings
-│   ├── fields.json
-│   ├── content.yaml
-│   └── head.svelte
-└── uploads/            # Media files
+workspace/
+├── server.yaml
+├── library/
+└── sites/
+    └── my-site/
+        ├── site.yaml
+        ├── blocks/
+        ├── pages/
+        ├── page-types/
+        └── site/
 ```
 
 ## Multiple Sites
 
-Run `primo dev` from a parent folder to work on multiple sites at once:
+Run `primo dev` from a workspace folder to work on multiple sites at once:
 
 ```
 workspace/
-├── server.json         # Optional: { "port": 3000 }
-├── site-one/
-│   └── primo.json
-└── site-two/
-    └── primo.json
+├── server.yaml         # Optional: port + site_groups
+└── sites/
+    ├── site-one/
+    │   └── site.yaml   # includes group: default
+    └── site-two/
+        └── site.yaml   # includes group: default
 ```
 
 Each site gets its own subdomain: `site-one.localhost:3000`, `site-two.localhost:3000`
+
+## Shared Library Workspace
+
+The shared block library can live at the workspace root alongside the `sites/` folder:
+
+```text
+workspace/
+├── server.yaml
+├── library/
+│   ├── marketing/
+│   │   └── hero/
+│   └── shared/
+│       └── footer/
+└── sites/
+    ├── site-one/
+    └── site-two/
+```
 
 ## Documentation
 

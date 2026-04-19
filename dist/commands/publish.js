@@ -4,19 +4,18 @@ import chalk from 'chalk';
 import ora from 'ora';
 import inquirer from 'inquirer';
 import { execSync, spawn } from 'child_process';
+import { read_site_config, SITE_CONFIG_FILE } from '../utils/site-config.js';
 export async function publish(options) {
     const spinner = ora('Preparing deployment...').start();
     try {
         const site_dir = path.resolve(options.dir);
-        // Read primo.json
-        const config_path = path.join(site_dir, 'primo.json');
+        // Read site config
         let config;
         try {
-            const config_data = await fs.readFile(config_path, 'utf-8');
-            config = JSON.parse(config_data);
+            config = await read_site_config(site_dir);
         }
         catch {
-            spinner.fail('No primo.json found. Run `primo new` first.');
+            spinner.fail(`No ${SITE_CONFIG_FILE} found. Run \`primo new\` first.`);
             process.exit(1);
         }
         spinner.stop();
@@ -106,7 +105,7 @@ COPY pages/ /app/pb_data/pages/
 COPY page-types/ /app/pb_data/page-types/
 COPY site/ /app/pb_data/site/
 COPY uploads/ /app/pb_data/uploads/ 2>/dev/null || true
-COPY primo.json /app/pb_data/
+COPY site.yaml /app/pb_data/
 
 RUN chmod +x /app/palacms
 

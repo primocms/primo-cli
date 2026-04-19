@@ -4,6 +4,8 @@ import chalk from 'chalk'
 import ora from 'ora'
 import inquirer from 'inquirer'
 import { dev_server } from './dev.js'
+import { SITE_CONFIG_FILE, write_site_config } from '../utils/site-config.js'
+import { SERVER_CONFIG_FILE, read_server_config, write_server_config } from '../utils/server-config.js'
 
 interface NewOptions {
 	name?: string
@@ -13,13 +15,48 @@ interface NewOptions {
 
 export async function new_site(options: NewOptions) {
 	const base_dir = process.cwd()
-	const server_config_path = path.join(base_dir, 'server.json')
+	const server_config_path = path.join(base_dir, SERVER_CONFIG_FILE)
+	const site_config_path = path.join(base_dir, SITE_CONFIG_FILE)
+	const sites_dir = path.join(base_dir, 'sites')
+	const library_dir = path.join(base_dir, 'library')
 
-	// Auto-create server.json if it doesn't exist
+	try {
+		await fs.access(site_config_path)
+		console.log(chalk.red(`Found ${SITE_CONFIG_FILE} in the current directory.`))
+		console.log(chalk.red('Run `primo new` from a workspace root, not inside a site directory.'))
+		process.exit(1)
+	} catch {
+		// Not inside a site directory, continue.
+	}
+
+	// Auto-create server config if it doesn't exist, and ensure a default site group exists.
 	try {
 		await fs.access(server_config_path)
 	} catch {
-		await fs.writeFile(server_config_path, JSON.stringify({ port: 3000 }, null, 2) + '\n')
+		await write_server_config(base_dir, {
+			port: 3000,
+			site_groups: [
+				{
+					id: 'default',
+					name: 'Default',
+					index: 0
+				}
+			]
+		})
+	}
+
+	await fs.mkdir(sites_dir, { recursive: true })
+	await fs.mkdir(library_dir, { recursive: true })
+
+	const server_config = await read_server_config(base_dir)
+	const site_groups = server_config.site_groups ?? []
+	if (!site_groups.some((group) => group.id === 'default')) {
+		site_groups.push({
+			id: 'default',
+			name: 'Default',
+			index: site_groups.length
+		})
+		await write_server_config(base_dir, { ...server_config, site_groups })
 	}
 
 	let site_name = options.name
@@ -40,8 +77,8 @@ export async function new_site(options: NewOptions) {
 		site_name = name
 	}
 
-	// Always create site in subdirectory
-	const site_dir = path.join(base_dir, site_name!)
+	// Always create site in sites/<name>
+	const site_dir = path.join(sites_dir, site_name!)
 
 	// Check if directory exists
 	try {
@@ -61,9 +98,8 @@ export async function new_site(options: NewOptions) {
 		await fs.mkdir(path.join(site_dir, 'pages'), { recursive: true })
 		await fs.mkdir(path.join(site_dir, 'page-types', 'default'), { recursive: true })
 		await fs.mkdir(path.join(site_dir, 'site'), { recursive: true })
-		await fs.mkdir(path.join(site_dir, 'uploads'), { recursive: true })
 
-		// Create primo.json
+		// Create site config
 		// If name has dots (hostname), use first part capitalized as display name
 		const display_name = site_name!.includes('.')
 			? site_name!.split('.')[0].charAt(0).toUpperCase() + site_name!.split('.')[0].slice(1)
@@ -73,12 +109,10 @@ export async function new_site(options: NewOptions) {
 			site_id: generate_id(),
 			// Leave host empty for local dev - dev.ts will generate coffee-shop.localhost:3000
 			// Only set host if it looks like a real domain (has a dot)
-			host: site_name!.includes('.') ? site_name : ''
+			host: site_name!.includes('.') ? site_name : '',
+			group: 'default'
 		}
-		await fs.writeFile(
-			path.join(site_dir, 'primo.json'),
-			JSON.stringify(config, null, 2) + '\n'
-		)
+		await write_site_config(site_dir, config)
 
 		// Create default page type config
 		const page_type_config = {
@@ -89,13 +123,19 @@ export async function new_site(options: NewOptions) {
 			fields: []
 		}
 		await fs.writeFile(
-			path.join(site_dir, 'page-types', 'default', 'config.json'),
-			JSON.stringify(page_type_config, null, 2) + '\n'
+			path.join(site_dir, 'page-types', 'default', 'config.yaml'),
+			`id: ${page_type_config.id}
+name: ${page_type_config.name}
+icon: ${page_type_config.icon}
+allowed_blocks:
+  - hero
+fields: []
+`
 		)
 
 		// Create site fields (empty array)
 		await fs.writeFile(
-			path.join(site_dir, 'site', 'fields.json'),
+			path.join(site_dir, 'site', 'fields.yaml'),
 			'[]\n'
 		)
 
@@ -128,18 +168,24 @@ export async function new_site(options: NewOptions) {
 		// Create starter hero block
 		await fs.mkdir(path.join(site_dir, 'blocks', 'hero'), { recursive: true })
 
-		const hero_fields = {
-			id: generate_id(),
-			name: 'Hero',
-			fields: [
-				{ id: generate_id(), name: 'headline', label: 'Headline', type: 'text', options: null },
-				{ id: generate_id(), name: 'subheadline', label: 'Subheadline', type: 'text', options: null },
-				{ id: generate_id(), name: 'cta', label: 'Call to Action', type: 'link', options: null }
-			]
-		}
 		await fs.writeFile(
-			path.join(site_dir, 'blocks', 'hero', 'fields.json'),
-			JSON.stringify(hero_fields, null, 2) + '\n'
+			path.join(site_dir, 'blocks', 'hero', 'fields.yaml'),
+			`_id: ${generate_id()}
+name: Hero
+fields:
+  - _id: ${generate_id()}
+    name: headline
+    label: Headline
+    type: text
+  - _id: ${generate_id()}
+    name: subheadline
+    label: Subheadline
+    type: text
+  - _id: ${generate_id()}
+    name: cta
+    label: Call to Action
+    type: link
+`
 		)
 
 		await fs.writeFile(
@@ -218,15 +264,16 @@ cta:
 
 		// Create index page
 		const page_id = generate_id()
+		const section_id = generate_id()
 		await fs.writeFile(
 			path.join(site_dir, 'pages', 'index.yaml'),
-			`id: ${page_id}
+			`_id: ${page_id}
 name: Home
-slug: index
 page_type: default
 fields: {}
 sections:
-  - block: hero
+  - _id: ${section_id}
+    block: hero
     content:
       headline: Welcome to ${display_name}
       subheadline: Edit this content in your local files or CMS
@@ -301,260 +348,146 @@ async function is_server_running(port: number): Promise<boolean> {
 function generate_agent_md(site_name: string): string {
 	return `# ${site_name}
 
-Pala site for local development.
+Primo site for local development.
 
 ## Structure
 
 \`\`\`
-blocks/           # Svelte components with content fields
+site.yaml        # Site config (name, site_id, host)
+blocks/
   {name}/
     component.svelte
-    fields.json
-    content.yaml  # Default field values (optional)
-page-types/       # Page templates
+    fields.yaml
+    content.yaml  # optional default block content
+page-types/
   {name}/
-    config.json
-pages/            # Page content (YAML)
-  index.yaml      # Homepage
-  contact.yaml    # Leaf page (/contact)
-  about/          # Section with children
-    index.yaml    # /about
-    team.yaml     # /about/team
-site/             # Site-wide settings
-  fields.json
+    config.yaml
+    layout.yaml   # optional shared header/footer sections
+pages/
+  index.yaml
+  about.yaml
+  about/
+    index.yaml
+    team.yaml
+site/
+  fields.yaml
   content.yaml
-  head.svelte     # Injected into <head>
-.primo/           # Internal metadata
+  head.svelte     # optional
+.primo/           # local dev DB/state; not source content
 \`\`\`
 
-## Creating Blocks
+## Routing
 
-Each block needs two files:
+- Page slugs are derived from the file path, not a \`slug:\` key.
+- Examples:
+  - \`pages/index.yaml\` -> \`/\`
+  - \`pages/about.yaml\` -> \`/about\`
+  - \`pages/about/index.yaml\` -> \`/about\`
+  - \`pages/about/team.yaml\` -> \`/about/team\`
+- Do not add \`slug:\` to page files. It is ignored.
 
-**component.svelte** - Svelte 5 component:
+## System Metadata
+
+- Top-level entities use system-owned IDs:
+  - pages: \`_id\`
+  - page sections: \`_id\`
+  - blocks: \`_id\` in \`fields.yaml\`
+  - fields/subfields: \`_id\`
+  - page types: \`id\` in \`config.yaml\`
+- Do not invent or hand-author new IDs in source files.
+- Keep these IDs stable when editing existing entities.
+- In local dev, missing IDs may be initialized automatically.
+- Duplicate IDs are treated as conflicts and may cause affected files to be skipped.
+
+## Source Of Truth
+
+- Source content lives in \`site.yaml\`, \`blocks/\`, \`pages/\`, \`page-types/\`, and \`site/\`.
+- Treat \`.primo/\` as generated local state, not editable source content.
+- Do not read from or write to the SQLite DB in \`.primo/\` unless explicitly asked.
+- Do not fix schema or content issues by patching PocketBase records directly.
+- If local state seems wrong, prefer deleting \`.primo/\` and reimporting from files.
+
+## Block Files
+
+- \`component.svelte\`: Svelte 5 component for the block.
+- \`fields.yaml\`: block schema. Use \`subfields\` for repeater/group children.
+- \`content.yaml\`: optional default content for new block instances.
+
+Field schema example:
+\`\`\`yaml
+name: hero
+fields:
+  - name: headline
+    label: Headline
+    type: text
+  - name: cta
+    label: Call to Action
+    type: link
+  - name: features
+    label: Features
+    type: repeater
+    subfields:
+      - name: title
+        label: Title
+        type: text
+\`\`\`
+
+## Field Rules
+
+- \`config\` must be an object when present.
+- If a field has no config, omit \`config\` entirely.
+- Do not write \`config: ""\`.
+- Use \`subfields\` for \`repeater\` and \`group\` children.
+- Common field types:
+  - \`text\`, \`rich-text\`, \`markdown\`
+  - \`image\`, \`link\`, \`url\`, \`icon\`
+  - \`number\`, \`slider\`, \`switch\`, \`select\`, \`date\`
+  - \`repeater\`, \`group\`
+  - \`page\`, \`page-list\`, \`page-field\`, \`site-field\`
+  - \`info\`
+
+## Page Types
+
+- \`page-types/{name}/config.yaml\` defines:
+  - \`id\`
+  - \`name\`
+  - \`icon\`
+  - \`allowed_blocks\`
+  - \`fields\`
+- \`page-types/{name}/layout.yaml\` can define shared \`header\` and \`footer\` sections.
+- Do not manually add layout blocks to individual pages if they already come from \`layout.yaml\`.
+
+## Components
+
+- Components use Svelte 5 syntax.
+- Match the component's data usage to field names from \`fields.yaml\`.
+- Handle optional data safely:
 \`\`\`svelte
-<h1>{headline}</h1>
 {#if image?.url}
   <img src={image.url} alt={image.alt} />
 {/if}
 
-<style>
-  h1 { font-size: 2rem; }
-</style>
-\`\`\`
-
-**Note:** Props are auto-injected from fields.json. No need to declare \`$props()\` - just use the field names directly in your template.
-
-**fields.json** - Field definitions:
-\`\`\`json
-{
-  "name": "Hero",
-  "fields": [
-    { "name": "headline", "label": "Headline", "type": "text" },
-    { "name": "image", "label": "Image", "type": "image" }
-  ]
-}
-\`\`\`
-
-## Field Types
-
-### text
-Single-line text input.
-\`\`\`svelte
-<h1>{headline}</h1>
-\`\`\`
-
-### rich-text
-WYSIWYG editor. Outputs HTML.
-\`\`\`svelte
-{@html content}
-\`\`\`
-
-### markdown
-Markdown editor. Outputs HTML.
-\`\`\`svelte
-{@html body}
-\`\`\`
-
-### image
-Image upload. Returns \`{ url, alt, width, height }\`.
-\`\`\`svelte
-{#if image?.url}
-  <img src={image.url} alt={image.alt} />
-{/if}
-\`\`\`
-
-### link
-URL with label. Returns \`{ url, label }\`.
-\`\`\`svelte
-{#if cta?.url}
-  <a href={cta.url}>{cta.label}</a>
-{/if}
-\`\`\`
-
-### url
-Plain URL string.
-\`\`\`svelte
-<a href={website_url}>Visit</a>
-\`\`\`
-
-### icon
-Icon picker. Returns SVG string.
-\`\`\`svelte
-{@html icon}
-\`\`\`
-
-### number
-Numeric input.
-\`\`\`json
-{ "name": "columns", "type": "number", "options": { "min": 1, "max": 6 } }
-\`\`\`
-
-### switch
-Boolean toggle.
-\`\`\`svelte
-{#if show_title}<h1>{title}</h1>{/if}
-\`\`\`
-
-### select
-Dropdown selection.
-\`\`\`json
-{ "name": "align", "type": "select", "options": { "choices": ["left", "center", "right"] } }
-\`\`\`
-\`\`\`svelte
-<div class="text-{align}">{content}</div>
-\`\`\`
-
-### repeater
-List of items with nested fields.
-\`\`\`json
-{
-  "name": "features",
-  "type": "repeater",
-  "options": {
-    "fields": [
-      { "name": "title", "type": "text" },
-      { "name": "description", "type": "text" }
-    ]
-  }
-}
-\`\`\`
-\`\`\`svelte
-{#each features as feature}
-  <div>
-    <h3>{feature.title}</h3>
-    <p>{feature.description}</p>
-  </div>
-{/each}
-\`\`\`
-
-### group
-Nested object of fields.
-\`\`\`json
-{
-  "name": "author",
-  "type": "group",
-  "options": {
-    "fields": [
-      { "name": "name", "type": "text" },
-      { "name": "avatar", "type": "image" }
-    ]
-  }
-}
-\`\`\`
-\`\`\`svelte
-<div>{author.name}</div>
-{#if author.avatar?.url}<img src={author.avatar.url} />{/if}
-\`\`\`
-
-### page
-Reference to another page. Returns page data with \`_meta.url\`.
-\`\`\`json
-{ "name": "featured_post", "type": "page", "options": { "page_type": "blog-post" } }
-\`\`\`
-
-### page-list
-All pages of a type.
-\`\`\`json
-{ "name": "posts", "type": "page-list", "options": { "page_type": "blog-post" } }
-\`\`\`
-
-### page-field
-Reference a field from the current page type.
-
-### site-field
-Reference a site-wide field.
-
-### slider
-Range slider for numeric values.
-\`\`\`json
-{ "name": "opacity", "type": "slider", "options": { "min": 0, "max": 100, "step": 10 } }
-\`\`\`
-
-### date
-Date picker.
-
-### info
-Display-only text for editors (not rendered in component).
-
-## Svelte 5 Syntax
-
-Components use Svelte 5:
-- \`$state()\` for reactive variables
-- \`$derived()\` for computed values
-- \`$effect()\` for side effects
-- \`onclick={handler}\` not \`on:click={handler}\`
-
-## Editor Context
-
-Check if component is running in the CMS editor:
-\`\`\`svelte
-let is_editor = $state(false)
-
-if (typeof window !== 'undefined') {
-	is_editor = window.__PALA_CONTEXT__?.environment === 'editor'
-}
-\`\`\`
-
-Use this for:
-- Disabling fixed/sticky positioning
-- Skipping scroll/resize listeners
-- Showing placeholder content
-
-## This Site
-
-### Blocks
-
-- \`hero\` - Hero
-
-### Page Types
-
-- \`default\` - Default
-
-## Best Practices
-
-### Safe Field Access
-
-Always handle potentially undefined fields:
-\`\`\`svelte
-<!-- Images -->
-{#if hero_image?.url}
-  <img src={hero_image.url} alt={hero_image.alt} />
-{/if}
-
-<!-- Links -->
 <a href={cta?.url || '#'}>{cta?.label || 'Learn More'}</a>
 
-<!-- Repeaters -->
 {#each features || [] as feature}
   <div>{feature.title}</div>
 {/each}
 \`\`\`
 
-## Workflow
+To detect the editor:
+\`\`\`svelte
+let is_editor = $state(false)
 
-1. Run \`primo dev\` to start the local preview server
-2. Edit blocks, pages, or site settings - changes auto-sync to dev server
-3. Run \`primo push\` to deploy changes to a live server (if connected)
+if (typeof window !== 'undefined') {
+  is_editor = window.__PALA_CONTEXT__?.environment === 'editor'
+}
+\`\`\`
+
+## Local Workflow
+
+1. Run \`primo dev\`.
+2. Edit files under \`blocks\`, \`pages\`, \`page-types\`, or \`site\`.
+3. Content changes sync into the local CMS automatically.
+4. Structural changes like block schema/component changes may trigger a browser reload.
 `
 }

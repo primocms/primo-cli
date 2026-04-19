@@ -1,22 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import chalk from 'chalk';
-// Auto-fix common issues without full validation output
-export async function normalize_site(site_dir) {
-    const pages_dir = path.join(site_dir, 'pages');
-    const index_path = path.join(pages_dir, 'index.yaml');
-    try {
-        let content = await fs.readFile(index_path, 'utf-8');
-        const slug_index_pattern = /^slug:\s*index\s*$/m;
-        if (slug_index_pattern.test(content)) {
-            content = content.replace(slug_index_pattern, "slug: ''");
-            await fs.writeFile(index_path, content, 'utf-8');
-        }
-    }
-    catch {
-        // File doesn't exist, skip
-    }
-}
+import { load as load_yaml } from 'js-yaml';
 const VALID_FIELD_TYPES = [
     'text',
     'rich-text',
@@ -38,6 +23,184 @@ const VALID_FIELD_TYPES = [
     'date',
     'info'
 ];
+const MAX_FIELDS_FILE_BYTES = 256 * 1024;
+const MAX_TOTAL_FIELDS = 5000;
+// Warn-only normalization - logs issues but doesn't modify files
+export async function normalize_site(site_dir) {
+    const warnings = [];
+    const pages_dir = path.join(site_dir, 'pages');
+    const homepage_path = path.join(pages_dir, 'index.yaml');
+    try {
+        await fs.access(homepage_path);
+    }
+    catch {
+        throw new Error(`Missing required homepage file: pages/index.yaml`);
+    }
+    // Note: Missing IDs are normal for new entities - they will be assigned during import.
+    // We only log the warnings array if other checks added warnings.
+    if (warnings.length > 0) {
+        for (const warning of warnings) {
+            console.log(chalk.yellow(`  ⚠ ${warning}`));
+        }
+    }
+}
+async function parse_fields_file(file_path) {
+    const stat = await fs.stat(file_path);
+    if (stat.size > MAX_FIELDS_FILE_BYTES) {
+        throw new Error(`fields file is too large (${stat.size} bytes). This usually indicates corrupted duplicated schema data.`);
+    }
+    const content = await fs.readFile(file_path, 'utf-8');
+    const parsed = load_yaml(content);
+    const total_fields = count_fields_recursive(get_fields_array(parsed));
+    if (total_fields > MAX_TOTAL_FIELDS) {
+        throw new Error(`fields file defines too many fields (${total_fields}). This usually indicates corrupted duplicated schema data.`);
+    }
+    return parsed;
+}
+function get_field_id(field) {
+    return field?._id || field?.id;
+}
+function get_fields_array(data) {
+    if (Array.isArray(data)) {
+        return data;
+    }
+    if (data && typeof data === 'object' && Array.isArray(data.fields)) {
+        return data.fields;
+    }
+    return [];
+}
+function count_fields_recursive(fields) {
+    let count = 0;
+    for (const field of fields) {
+        count += 1;
+        if (Array.isArray(field?.subfields)) {
+            count += count_fields_recursive(field.subfields);
+        }
+    }
+    return count;
+}
+function is_plain_object(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+function validate_field_config(field, field_name, file_path) {
+    const errors = [];
+    if (!Object.prototype.hasOwnProperty.call(field, 'config')) {
+        return errors;
+    }
+    const config = field.config;
+    if (config === null || config === undefined) {
+        return errors;
+    }
+    if (typeof config === 'string') {
+        if (config.trim() === '') {
+            errors.push({
+                file: file_path,
+                field: field_name,
+                message: 'Deprecated empty string "config". Remove it or replace it with a config object.',
+                severity: 'warning'
+            });
+            return errors;
+        }
+        errors.push({
+            file: file_path,
+            field: field_name,
+            message: '"config" must be an object, null, or omitted',
+            severity: 'error'
+        });
+        return errors;
+    }
+    if (!is_plain_object(config)) {
+        errors.push({
+            file: file_path,
+            field: field_name,
+            message: '"config" must be an object, null, or omitted',
+            severity: 'error'
+        });
+    }
+    return errors;
+}
+function collect_field_names(fields, names = new Set()) {
+    for (const field of fields) {
+        if (field?.name) {
+            names.add(field.name);
+        }
+        if (Array.isArray(field?.subfields)) {
+            collect_field_names(field.subfields, names);
+        }
+    }
+    return names;
+}
+function validate_field_recursive(field, field_path, file_path, field_ids, field_names) {
+    const errors = [];
+    const field_id = get_field_id(field);
+    const field_name = field.name || field_id || '(unnamed)';
+    const display_name = field_path || field_name;
+    // IDs are optional - they're assigned by the system during import.
+    // Only check for duplicates if IDs are present.
+    if (field_id) {
+        if (field_ids.has(field_id)) {
+            errors.push({
+                file: file_path,
+                field: display_name,
+                message: `Duplicate field ID: "${field_id}"`,
+                severity: 'error'
+            });
+        }
+        field_ids.add(field_id);
+    }
+    if (!field.name) {
+        errors.push({
+            file: file_path,
+            field: display_name,
+            message: 'Missing required "name" field',
+            severity: 'error'
+        });
+    }
+    if (!field.label && field.type !== 'info') {
+        errors.push({
+            file: file_path,
+            field: display_name,
+            message: 'Missing "label" field',
+            severity: 'warning'
+        });
+    }
+    if (!field.type) {
+        errors.push({
+            file: file_path,
+            field: display_name,
+            message: 'Missing required "type" field',
+            severity: 'error'
+        });
+        return errors;
+    }
+    if (!VALID_FIELD_TYPES.includes(field.type)) {
+        errors.push({
+            file: file_path,
+            field: display_name,
+            message: `Invalid field type: "${field.type}". Valid types: ${VALID_FIELD_TYPES.join(', ')}`,
+            severity: 'error'
+        });
+    }
+    errors.push(...validate_field_config(field, display_name, file_path));
+    if (field.type === 'select') {
+        errors.push(...validate_select_field(field, display_name, file_path));
+    }
+    if (field.parent && !field_names.has(field.parent)) {
+        errors.push({
+            file: file_path,
+            field: display_name,
+            message: `Parent field "${field.parent}" not found`,
+            severity: 'error'
+        });
+    }
+    if (Array.isArray(field.subfields)) {
+        for (const subfield of field.subfields) {
+            const subfield_name = subfield?.name || get_field_id(subfield) || '(unnamed subfield)';
+            errors.push(...validate_field_recursive(subfield, `${display_name}.${subfield_name}`, file_path, field_ids, field_names));
+        }
+    }
+    return errors;
+}
 export async function validate_site(options) {
     const errors = [];
     const warnings = [];
@@ -51,6 +214,8 @@ export async function validate_site(options) {
         console.log(chalk.red(`✖ Directory not found: ${site_dir}`));
         process.exit(1);
     }
+    // Check for issues (warn-only, no modifications)
+    await normalize_site(site_dir);
     // Validate blocks
     const blocks_errors = await validate_blocks(site_dir);
     errors.push(...blocks_errors.filter(e => e.severity === 'error'));
@@ -110,8 +275,8 @@ async function validate_blocks(site_dir) {
         if (!stat.isDirectory())
             continue;
         // Check for required files - read actual directory listing to handle case-insensitive filesystems
-        const fields_path = path.join(block_dir, 'fields.json');
         const block_files = await fs.readdir(block_dir);
+        const fields_path = path.join(block_dir, 'fields.yaml');
         // Check for component.svelte with correct casing
         const component_file = block_files.find(f => f.toLowerCase() === 'component.svelte');
         if (!component_file) {
@@ -129,27 +294,16 @@ async function validate_blocks(site_dir) {
             });
         }
         try {
-            const fields_data = await fs.readFile(fields_path, 'utf-8');
-            let fields_json;
-            try {
-                fields_json = JSON.parse(fields_data);
-            }
-            catch {
-                errors.push({
-                    file: `blocks/${block_name}/fields.json`,
-                    message: 'Invalid JSON syntax',
-                    severity: 'error'
-                });
-                continue;
-            }
+            const relative_fields_path = `blocks/${block_name}/fields.yaml`;
+            const fields_json = await parse_fields_file(fields_path);
             // Validate fields structure
-            const field_errors = validate_fields(fields_json, `blocks/${block_name}/fields.json`);
+            const field_errors = validate_fields(fields_json, relative_fields_path);
             errors.push(...field_errors);
         }
         catch {
             errors.push({
-                file: `blocks/${block_name}/`,
-                message: 'Missing fields.json file',
+                file: `blocks/${block_name}/fields.yaml`,
+                message: 'Missing fields.yaml file or invalid YAML syntax',
                 severity: 'error'
             });
         }
@@ -177,17 +331,17 @@ async function validate_page_types(site_dir) {
         const stat = await fs.stat(page_type_dir);
         if (!stat.isDirectory())
             continue;
-        const config_path = path.join(page_type_dir, 'config.json');
+        const config_path = path.join(page_type_dir, 'config.yaml');
         try {
             const config_data = await fs.readFile(config_path, 'utf-8');
             let config;
             try {
-                config = JSON.parse(config_data);
+                config = load_yaml(config_data);
             }
             catch {
                 errors.push({
-                    file: `page-types/${page_type_name}/config.json`,
-                    message: 'Invalid JSON syntax',
+                    file: `page-types/${page_type_name}/config.yaml`,
+                    message: 'Invalid YAML syntax',
                     severity: 'error'
                 });
                 continue;
@@ -195,21 +349,21 @@ async function validate_page_types(site_dir) {
             // Validate config has required fields
             if (!config.name) {
                 errors.push({
-                    file: `page-types/${page_type_name}/config.json`,
+                    file: `page-types/${page_type_name}/config.yaml`,
                     message: 'Missing "name" field',
                     severity: 'error'
                 });
             }
             // Validate page type fields if they exist
             if (config.fields) {
-                const field_errors = validate_fields({ fields: config.fields }, `page-types/${page_type_name}/config.json`);
+                const field_errors = validate_fields({ fields: config.fields }, `page-types/${page_type_name}/config.yaml`);
                 errors.push(...field_errors);
             }
         }
         catch {
             errors.push({
                 file: `page-types/${page_type_name}/`,
-                message: 'Missing config.json file',
+                message: 'Missing config.yaml file',
                 severity: 'error'
             });
         }
@@ -218,25 +372,14 @@ async function validate_page_types(site_dir) {
 }
 async function validate_site_fields(site_dir) {
     const errors = [];
-    const site_fields_path = path.join(site_dir, 'site/fields.json');
+    const site_fields_path = path.join(site_dir, 'site', 'fields.yaml');
     try {
-        const fields_data = await fs.readFile(site_fields_path, 'utf-8');
-        let fields_json;
-        try {
-            fields_json = JSON.parse(fields_data);
-        }
-        catch {
-            errors.push({
-                file: 'site/fields.json',
-                message: 'Invalid JSON syntax',
-                severity: 'error'
-            });
-            return errors;
-        }
-        // site/fields.json must be a plain array, not wrapped in an object
+        const relative_path = 'site/fields.yaml';
+        const fields_json = await parse_fields_file(site_fields_path);
+        // site fields must be a plain array, not wrapped in an object
         if (!Array.isArray(fields_json)) {
             errors.push({
-                file: 'site/fields.json',
+                file: relative_path,
                 message: 'Must be a plain array (e.g., []) not wrapped in an object. The import will fail.',
                 severity: 'error'
             });
@@ -244,14 +387,14 @@ async function validate_site_fields(site_dir) {
         }
         // Validate as array of fields
         if (fields_json.length > 0) {
-            const field_errors = validate_fields({ fields: fields_json }, 'site/fields.json');
+            const field_errors = validate_fields({ fields: fields_json }, relative_path);
             errors.push(...field_errors);
         }
     }
     catch {
         errors.push({
-            file: 'site/',
-            message: 'Missing fields.json file',
+            file: 'site/fields.yaml',
+            message: 'Missing fields.yaml file or invalid YAML syntax',
             severity: 'warning'
         });
     }
@@ -268,116 +411,34 @@ function validate_fields(fields_json, file_path) {
         return errors;
     }
     const field_ids = new Set();
-    const field_names = new Set();
-    const parent_names = new Set();
-    // Collect all field names for parent validation
+    const field_names = collect_field_names(fields_json.fields);
     for (const field of fields_json.fields) {
-        if (field.name) {
-            field_names.add(field.name);
-        }
-    }
-    for (const field of fields_json.fields) {
-        const field_name = field.name || field.id || '(unnamed)';
-        // Check required properties
-        if (!field.id) {
-            errors.push({
-                file: file_path,
-                field: field_name,
-                message: 'Missing required "id" field',
-                severity: 'error'
-            });
-        }
-        else {
-            // Check for duplicate IDs
-            if (field_ids.has(field.id)) {
-                errors.push({
-                    file: file_path,
-                    field: field_name,
-                    message: `Duplicate field ID: "${field.id}"`,
-                    severity: 'error'
-                });
-            }
-            field_ids.add(field.id);
-        }
-        if (!field.name) {
-            errors.push({
-                file: file_path,
-                field: field_name,
-                message: 'Missing required "name" field',
-                severity: 'error'
-            });
-        }
-        if (!field.label && field.type !== 'info') {
-            errors.push({
-                file: file_path,
-                field: field_name,
-                message: 'Missing "label" field',
-                severity: 'warning'
-            });
-        }
-        if (!field.type) {
-            errors.push({
-                file: file_path,
-                field: field_name,
-                message: 'Missing required "type" field',
-                severity: 'error'
-            });
-        }
-        else {
-            // Check valid field type
-            if (!VALID_FIELD_TYPES.includes(field.type)) {
-                errors.push({
-                    file: file_path,
-                    field: field_name,
-                    message: `Invalid field type: "${field.type}". Valid types: ${VALID_FIELD_TYPES.join(', ')}`,
-                    severity: 'error'
-                });
-            }
-            // Type-specific validation
-            if (field.type === 'select') {
-                const select_errors = validate_select_field(field, field_name, file_path);
-                errors.push(...select_errors);
-            }
-            if (field.type === 'repeater' || field.type === 'group') {
-                parent_names.add(field.name);
-            }
-        }
-        // Validate parent reference
-        if (field.parent) {
-            if (!field_names.has(field.parent)) {
-                errors.push({
-                    file: file_path,
-                    field: field_name,
-                    message: `Parent field "${field.parent}" not found`,
-                    severity: 'error'
-                });
-            }
-        }
+        errors.push(...validate_field_recursive(field, field.name || get_field_id(field) || '(unnamed)', file_path, field_ids, field_names));
     }
     return errors;
 }
 function validate_select_field(field, field_name, file_path) {
     const errors = [];
-    if (!field.options || !field.options.options) {
+    if (!is_plain_object(field.config) || !field.config.options) {
         errors.push({
             file: file_path,
             field: field_name,
-            message: 'Select field missing "options.options" array',
+            message: 'Select field missing "config.options" array',
             severity: 'error'
         });
         return errors;
     }
-    if (!Array.isArray(field.options.options)) {
+    if (!Array.isArray(field.config.options)) {
         errors.push({
             file: file_path,
             field: field_name,
-            message: 'Select field "options.options" must be an array',
+            message: 'Select field "config.options" must be an array',
             severity: 'error'
         });
         return errors;
     }
-    for (let i = 0; i < field.options.options.length; i++) {
-        const option = field.options.options[i];
+    for (let i = 0; i < field.config.options.length; i++) {
+        const option = field.config.options[i];
         if (!option.label) {
             errors.push({
                 file: file_path,
@@ -408,6 +469,7 @@ function validate_select_field(field, field_name, file_path) {
 async function validate_pages(site_dir) {
     const errors = [];
     const pages_dir = path.join(site_dir, 'pages');
+    const homepage_path = path.join(pages_dir, 'index.yaml');
     try {
         await fs.access(pages_dir);
     }
@@ -418,19 +480,28 @@ async function validate_pages(site_dir) {
                 severity: 'warning'
             }];
     }
+    try {
+        await fs.access(homepage_path);
+    }
+    catch {
+        errors.push({
+            file: 'pages/index.yaml',
+            message: 'Missing required homepage file. Primo requires pages/index.yaml for the site root.',
+            severity: 'error'
+        });
+    }
     // Recursively find all YAML files in pages directory
     const yaml_files = await find_yaml_files(pages_dir, 'pages');
     for (const yaml_file of yaml_files) {
         const file_path = path.join(site_dir, yaml_file);
         try {
-            let content = await fs.readFile(file_path, 'utf-8');
-            // Auto-fix: normalize homepage slug from "index" to ""
-            if (yaml_file === 'pages/index.yaml' || yaml_file === 'pages\\index.yaml') {
-                const slug_index_pattern = /^slug:\s*index\s*$/m;
-                if (slug_index_pattern.test(content)) {
-                    content = content.replace(slug_index_pattern, "slug: ''");
-                    await fs.writeFile(file_path, content, 'utf-8');
-                }
+            const content = await fs.readFile(file_path, 'utf-8');
+            if (/^slug:/m.test(content)) {
+                errors.push({
+                    file: yaml_file,
+                    message: 'Page slug is now derived from the file path. Remove the "slug:" field; it is ignored.',
+                    severity: 'warning'
+                });
             }
             // Check for common mistakes
             if (content.includes('\nblocks:') || content.match(/^blocks:/m)) {
@@ -494,7 +565,7 @@ async function find_yaml_files(dir, relative_path) {
                 const nested = await find_yaml_files(full_path, rel_path);
                 files.push(...nested);
             }
-            else if (entry.name.endsWith('.yaml') || entry.name.endsWith('.yml')) {
+            else if (entry.name.endsWith('.yaml')) {
                 files.push(rel_path);
             }
         }

@@ -3,6 +3,8 @@ import { Command } from 'commander';
 import { new_site } from './commands/new.js';
 import { pull_site } from './commands/pull.js';
 import { push_site } from './commands/push.js';
+import { pull_library } from './commands/pull-library.js';
+import { push_library } from './commands/push-library.js';
 import { dev_server } from './commands/dev.js';
 import { login } from './commands/login.js';
 import { validate_site } from './commands/validate.js';
@@ -15,7 +17,7 @@ program
     .version('0.1.3');
 program
     .command('new [name]')
-    .description('Create a new site and start local CMS')
+    .description('Create a new site in the current workspace and start local CMS')
     .option('-t, --template <template>', 'Starter template')
     .option('--skip-dev', 'Create files only, don\'t start CMS')
     .action((name, options) => new_site({ name, ...options }));
@@ -24,6 +26,7 @@ program
     .description('Start local CMS')
     .option('-d, --dir <dir>', 'Site directory', '.')
     .option('-p, --port <port>', 'Port', '3000')
+    .option('-f, --force', 'Kill existing processes on the port')
     .action(dev_server);
 program
     .command('publish')
@@ -48,6 +51,23 @@ program
     .option('-o, --output <dir>', 'Output directory', '.')
     .option('-t, --token <token>', 'Auth token')
     .action(pull_site);
+const library = program
+    .command('library')
+    .description('Manage shared block library');
+library
+    .command('pull')
+    .description('Pull shared library to local files')
+    .option('-s, --server <url>', 'Server URL (auto-detects local)')
+    .option('-o, --output <dir>', 'Output directory', '.')
+    .option('-t, --token <token>', 'Auth token')
+    .action(pull_library);
+library
+    .command('push')
+    .description('Push local shared library to hosted CMS')
+    .option('-s, --server <url>', 'Server URL')
+    .option('-d, --dir <dir>', 'Workspace directory', '.')
+    .option('-t, --token <token>', 'Auth token')
+    .action(push_library);
 program
     .command('login')
     .description('Login to hosted CMS')
@@ -65,6 +85,6 @@ program
     .command('build')
     .description('Build static site')
     .option('-d, --dir <dir>', 'Site directory', '.')
-    .option('-o, --output <dir>', 'Output directory', 'dist')
+    .option('-o, --output <dir>', 'Output directory', '_site')
     .action(build_site);
 program.parse();

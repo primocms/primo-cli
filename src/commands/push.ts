@@ -4,6 +4,7 @@ import chalk from 'chalk'
 import ora from 'ora'
 import archiver from 'archiver'
 import { get_auth_token } from '../utils/auth.js'
+import { read_site_config, type SiteConfig, SITE_CONFIG_FILE } from '../utils/site-config.js'
 
 interface PushOptions {
 	server?: string
@@ -11,13 +12,6 @@ interface PushOptions {
 	dir: string
 	token?: string
 	preview?: boolean
-}
-
-interface PalaConfig {
-	name: string
-	host: string
-	site_id: string
-	server?: string
 }
 
 interface PushDiff {
@@ -33,13 +27,11 @@ export async function push_site(options: PushOptions) {
 	try {
 		const site_dir = path.resolve(options.dir)
 
-		// Read primo.json for server/site info
-		const config_path = path.join(site_dir, 'primo.json')
-		let config: PalaConfig | null = null
+		// Read site config for server/site info
+		let config: SiteConfig | null = null
 
 		try {
-			const config_data = await fs.readFile(config_path, 'utf-8')
-			config = JSON.parse(config_data)
+			config = await read_site_config(site_dir)
 		} catch {
 			// No config file, must provide options
 		}
@@ -48,12 +40,12 @@ export async function push_site(options: PushOptions) {
 		const site_id = options.site || config?.site_id
 
 		if (!server) {
-			spinner.fail('Server URL required. Use --server or add server field to primo.json.')
+			spinner.fail(`Server URL required. Use --server or add server field to ${SITE_CONFIG_FILE}.`)
 			process.exit(1)
 		}
 
 		if (!site_id) {
-			spinner.fail('Site ID required. Use --site or add site_id field to primo.json.')
+			spinner.fail(`Site ID required. Use --site or add site_id field to ${SITE_CONFIG_FILE}.`)
 			process.exit(1)
 		}
 
@@ -128,8 +120,8 @@ async function create_zip(dir: string): Promise<Buffer> {
 			archive.directory(full_path, subdir)
 		}
 
-		// Add primo.json
-		archive.file(path.join(dir, 'primo.json'), { name: 'primo.json' })
+		// Add site config
+		archive.file(path.join(dir, SITE_CONFIG_FILE), { name: SITE_CONFIG_FILE })
 
 		archive.finalize()
 	})

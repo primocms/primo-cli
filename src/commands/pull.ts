@@ -4,7 +4,9 @@ import chalk from 'chalk'
 import ora from 'ora'
 import extract from 'extract-zip'
 import inquirer from 'inquirer'
+import { dump as dump_yaml, load as load_yaml } from 'js-yaml'
 import { get_auth_token } from '../utils/auth.js'
+import { write_site_config } from '../utils/site-config.js'
 
 interface PullOptions {
 	server?: string
@@ -38,6 +40,7 @@ interface Site {
 	id: string
 	name: string
 	host: string
+	group: string
 }
 
 export async function pull_site(options: PullOptions) {
@@ -66,6 +69,8 @@ export async function pull_site(options: PullOptions) {
 
 		let site_id = options.site
 		let site_host: string | undefined
+		let site_name: string | undefined
+		let site_group: string | undefined
 
 		// If no site specified, show interactive selection
 		if (!site_id) {
@@ -100,7 +105,9 @@ export async function pull_site(options: PullOptions) {
 			}])
 
 			site_id = selected_site.id
+			site_name = selected_site.name
 			site_host = selected_site.host
+			site_group = selected_site.group
 
 			spinner.start('Exporting site...')
 		} else {
@@ -112,7 +119,9 @@ export async function pull_site(options: PullOptions) {
 
 			if (site_response.ok) {
 				const site_data = await site_response.json() as Site
+				site_name = site_data.name
 				site_host = site_data.host
+				site_group = site_data.group
 			}
 		}
 
@@ -152,6 +161,14 @@ export async function pull_site(options: PullOptions) {
 		// Clean up temp ZIP
 		await fs.unlink(temp_zip)
 
+		await write_site_config(output_dir, {
+			name: site_name || 'Imported Site',
+			host: site_host || '',
+			site_id: site_id!,
+			server,
+			group: site_group
+		})
+
 		// Copy JSON schemas
 		spinner.text = 'Adding JSON schemas...'
 		await copy_schemas(output_dir)
@@ -168,6 +185,7 @@ export async function pull_site(options: PullOptions) {
 		console.log(chalk.dim(`    blocks/     ${files.blocks} blocks`))
 		console.log(chalk.dim(`    page-types/ ${files.page_types} page types`))
 		console.log(chalk.dim(`    pages/      ${files.pages} pages`))
+		console.log(chalk.dim(`    ${'site.yaml'}   config`))
 		console.log('')
 		console.log(chalk.green('  Ready for local development!'))
 		console.log(chalk.dim('  Run `primo dev` to start the local server'))
@@ -195,20 +213,20 @@ async function count_files(dir: string): Promise<{ blocks: number; page_types: n
 
 	try {
 		const pages_dir = path.join(dir, 'pages')
-		counts.pages = await count_json_files(pages_dir)
+		counts.pages = await count_yaml_files(pages_dir)
 	} catch {}
 
 	return counts
 }
 
-async function count_json_files(dir: string): Promise<number> {
+async function count_yaml_files(dir: string): Promise<number> {
 	let count = 0
 	const entries = await fs.readdir(dir, { withFileTypes: true })
 
 	for (const entry of entries) {
 		if (entry.isDirectory()) {
-			count += await count_json_files(path.join(dir, entry.name))
-		} else if (entry.name.endsWith('.json')) {
+			count += await count_yaml_files(path.join(dir, entry.name))
+		} else if (entry.name.endsWith('.yaml')) {
 			count++
 		}
 	}
@@ -238,52 +256,25 @@ async function copy_schemas(output_dir: string) {
 }
 
 async function add_schema_references(output_dir: string) {
-	// Add $schema to block fields.json
-	const blocks_dir = path.join(output_dir, 'blocks')
-	try {
-		const blocks = await fs.readdir(blocks_dir, { withFileTypes: true })
-		for (const block of blocks) {
-			if (block.isDirectory()) {
-				const fields_path = path.join(blocks_dir, block.name, 'fields.json')
-				try {
-					const fields = JSON.parse(await fs.readFile(fields_path, 'utf-8'))
-					// Create new object with $schema first
-					const with_schema = {
-						$schema: '../../.schemas/fields.schema.json',
-						...fields
-					}
-					await fs.writeFile(fields_path, JSON.stringify(with_schema, null, 2) + '\n')
-				} catch {}
-			}
-		}
-	} catch {}
-
-	// Add $schema to page-type config.json
+	// Add $schema to page-type config.yaml
 	const page_types_dir = path.join(output_dir, 'page-types')
 	try {
 		const page_types = await fs.readdir(page_types_dir, { withFileTypes: true })
 		for (const page_type of page_types) {
 			if (page_type.isDirectory()) {
-				const config_path = path.join(page_types_dir, page_type.name, 'config.json')
+				const config_path = path.join(page_types_dir, page_type.name, 'config.yaml')
 				try {
-					const config = JSON.parse(await fs.readFile(config_path, 'utf-8'))
-					// Create new object with $schema first
+					const config = load_yaml(await fs.readFile(config_path, 'utf-8'))
+					if (!config || typeof config !== 'object' || Array.isArray(config)) {
+						continue
+					}
 					const with_schema = {
 						$schema: '../../.schemas/page-type-config.schema.json',
-						...config
+						...(config as Record<string, unknown>)
 					}
-					await fs.writeFile(config_path, JSON.stringify(with_schema, null, 2) + '\n')
+					await fs.writeFile(config_path, dump_yaml(with_schema, { lineWidth: -1, noRefs: true }))
 				} catch {}
 			}
 		}
-	} catch {}
-
-	// Add $schema to site fields.json
-	const site_fields_path = path.join(output_dir, 'site/fields.json')
-	try {
-		const site_fields = JSON.parse(await fs.readFile(site_fields_path, 'utf-8'))
-		// Site fields is an array, so we need to add $schema differently
-		// Since JSON Schema doesn't support $schema in arrays, we'll skip this for now
-		// IDEs can still use the schema if users manually add it via settings
 	} catch {}
 }
