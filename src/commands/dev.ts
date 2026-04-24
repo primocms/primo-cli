@@ -1,5 +1,4 @@
 import fs from 'fs/promises'
-import { watch, type FSWatcher } from 'fs'
 import path from 'path'
 import { randomInt } from 'crypto'
 import chalk from 'chalk'
@@ -8,6 +7,7 @@ import { spawn, type ChildProcess } from 'child_process'
 import archiver from 'archiver'
 import extract from 'extract-zip'
 import { dump as dump_yaml, load as load_yaml } from 'js-yaml'
+import chokidar, { type FSWatcher } from 'chokidar'
 import { ensure_binary, ensure_data_dir } from '../utils/binary.js'
 import { read_site_config, type SiteConfig, SITE_CONFIG_FILE } from '../utils/site-config.js'
 import { read_server_config, type ServerConfig, type SiteGroupConfig, format_group_name, SERVER_CONFIG_FILE } from '../utils/server-config.js'
@@ -33,6 +33,7 @@ let is_syncing = false
 let is_importing = false
 let is_cleaning_up = false
 let last_import_time = 0  // Timestamp of last import completion
+let last_local_change_time = 0  // Timestamp of most recent local watcher event
 const importing_site_keys = new Set<string>()
 const pending_local_site_keys = new Set<string>()
 let is_importing_library = false
@@ -42,6 +43,16 @@ let has_pending_library_local_changes = false
 // Map of filepath -> mtime (ms) when we wrote it
 const synced_files = new Map<string, number>()
 const synced_deleted_paths = new Map<string, number>()
+
+// Snapshot of library folder paths known to be in the DB after the last
+// successful push, mapped to the underlying DB record ID (group id or
+// symbol/block id from fields.yaml). Paths are posix-style and relative to
+// the library root, e.g. "marketing" (group) or "marketing/hero-split"
+// (block). A diff against the current filesystem between pushes is what
+// produces the `deletes` manifest: if a path was in the last snapshot but
+// isn't on disk now, its ID is sent to the server as an explicit delete.
+type LibrarySnapshot = Map<string, { kind: 'group' | 'block'; id: string | null }>
+let library_snapshot: LibrarySnapshot = new Map()
 
 const ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789'
 const SITES_DIR = 'sites'
@@ -68,6 +79,15 @@ type ImportTimings = {
 
 const LOCAL_PUSH_DEBOUNCE_MS = 150
 const LOCAL_ZIP_COMPRESSION_LEVEL = 0
+// Tolerance for matching a file mtime against the synced_files map to decide
+// whether an fs.watch event was caused by our own sync-write. Wider values
+// trade duplicate push work for safety against slow I/O and flaky watchers
+// (macOS fs.watch fires inconsistently for recursive writes).
+const SYNC_MTIME_TOLERANCE_MS = 3000
+// When the user writes a file locally, suppress CMS->local pulls for this
+// long to prevent a pull that was in-flight before the watcher fired from
+// stomping the just-written content on arrival.
+const LOCAL_CHANGE_PULL_COOLDOWN_MS = 3000
 
 // Preferred key order for field definitions in YAML
 const FIELD_KEY_ORDER = ['_id', 'label', 'name', 'type', 'subfields', 'config']
@@ -340,44 +360,90 @@ export async function dev_server(options: DevOptions) {
 
 			if (is_server_mode) {
 				const library_path = path.join(base_dir, LIBRARY_DIR)
-				try {
-					const watcher = watch(library_path, { recursive: true }, async (_event, filename) => {
-						if (!filename || filename.startsWith('.')) return
+				// Prime the snapshot from the current disk state so the first
+				// post-startup push doesn't consider every existing folder as
+				// a potential delete.
+				library_snapshot = await scan_library_folders(library_path)
 
-						const full_path = path.join(library_path, filename)
-						if (should_skip_synced_delete(full_path)) {
-							return
+				try {
+					const watcher = chokidar.watch(library_path, {
+						ignored: (p: string) => path.basename(p).startsWith('.'),
+						ignoreInitial: true,
+						awaitWriteFinish: {
+							stabilityThreshold: 60,
+							pollInterval: 30
 						}
+					})
+					const on_event = (full_path: string) => {
+						if (should_skip_synced_delete(full_path)) return
+						// Mark pending synchronously so the sync interval cannot
+						// sneak a pull through between the event and push.
+						has_pending_library_local_changes = true
+						last_local_change_time = Date.now()
+
 						const synced_mtime = synced_files.get(full_path)
 						if (synced_mtime) {
-							try {
-								const stat = await fs.stat(full_path)
-								if (Math.abs(stat.mtimeMs - synced_mtime) < 1000) {
+							// Our own sync-write — skip.
+							fs.stat(full_path)
+								.then(stat => {
+									if (Math.abs(stat.mtimeMs - synced_mtime) < SYNC_MTIME_TOLERANCE_MS) {
+										synced_files.delete(full_path)
+										return
+									}
 									synced_files.delete(full_path)
-									return
-								}
-							} catch {
-								// File might have been deleted
-							}
-							synced_files.delete(full_path)
+									schedule_library_push()
+								})
+								.catch(() => {
+									synced_files.delete(full_path)
+									schedule_library_push()
+								})
+							return
 						}
+						schedule_library_push()
+					}
 
-						console.log(chalk.dim(`  library: ${filename}`))
-						has_pending_library_local_changes = true
-
-						if (library_reimport_timeout) {
-							clearTimeout(library_reimport_timeout)
-						}
+					const schedule_library_push = () => {
+						const rel = (full_path: string) => path.relative(library_path, full_path)
+						if (library_reimport_timeout) clearTimeout(library_reimport_timeout)
 						library_reimport_timeout = setTimeout(async () => {
-							if (is_importing) return
+							if (is_importing) {
+								// Re-arm; another push is in-flight.
+								schedule_library_push()
+								return
+							}
 							try {
 								is_importing = true
 								is_importing_library = true
-								const import_timings = await import_library_files(base_dir, api_url)
+
+								// Diff current disk state against the last snapshot to
+								// compute the deletes manifest. Only paths present in
+								// the snapshot but absent on disk right now are real
+								// user deletions. Race-free: we read disk AFTER the
+								// debounce has settled.
+								const current = await scan_library_folders(library_path)
+								const delete_group_ids: string[] = []
+								const delete_symbol_ids: string[] = []
+								const delete_paths: string[] = []
+								for (const [snap_path, entry] of library_snapshot) {
+									if (current.has(snap_path)) continue
+									delete_paths.push(snap_path)
+									if (entry.id) {
+										if (entry.kind === 'group') delete_group_ids.push(entry.id)
+										else delete_symbol_ids.push(entry.id)
+									}
+								}
+								delete_paths.sort()
+								if (delete_paths.length > 0) {
+									console.log(chalk.yellow(`  library: deleting ${delete_paths.length} path(s): ${delete_paths.join(', ')}`))
+								}
+
+								const import_timings = await import_library_files(base_dir, api_url, delete_group_ids, delete_symbol_ids)
 								const reload_started = Date.now()
 								await request_browser_reload(api_url)
 								const reload_ms = Date.now() - reload_started
 								has_pending_library_local_changes = false
+								// Update snapshot only on successful push.
+								library_snapshot = current
 								console.log(chalk.dim(`  library: zip ${import_timings.zip_ms}ms, import ${import_timings.request_ms}ms, reload ${reload_ms}ms`))
 								console.log(chalk.green('  ✓ Library pushed'))
 							} catch (err) {
@@ -388,7 +454,13 @@ export async function dev_server(options: DevOptions) {
 								last_import_time = Date.now()
 							}
 						}, LOCAL_PUSH_DEBOUNCE_MS)
-					})
+					}
+
+					watcher.on('add', on_event)
+					watcher.on('change', on_event)
+					watcher.on('unlink', on_event)
+					watcher.on('addDir', on_event)
+					watcher.on('unlinkDir', on_event)
 					watchers.push(watcher)
 				} catch {
 					// Library directory might not exist
@@ -440,36 +512,53 @@ export async function dev_server(options: DevOptions) {
 			for (const dir of dirs_to_watch) {
 				const watch_path = path.join(site.dir, dir)
 				try {
-					const watcher = watch(watch_path, { recursive: true }, async (event, filename) => {
-						if (!filename || filename.startsWith('.')) return
-
-						// Check if this file was just written by sync
-						const full_path = path.join(watch_path, filename)
-						if (should_skip_synced_delete(full_path)) {
-							return
+					const watcher = chokidar.watch(watch_path, {
+						ignored: (p: string) => path.basename(p).startsWith('.'),
+						ignoreInitial: true,
+						awaitWriteFinish: {
+							stabilityThreshold: 60,
+							pollInterval: 30
 						}
-						const synced_mtime = synced_files.get(full_path)
-						if (synced_mtime) {
-							try {
-								const stat = await fs.stat(full_path)
-								// If mtime matches what we wrote, skip this event
-								if (Math.abs(stat.mtimeMs - synced_mtime) < 1000) {
-									synced_files.delete(full_path)
-									return
-								}
-							} catch {
-								// File might have been deleted
-							}
-							synced_files.delete(full_path)
-						}
-
+					})
+					const continue_event = (full_path: string) => {
+						const filename = path.relative(watch_path, full_path)
 						console.log(chalk.dim(`  ${site.config.name}: ${dir}/${filename}`))
-						pending_local_site_keys.add(get_site_sync_key(site.dir, site.config))
 						if (change_requires_reload(dir, filename)) {
 							pending_reload = true
 						}
 						schedule_reimport()
-					})
+					}
+					const on_event = (full_path: string) => {
+						if (should_skip_synced_delete(full_path)) return
+						// Mark site as pending synchronously so the sync interval
+						// cannot pull against a site that's actively being edited.
+						pending_local_site_keys.add(get_site_sync_key(site.dir, site.config))
+						last_local_change_time = Date.now()
+
+						const synced_mtime = synced_files.get(full_path)
+						if (synced_mtime) {
+							fs.stat(full_path)
+								.then(stat => {
+									if (Math.abs(stat.mtimeMs - synced_mtime) < SYNC_MTIME_TOLERANCE_MS) {
+										synced_files.delete(full_path)
+										return
+									}
+									synced_files.delete(full_path)
+									continue_event(full_path)
+								})
+								.catch(() => {
+									synced_files.delete(full_path)
+									continue_event(full_path)
+								})
+							return
+						}
+						continue_event(full_path)
+					}
+					watcher.on('add', on_event)
+					watcher.on('change', on_event)
+					watcher.on('unlink', on_event)
+					watcher.on('addDir', on_event)
+					watcher.on('unlinkDir', on_event)
 					watchers.push(watcher)
 				} catch {
 					// Directory might not exist
@@ -526,6 +615,10 @@ export async function dev_server(options: DevOptions) {
 		sync_interval = setInterval(async () => {
 			if (is_syncing || is_importing) return
 			if (Date.now() - last_import_time < IMPORT_COOLDOWN_MS) return
+			// Skip the pull if the user just made a local change — otherwise a
+			// pull that started before the watcher fired could overwrite the
+			// fresh local edit on arrival.
+			if (Date.now() - last_local_change_time < LOCAL_CHANGE_PULL_COOLDOWN_MS) return
 
 			is_syncing = true
 			try {
@@ -1244,6 +1337,30 @@ async function prepare_site_for_local_dev(site_dir: string): Promise<LocalDevPre
 	}
 }
 
+type ImportWarning = {
+	kind: string
+	file: string
+	path: string
+	field: string
+	block: string
+	message: string
+}
+
+// Loudly surface non-fatal import problems (e.g. orphaned fields whose
+// content would otherwise be silently dropped). Printed in yellow with the
+// full details so agents and humans both see exactly what was lost and where.
+function print_import_warnings(site_name: string, warnings: unknown): void {
+	if (!Array.isArray(warnings) || warnings.length === 0) return
+	const list = warnings as ImportWarning[]
+	console.log('')
+	console.log(chalk.yellow(`  ⚠ ${site_name}: ${list.length} import warning${list.length === 1 ? '' : 's'}`))
+	for (const w of list) {
+		const msg = w.message || `${w.kind} at ${w.path} in ${w.file}`
+		console.log(chalk.yellow(`    • ${msg}`))
+	}
+	console.log('')
+}
+
 async function import_site_files(site_dir: string, api_url: string, config: SiteConfig, port: number, server_config: ServerConfig, use_bootstrap = true): Promise<ImportTimings> {
 	const site_name = config.name || 'My Site'
 	const site_id = config.site_id
@@ -1251,7 +1368,7 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 
 	const preparation = await prepare_site_for_local_dev(site_dir)
 	for (const relative_path of preparation.initialized_files) {
-		console.log(chalk.blue(`  ↻ ${config.name}: initialized IDs in ${relative_path}`))
+		console.log(chalk.blue(`  ↻ ${config.name}: normalized metadata in ${relative_path}`))
 	}
 	for (const warning of preparation.warnings) {
 		console.log(chalk.yellow(`  ⚠ ${config.name}: ${warning}`))
@@ -1288,10 +1405,11 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 
 		// Write created IDs back to files
 		try {
-			const result = await import_response.json() as { created_ids?: Record<string, Record<string, unknown>> }
+			const result = await import_response.json() as { created_ids?: Record<string, Record<string, unknown>>, warnings?: ImportWarning[] }
 			if (result.created_ids) {
 				await write_created_ids(site_dir, result.created_ids)
 			}
+			print_import_warnings(config.name, result.warnings)
 		} catch {
 			// ignore JSON parse errors
 		}
@@ -1325,6 +1443,12 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 			const bootstrap_ms = Date.now() - bootstrap_started
 
 			if (bootstrap_response.ok) {
+				try {
+					const result = await bootstrap_response.json() as { warnings?: ImportWarning[] }
+					print_import_warnings(config.name, result.warnings)
+				} catch {
+					// ignore JSON parse errors
+				}
 				return {
 					zip_ms,
 					request_ms: bootstrap_ms,
@@ -1359,10 +1483,11 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 			} else {
 				// Write created IDs back to files
 				try {
-					const result = await import_response.json() as { created_ids?: Record<string, Record<string, unknown>> }
+					const result = await import_response.json() as { created_ids?: Record<string, Record<string, unknown>>, warnings?: ImportWarning[] }
 					if (result.created_ids) {
 						await write_created_ids(site_dir, result.created_ids)
 					}
+					print_import_warnings(config.name, result.warnings)
 				} catch {
 					// ignore JSON parse errors
 				}
@@ -1387,7 +1512,7 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 	throw new Error(`Import failed for ${config.name}`)
 }
 
-async function import_library_files(base_dir: string, api_url: string): Promise<Pick<ImportTimings, 'zip_ms' | 'request_ms'>> {
+async function import_library_files(base_dir: string, api_url: string, delete_group_ids: string[] = [], delete_symbol_ids: string[] = []): Promise<Pick<ImportTimings, 'zip_ms' | 'request_ms'>> {
 	const library_dir = path.join(base_dir, LIBRARY_DIR)
 
 	try {
@@ -1397,7 +1522,13 @@ async function import_library_files(base_dir: string, api_url: string): Promise<
 		return { zip_ms: 0, request_ms: 0 }
 	}
 
-	if (!await has_library_content(library_dir)) {
+	const has_deletes = delete_group_ids.length > 0 || delete_symbol_ids.length > 0
+
+	// If the library is empty AND there are no explicit deletes, skip the
+	// push entirely. This preserves the old behavior of not wiping the CMS
+	// on accidental-empty-dir. Deletes are allowed through even on an empty
+	// tree so a user can intentionally clear the library.
+	if (!await has_library_content(library_dir) && !has_deletes) {
 		return { zip_ms: 0, request_ms: 0 }
 	}
 
@@ -1406,6 +1537,12 @@ async function import_library_files(base_dir: string, api_url: string): Promise<
 	const zip_ms = Date.now() - zip_started
 	const form_data = new FormData()
 	form_data.append('file', new Blob([zip_buffer]), 'library.zip')
+	if (has_deletes) {
+		form_data.append('deletes', JSON.stringify({
+			group_ids: delete_group_ids,
+			symbol_ids: delete_symbol_ids
+		}))
+	}
 
 	const request_started = Date.now()
 	const response = await fetch_with_timeout(`${api_url}/api/palacms/import-library`, {
@@ -1424,6 +1561,78 @@ async function import_library_files(base_dir: string, api_url: string): Promise<
 	}
 
 	return { zip_ms, request_ms }
+}
+
+// Returns a map of posix-style relative paths (under library_path) to the
+// underlying record ID for every group folder and block folder currently on
+// disk. Group IDs come from library/groups.yaml, block IDs from the block's
+// fields.yaml. Missing IDs are null (new blocks that have never been pushed).
+async function scan_library_folders(library_path: string): Promise<LibrarySnapshot> {
+	const result: LibrarySnapshot = new Map()
+
+	// Load group ID mapping from groups.yaml
+	const group_ids: Record<string, string> = {}
+	try {
+		const raw = await fs.readFile(path.join(library_path, 'groups.yaml'), 'utf-8')
+		const parsed = load_yaml(raw)
+		if (Array.isArray(parsed)) {
+			for (const entry of parsed) {
+				if (entry && typeof entry === 'object' && entry.folder && entry.id) {
+					group_ids[String(entry.folder)] = String(entry.id)
+				}
+			}
+		}
+	} catch {
+		// no groups.yaml, leave group_ids empty
+	}
+
+	let groups: import('fs').Dirent[]
+	try {
+		groups = await fs.readdir(library_path, { withFileTypes: true })
+	} catch {
+		return result
+	}
+	for (const group of groups) {
+		if (!group.isDirectory() || group.name.startsWith('.')) continue
+		const group_rel = group.name
+		result.set(group_rel, { kind: 'group', id: group_ids[group_rel] ?? null })
+		const group_dir = path.join(library_path, group.name)
+		let blocks: import('fs').Dirent[]
+		try {
+			blocks = await fs.readdir(group_dir, { withFileTypes: true })
+		} catch {
+			continue
+		}
+		for (const block of blocks) {
+			if (!block.isDirectory() || block.name.startsWith('.')) continue
+			const block_dir = path.join(group_dir, block.name)
+			let has_block_file = false
+			let block_id: string | null = null
+			try {
+				const files = await fs.readdir(block_dir)
+				has_block_file = files.some(f => f === 'component.svelte' || f === 'fields.yaml' || f === 'content.yaml')
+				if (files.includes('fields.yaml')) {
+					try {
+						const raw = await fs.readFile(path.join(block_dir, 'fields.yaml'), 'utf-8')
+						const parsed = load_yaml(raw)
+						if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+							const rec = parsed as Record<string, unknown>
+							if (typeof rec._id === 'string' && rec._id) block_id = rec._id
+							else if (typeof rec.id === 'string' && rec.id) block_id = rec.id as string
+						}
+					} catch {
+						// ignore
+					}
+				}
+			} catch {
+				// ignore
+			}
+			if (has_block_file) {
+				result.set(`${group_rel}/${block.name}`, { kind: 'block', id: block_id })
+			}
+		}
+	}
+	return result
 }
 
 async function create_library_zip(base_dir: string): Promise<Buffer> {
