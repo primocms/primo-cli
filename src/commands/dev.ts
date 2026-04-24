@@ -67,7 +67,6 @@ type DuplicateOccurrence = {
 
 type LocalDevPreparation = {
 	excluded_paths: Set<string>
-	initialized_files: string[]
 	warnings: string[]
 }
 
@@ -88,57 +87,6 @@ const SYNC_MTIME_TOLERANCE_MS = 3000
 // long to prevent a pull that was in-flight before the watcher fired from
 // stomping the just-written content on arrival.
 const LOCAL_CHANGE_PULL_COOLDOWN_MS = 3000
-
-// Preferred key order for field definitions in YAML.
-// This matches the current palacms export order so startup normalization and
-// CMS-to-file sync don't keep rewriting the same field files.
-const FIELD_KEY_ORDER = ['_id', 'label', 'name', 'subfields', 'type', 'config']
-
-// Reorder keys in a field object to match preferred order
-function order_field_keys(field: Record<string, unknown>): Record<string, unknown> {
-	const ordered: Record<string, unknown> = {}
-	// Add keys in preferred order
-	for (const key of FIELD_KEY_ORDER) {
-		if (key in field) {
-			if (key === 'subfields' && Array.isArray(field[key])) {
-				ordered[key] = (field[key] as Record<string, unknown>[]).map(order_field_keys)
-			} else {
-				ordered[key] = field[key]
-			}
-		}
-	}
-	// Add any remaining keys not in the preferred order
-	for (const key of Object.keys(field)) {
-		if (!(key in ordered)) {
-			ordered[key] = field[key]
-		}
-	}
-	return ordered
-}
-
-// Order fields array with proper key ordering
-function order_fields_yaml(fields: unknown[]): unknown[] {
-	return fields.map(f => order_field_keys(f as Record<string, unknown>))
-}
-
-// Check if a field's keys are in the correct order
-function fields_need_reordering(fields: unknown[]): boolean {
-	for (const field of fields) {
-		const f = field as Record<string, unknown>
-		const keys = Object.keys(f)
-		const type_idx = keys.indexOf('type')
-		const subfields_idx = keys.indexOf('subfields')
-		// Keep this aligned with FIELD_KEY_ORDER.
-		if (subfields_idx !== -1 && type_idx !== -1 && type_idx < subfields_idx) {
-			return true
-		}
-		// Check nested subfields
-		if (Array.isArray(f.subfields) && fields_need_reordering(f.subfields)) {
-			return true
-		}
-	}
-	return false
-}
 
 function get_site_sync_key(site_dir: string, config: SiteConfig): string {
 	return config.site_id || site_dir
@@ -861,88 +809,12 @@ function get_fields_array(data: unknown): Record<string, unknown>[] {
 	return []
 }
 
-function move_key_to_front(record: Record<string, unknown>, key: '_id' | 'id'): boolean {
-	if (!(key in record)) {
-		return false
-	}
-
-	const keys = Object.keys(record)
-	if (keys[0] === key) {
-		return false
-	}
-
-	const ordered: Record<string, unknown> = { [key]: record[key] }
-	for (const [entry_key, value] of Object.entries(record)) {
-		if (entry_key === key) continue
-		ordered[entry_key] = value
-	}
-
-	for (const entry_key of keys) {
-		delete record[entry_key]
-	}
-	Object.assign(record, ordered)
-	return true
-}
-
-function normalize_empty_field_config(field: Record<string, unknown>): boolean {
-	let changed = false
-
-	for (const key of ['config', 'options'] as const) {
-		if (!(key in field)) continue
-
-		const value = field[key]
-		if (value == null || (typeof value === 'string' && value.trim() === '')) {
-			delete field[key]
-			changed = true
-		}
-	}
-
-	return changed
-}
-
-function normalize_fields(fields: Record<string, unknown>[]): boolean {
-	let changed = false
-
-	for (const field of fields) {
-		if (normalize_empty_field_config(field)) {
-			changed = true
-		}
-
-		// Move existing _id to front if present (don't generate new ones)
-		if (get_entity_id(field) && move_key_to_front(field, '_id')) {
-			changed = true
-		}
-
-		if (Array.isArray(field.subfields)) {
-			const subfields = field.subfields.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
-			if (normalize_fields(subfields)) {
-				changed = true
-			}
-		}
-	}
-
-	return changed
-}
-
 function get_sections_array(data: unknown): Record<string, unknown>[] {
 	if (!Array.isArray(data)) {
 		return []
 	}
 
 	return data.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
-}
-
-function normalize_sections(sections: Record<string, unknown>[]): boolean {
-	let changed = false
-
-	for (const section of sections) {
-		// Move existing _id to front if present (don't generate new ones)
-		if (get_entity_id(section) && move_key_to_front(section, '_id')) {
-			changed = true
-		}
-	}
-
-	return changed
 }
 
 function collect_field_ids(fields: Record<string, unknown>[], visit: (field_id: string) => void) {
@@ -1003,11 +875,6 @@ function should_skip_synced_delete(file_path: string): boolean {
 
 	synced_deleted_paths.delete(file_path)
 	return false
-}
-
-async function write_tracked_file(file_path: string, content: string) {
-	await fs.writeFile(file_path, content)
-	await mark_written_file(file_path)
 }
 
 async function mark_deleted_tree(root_path: string): Promise<void> {
@@ -1136,7 +1003,6 @@ function describe_duplicate(category: IDCategory, id: string, occurrences: Dupli
 
 async function prepare_site_for_local_dev(site_dir: string): Promise<LocalDevPreparation> {
 	const excluded_paths = new Set<string>()
-	const initialized_files = new Set<string>()
 	const warnings: string[] = []
 	const duplicates = new Map<IDCategory, Map<string, DuplicateOccurrence[]>>()
 
@@ -1151,25 +1017,8 @@ async function prepare_site_for_local_dev(site_dir: string): Promise<LocalDevPre
 		const page = load_yaml(raw) as Record<string, unknown> | undefined
 		if (!page || typeof page !== 'object' || Array.isArray(page)) continue
 
-		let changed = false
 		const page_id = get_entity_id(page)
-
-		// Move existing _id to front if present (don't generate new ones)
-		if (page_id && move_key_to_front(page, '_id')) {
-			changed = true
-		}
-
 		const page_sections = get_sections_array(page.sections)
-		if (normalize_sections(page_sections)) {
-			page.sections = page_sections
-			changed = true
-		}
-
-		if (changed) {
-			const next = dump_yaml(page, { lineWidth: -1, noRefs: true })
-			await write_tracked_file(full_path, next)
-			initialized_files.add(relative_path)
-		}
 
 		if (page_id) {
 			track_occurrence('pages', page_id, relative_path, relative_path)
@@ -1200,28 +1049,8 @@ async function prepare_site_for_local_dev(site_dir: string): Promise<LocalDevPre
 			const block_data = load_yaml(raw) as Record<string, unknown> | undefined
 			if (!block_data || typeof block_data !== 'object' || Array.isArray(block_data)) continue
 
-			let changed = false
 			const block_id = get_entity_id(block_data)
-
-			// Move existing _id to front if present (don't generate new ones)
-			if (block_id && move_key_to_front(block_data, '_id')) {
-				changed = true
-			}
-
 			const block_fields = get_fields_array(block_data.fields)
-			if (normalize_fields(block_fields)) {
-				block_data.fields = block_fields
-				changed = true
-			}
-			if (fields_need_reordering(block_fields)) {
-				block_data.fields = order_fields_yaml(block_fields)
-				changed = true
-			}
-
-			if (changed) {
-				await write_tracked_file(fields_path, dump_yaml(block_data, { lineWidth: -1, noRefs: true }))
-				initialized_files.add(relative_fields_path)
-			}
 
 			const owner = `blocks/${block_name}`
 			if (block_id) {
@@ -1252,28 +1081,9 @@ async function prepare_site_for_local_dev(site_dir: string): Promise<LocalDevPre
 
 			const config = load_yaml(raw) as Record<string, unknown>
 			if (!config || typeof config !== 'object' || Array.isArray(config)) continue
-			let changed = false
+
 			const page_type_id = get_entity_id(config)
-
-			// Move existing id to front if present (don't generate new ones)
-			if (page_type_id && move_key_to_front(config, 'id')) {
-				changed = true
-			}
-
 			const page_type_fields = get_fields_array(config.fields)
-			if (normalize_fields(page_type_fields)) {
-				config.fields = page_type_fields
-				changed = true
-			}
-			if (fields_need_reordering(page_type_fields)) {
-				config.fields = order_fields_yaml(page_type_fields)
-				changed = true
-			}
-
-			if (changed) {
-				await write_tracked_file(config_path, dump_yaml(config, { lineWidth: -1, noRefs: true }))
-				initialized_files.add(relative_config_path)
-			}
 
 			const owner = `page-types/${page_type_name}`
 			if (page_type_id) {
@@ -1290,26 +1100,9 @@ async function prepare_site_for_local_dev(site_dir: string): Promise<LocalDevPre
 	const site_fields_path = path.join(site_dir, 'site', 'fields.yaml')
 	try {
 		const raw = await fs.readFile(site_fields_path, 'utf-8')
-			const site_fields_data = load_yaml(raw)
-			const site_fields = get_fields_array(site_fields_data)
+		const site_fields_data = load_yaml(raw)
+		const site_fields = get_fields_array(site_fields_data)
 		if (site_fields.length > 0) {
-			let changed = false
-			if (normalize_fields(site_fields)) {
-				changed = true
-			}
-			if (fields_need_reordering(site_fields)) {
-				changed = true
-			}
-
-			if (changed) {
-				const ordered_fields = order_fields_yaml(site_fields)
-				const next = Array.isArray(site_fields_data)
-					? dump_yaml(ordered_fields, { lineWidth: -1, noRefs: true })
-					: dump_yaml({ ...(site_fields_data as Record<string, unknown>), fields: ordered_fields }, { lineWidth: -1, noRefs: true })
-				await write_tracked_file(site_fields_path, next)
-				initialized_files.add('site/fields.yaml')
-			}
-
 			collect_field_ids(site_fields, (field_id) => {
 				track_occurrence('site_fields', field_id, 'site/fields.yaml', 'site/fields.yaml')
 			})
@@ -1334,7 +1127,6 @@ async function prepare_site_for_local_dev(site_dir: string): Promise<LocalDevPre
 
 	return {
 		excluded_paths,
-		initialized_files: [...initialized_files].sort(),
 		warnings
 	}
 }
@@ -1369,9 +1161,6 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 	const site_group = resolve_site_group(config, server_config)
 
 	const preparation = await prepare_site_for_local_dev(site_dir)
-	for (const relative_path of preparation.initialized_files) {
-		console.log(chalk.blue(`  ↻ ${config.name}: normalized metadata in ${relative_path}`))
-	}
 	for (const warning of preparation.warnings) {
 		console.log(chalk.yellow(`  ⚠ ${config.name}: ${warning}`))
 	}
@@ -1836,6 +1625,7 @@ async function write_created_ids(site_dir: string, created_ids: Record<string, R
 			if (data && !data._id) {
 				const updated = { _id: id_data._id, ...data }
 				await fs.writeFile(file_path, dump_yaml(updated, { lineWidth: -1 }), 'utf-8')
+				await mark_written_file(file_path)
 			}
 		} catch {
 			// skip if file doesn't exist or can't be read
