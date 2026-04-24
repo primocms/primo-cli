@@ -9,6 +9,14 @@ import { fileURLToPath } from 'url'
 import { read_site_config, type SiteConfig, SITE_CONFIG_FILE } from '../utils/site-config.js'
 import { validate_head_svelte_content } from '../utils/head-svelte.js'
 
+// CSS reset applied to all sites by default
+const CSS_RESET = `*, *::before, *::after { box-sizing: border-box; }
+* { margin: 0; }
+body { line-height: 1.5; -webkit-font-smoothing: antialiased; }
+img, picture, video, canvas, svg { display: block; max-width: 100%; }
+input, button, textarea, select { font: inherit; }
+p, h1, h2, h3, h4, h5, h6 { overflow-wrap: break-word; }`
+
 interface BuildOptions {
 	dir: string
 	output: string
@@ -323,8 +331,8 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 			head_html = head_content.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
 		}
 
-		// Combine all CSS
-		const combined_css = [head_css, ...all_css].filter(Boolean).join('\n')
+		// Combine all CSS (reset first, then head, then blocks)
+		const combined_css = [CSS_RESET, head_css, ...all_css].filter(Boolean).join('\n')
 
 		// Generate final HTML
 		const title = page.name === 'Home' ? site_name : `${page.name} | ${site_name}`
@@ -421,6 +429,7 @@ function generate_empty_page(site_name: string, page_name: string, head_content:
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>${escape_html(title)}</title>
+	<style>${CSS_RESET}</style>
 ${head_content}
 </head>
 <body>
@@ -445,6 +454,7 @@ function generate_error_page(site_name: string, page_name: string, error: string
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>${escape_html(title)}</title>
 	<style>
+${CSS_RESET}
 ${head_css}
 	</style>
 </head>
