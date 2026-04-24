@@ -2,6 +2,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import chalk from 'chalk'
 import { load as load_yaml } from 'js-yaml'
+import { get_head_svelte_validation_error } from '../utils/head-svelte.js'
 
 interface ValidationError {
 	file: string
@@ -291,6 +292,11 @@ export async function validate_site(options: ValidateOptions) {
 	errors.push(...site_errors.filter(e => e.severity === 'error'))
 	warnings.push(...site_errors.filter(e => e.severity === 'warning'))
 
+	// Validate site head
+	const site_head_errors = await validate_site_head(site_dir)
+	errors.push(...site_head_errors.filter(e => e.severity === 'error'))
+	warnings.push(...site_head_errors.filter(e => e.severity === 'warning'))
+
 	// Validate pages
 	const pages_errors = await validate_pages(site_dir)
 	errors.push(...pages_errors.filter(e => e.severity === 'error'))
@@ -486,6 +492,34 @@ async function validate_site_fields(site_dir: string): Promise<ValidationError[]
 	}
 
 	return errors
+}
+
+async function validate_site_head(site_dir: string): Promise<ValidationError[]> {
+	const head_path = path.join(site_dir, 'site', 'head.svelte')
+
+	try {
+		const head_content = await fs.readFile(head_path, 'utf-8')
+		const message = get_head_svelte_validation_error(head_content, 'site/head.svelte')
+		if (message) {
+			return [{
+				file: 'site/head.svelte',
+				message,
+				severity: 'error'
+			}]
+		}
+	} catch (error: any) {
+		if (error?.code === 'ENOENT') {
+			return []
+		}
+
+		return [{
+			file: 'site/head.svelte',
+			message: `Failed to read file: ${error}`,
+			severity: 'error'
+		}]
+	}
+
+	return []
 }
 
 function validate_fields(fields_json: any, file_path: string): ValidationError[] {

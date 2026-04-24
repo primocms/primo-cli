@@ -7,6 +7,7 @@ import { compile } from 'svelte/compiler'
 import * as esbuild from 'esbuild'
 import { fileURLToPath } from 'url'
 import { read_site_config, type SiteConfig, SITE_CONFIG_FILE } from '../utils/site-config.js'
+import { validate_head_svelte_content } from '../utils/head-svelte.js'
 
 interface BuildOptions {
 	dir: string
@@ -92,7 +93,11 @@ export async function build_site(options: BuildOptions) {
 		try {
 			const head_path = path.join(site_dir, 'site', 'head.svelte')
 			head_content = await fs.readFile(head_path, 'utf-8')
-		} catch {
+			validate_head_svelte_content(head_content, 'site/head.svelte')
+		} catch (error: any) {
+			if (error?.code !== 'ENOENT') {
+				throw error
+			}
 			// No head.svelte, that's fine
 		}
 
