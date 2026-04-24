@@ -29,20 +29,13 @@ export async function new_site(options: NewOptions) {
 		// Not inside a site directory, continue.
 	}
 
-	// Auto-create server config if it doesn't exist, and ensure a default site group exists.
+	// Require an initialized workspace
 	try {
 		await fs.access(server_config_path)
 	} catch {
-		await write_server_config(base_dir, {
-			port: 3000,
-			site_groups: [
-				{
-					id: 'default',
-					name: 'Default',
-					index: 0
-				}
-			]
-		})
+		console.log(chalk.red(`No ${SERVER_CONFIG_FILE} found in the current directory.`))
+		console.log(chalk.dim('Run `primo init [name]` first to create a workspace.'))
+		process.exit(1)
 	}
 
 	await fs.mkdir(sites_dir, { recursive: true })

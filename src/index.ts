@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander'
+import { init_workspace } from './commands/init.js'
 import { new_site } from './commands/new.js'
 import { pull_site } from './commands/pull.js'
 import { push_site } from './commands/push.js'
@@ -18,6 +19,11 @@ program
 	.name('primo')
 	.description('Build sites visually, edit them anywhere')
 	.version('0.1.3')
+
+program
+	.command('init [name]')
+	.description('Initialize a new Primo workspace (server) in a new folder or the current directory')
+	.action((name) => init_workspace({ name }))
 
 program
 	.command('new [name]')
