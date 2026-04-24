@@ -540,7 +540,7 @@ To detect the editor:
 let is_editor = $state(false)
 
 if (typeof window !== 'undefined') {
-  is_editor = window.__PALA_CONTEXT__?.environment === 'editor'
+  is_editor = window.__PRIMO_CONTEXT__?.environment === 'editor'
 }
 \`\`\`
 
