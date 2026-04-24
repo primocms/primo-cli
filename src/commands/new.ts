@@ -351,7 +351,7 @@ blocks/
   {name}/
     component.svelte
     fields.yaml
-    content.yaml  # optional default block content
+    content.yaml  # default block content; create it with the block
 page-types/
   {name}/
     config.yaml
@@ -400,11 +400,17 @@ site/
 - Do not fix schema or content issues by patching PocketBase records directly.
 - If local state seems wrong, prefer deleting \`.primo/\` and reimporting from files.
 
+## Site Head
+
+- \`site/head.svelte\` is injected into Primo's generated \`<svelte:head>\`.
+- Do not wrap it in \`<svelte:head>\`.
+- Use direct head children such as \`<title>\`, \`<meta>\`, \`<link>\`, \`<script>\`, and \`<style>\`.
+
 ## Block Files
 
 - \`component.svelte\`: Svelte 5 component for the block.
 - \`fields.yaml\`: block schema. Use \`subfields\` for repeater/group children.
-- \`content.yaml\`: optional default content for new block instances.
+- \`content.yaml\`: default content for the block. Create it when creating a block, even if it starts empty.
 
 Field schema example:
 \`\`\`yaml
@@ -438,6 +444,68 @@ fields:
   - \`repeater\`, \`group\`
   - \`page\`, \`page-list\`, \`page-field\`, \`site-field\`
   - \`info\`
+
+### Field content shapes
+
+- \`image\` -> \`{ url, alt, width?, height?, upload? }\`
+\`\`\`yaml
+hero_image:
+  url: https://example.com/shot.png
+  alt: Product screenshot
+\`\`\`
+
+- \`link\` -> \`{ label, url, page? }\`
+\`\`\`yaml
+cta:
+  label: Start free
+  url: https://example.com
+\`\`\`
+
+- \`icon\` -> SVG string
+\`\`\`yaml
+feature_icon: >-
+  <svg xmlns="http://www.w3.org/2000/svg" data-icon="lucide:zap" viewBox="0 0 24 24"></svg>
+\`\`\`
+
+- \`repeater\` -> \`Array<{ subfield: value }>\`
+\`\`\`yaml
+features:
+  - title: Fast
+    icon: <svg></svg>
+\`\`\`
+
+- \`group\` -> \`{ subfield: value }\`
+\`\`\`yaml
+author:
+  name: Maya Patel
+  avatar: { url: https://example.com/maya.png, alt: Maya Patel }
+\`\`\`
+
+- \`page\` -> page \`_id\` string; \`config.page_type\` required
+\`\`\`yaml
+featured_page: v0egainyw9gqjxo
+\`\`\`
+
+- \`page-list\` -> resolved from \`config.page_type\`; omit from \`content.yaml\`
+\`\`\`yaml
+posts: []
+# ignored; set fields.yaml config.page_type
+\`\`\`
+
+- \`page-field\` -> target page field value; seed \`pages/*.yaml fields\`, not block \`content.yaml\`
+\`\`\`yaml
+fields:
+  hero_image:
+    url: https://example.com/hero.png
+    alt: Hero image
+\`\`\`
+
+- \`site-field\` -> target site field value; seed \`site/content.yaml\`, not block \`content.yaml\`
+\`\`\`yaml
+logo:
+  url: https://example.com/logo.png
+  alt: Company logo
+\`\`\`
 
 ## Page Types
 

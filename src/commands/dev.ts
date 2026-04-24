@@ -89,8 +89,10 @@ const SYNC_MTIME_TOLERANCE_MS = 3000
 // stomping the just-written content on arrival.
 const LOCAL_CHANGE_PULL_COOLDOWN_MS = 3000
 
-// Preferred key order for field definitions in YAML
-const FIELD_KEY_ORDER = ['_id', 'label', 'name', 'type', 'subfields', 'config']
+// Preferred key order for field definitions in YAML.
+// This matches the current palacms export order so startup normalization and
+// CMS-to-file sync don't keep rewriting the same field files.
+const FIELD_KEY_ORDER = ['_id', 'label', 'name', 'subfields', 'type', 'config']
 
 // Reorder keys in a field object to match preferred order
 function order_field_keys(field: Record<string, unknown>): Record<string, unknown> {
@@ -126,8 +128,8 @@ function fields_need_reordering(fields: unknown[]): boolean {
 		const keys = Object.keys(f)
 		const type_idx = keys.indexOf('type')
 		const subfields_idx = keys.indexOf('subfields')
-		// If subfields comes before type, needs reordering
-		if (subfields_idx !== -1 && type_idx !== -1 && subfields_idx < type_idx) {
+		// Keep this aligned with FIELD_KEY_ORDER.
+		if (subfields_idx !== -1 && type_idx !== -1 && type_idx < subfields_idx) {
 			return true
 		}
 		// Check nested subfields
