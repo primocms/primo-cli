@@ -387,9 +387,9 @@ site/
   - blocks: \`_id\` in \`fields.yaml\`
   - fields/subfields: \`_id\`
   - page types: \`id\` in \`config.yaml\`
+- When creating a new entity (block, field, page, page type), omit the ID entirely. The dev server generates and writes it back on first sync.
 - Do not invent or hand-author new IDs in source files.
-- Keep these IDs stable when editing existing entities.
-- In local dev, missing IDs may be initialized automatically.
+- Keep existing IDs stable when editing an entity.
 - Duplicate IDs are treated as conflicts and may cause affected files to be skipped.
 
 ## Source Of Truth
