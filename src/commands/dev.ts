@@ -57,6 +57,7 @@ let library_snapshot: LibrarySnapshot = new Map()
 const ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789'
 const SITES_DIR = 'sites'
 const LIBRARY_DIR = 'library'
+const MCP_CONFIG_FILE = '.mcp.json'
 
 type IDCategory = 'pages' | 'page_sections' | 'blocks' | 'page_types' | 'site_fields' | 'block_fields' | 'page_type_fields'
 
@@ -176,6 +177,7 @@ export async function dev_server(options: DevOptions) {
 
 	try {
 		const base_dir = path.resolve(options.dir)
+		const mcp_registration_path = await register_primo_mcp_server(base_dir)
 
 		// Check for server config (multi-site mode) or site config (single-site mode)
 		const server_config_path = path.join(base_dir, SERVER_CONFIG_FILE)
@@ -290,6 +292,10 @@ export async function dev_server(options: DevOptions) {
 		spinner.succeed('Primo running')
 
 		console.log('')
+		if (mcp_registration_path) {
+			console.log(`  ${chalk.dim(`MCP server registered at ${mcp_registration_path} - agents in this directory can now use the Primo MCP server.`)}`)
+			console.log('')
+		}
 		if (is_server_mode) {
 			console.log(`  ${chalk.cyan('Dashboard:')} http://127.0.0.1:${port}/admin/dashboard`)
 			console.log('')
@@ -652,6 +658,54 @@ export async function dev_server(options: DevOptions) {
 		spinner.fail(`Failed to start: ${error instanceof Error ? error.message : error}`)
 		process.exit(1)
 	}
+}
+
+async function register_primo_mcp_server(base_dir: string): Promise<string | null> {
+	if (!await path_exists(path.join(base_dir, SERVER_CONFIG_FILE))) {
+		return null
+	}
+
+	const mcp_config_path = path.join(base_dir, MCP_CONFIG_FILE)
+	let config: Record<string, unknown> = {}
+
+	try {
+		const raw = await fs.readFile(mcp_config_path, 'utf-8')
+		config = raw.trim() ? JSON.parse(raw) as Record<string, unknown> : {}
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+			return null
+		}
+	}
+
+	if (!is_plain_record(config)) {
+		return null
+	}
+
+	if (config.mcpServers !== undefined && !is_plain_record(config.mcpServers)) {
+		return null
+	}
+
+	const existing_mcp_servers = config.mcpServers as Record<string, unknown> | undefined
+	const mcp_servers = { ...(existing_mcp_servers ?? {}) }
+	if (mcp_servers.primo !== undefined) {
+		return null
+	}
+
+	const local_mcp = process.env.PRIMO_MCP_LOCAL
+		?? '/Users/mateo/Desktop/primo/primo-mcp/dist/index.js'
+	mcp_servers.primo = local_mcp
+		? { command: 'node', args: [local_mcp] }
+		: { command: 'npx', args: ['-y', '@primo/mcp'] }
+	config.mcpServers = mcp_servers
+
+	// Claude Code reads project-root .mcp.json. .primo/ is gitignored local
+	// state, so the discoverable root file is the right registration target.
+	await fs.writeFile(mcp_config_path, `${JSON.stringify(config, null, 2)}\n`, 'utf-8')
+	return MCP_CONFIG_FILE
+}
+
+function is_plain_record(value: unknown): value is Record<string, unknown> {
+	return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
 async function discover_sites(base_dir: string): Promise<SiteInfo[]> {

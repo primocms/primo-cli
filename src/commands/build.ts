@@ -134,6 +134,7 @@ export async function build_site(options: BuildOptions) {
 
 			const result = await build_page({
 				page,
+				page_path,
 				site_dir,
 				temp_dir,
 				head_content,
@@ -191,6 +192,7 @@ export async function build_site(options: BuildOptions) {
 
 interface BuildPageOptions {
 	page: Page
+	page_path: string
 	site_dir: string
 	temp_dir: string
 	head_content: string
@@ -201,9 +203,11 @@ interface BuildPageOptions {
 }
 
 async function build_page(options: BuildPageOptions): Promise<{ html: string; error?: string }> {
-	const { page, site_dir, temp_dir, head_content, site_name, block_cache, layout_cache, site_data } = options
+	const { page, page_path, site_dir, temp_dir, head_content, site_name, block_cache, layout_cache, site_data } = options
 
 	try {
+		const page_build_id = safe_temp_id(page._id || page.id || page_path || page.name || 'page')
+
 		// Load layout for this page type
 		const page_type = page.page_type || 'default'
 		let layout = layout_cache.get(page_type)
@@ -254,7 +258,7 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 
 		// Create a page component that renders all sections
 		const page_component = generate_page_component(section_components as any, sections)
-		const page_component_path = path.join(temp_dir, `page_${page.id || 'temp'}.svelte`)
+		const page_component_path = path.join(temp_dir, `page_${page_build_id}.svelte`)
 		await fs.writeFile(page_component_path, page_component)
 
 		// Compile the page component
@@ -274,7 +278,7 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 		}
 
 		// Write compiled JS and bundle with esbuild
-		const compiled_path = path.join(temp_dir, `page_${page.id || 'temp'}.js`)
+		const compiled_path = path.join(temp_dir, `page_${page_build_id}.js`)
 		await fs.writeFile(compiled_path, page_compiled.js.code)
 
 		// Copy all block compiled JS files to temp for bundling
@@ -287,7 +291,7 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 		}
 
 		// Bundle with esbuild - include svelte runtime
-		const bundle_path = path.join(temp_dir, `bundle_${page.id || 'temp'}.mjs`)
+		const bundle_path = path.join(temp_dir, `bundle_${page_build_id}.mjs`)
 
 		// Find where svelte is installed (could be in primo-cli's node_modules or globally)
 		const svelte_base = await find_svelte_path()
@@ -516,6 +520,10 @@ function escape_html(str: string): string {
 		.replace(/>/g, '&gt;')
 		.replace(/"/g, '&quot;')
 		.replace(/'/g, '&#039;')
+}
+
+function safe_temp_id(value: string): string {
+	return value.replace(/[^a-zA-Z0-9_-]/g, '_') || 'page'
 }
 
 async function copy_dir(src: string, dest: string): Promise<void> {
