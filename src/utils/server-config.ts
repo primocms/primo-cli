@@ -1,6 +1,7 @@
 import fs from 'fs/promises'
 import path from 'path'
 import { dump as dump_yaml, load as load_yaml } from 'js-yaml'
+import { DEFAULT_FORMAT_OPTIONS, type FormatOptions } from './format.js'
 
 export interface SiteGroupConfig {
 	id: string
@@ -11,6 +12,7 @@ export interface SiteGroupConfig {
 export interface ServerConfig {
 	port?: number
 	site_groups?: SiteGroupConfig[]
+	format?: Partial<FormatOptions>
 }
 
 export const SERVER_CONFIG_FILE = 'server.yaml'
@@ -46,8 +48,13 @@ export function normalize_server_config(config: ServerConfig): ServerConfig {
 
 	return {
 		port: config.port,
-		site_groups
+		site_groups,
+		format: config.format
 	}
+}
+
+export function resolve_format_options(config: ServerConfig): FormatOptions {
+	return { ...DEFAULT_FORMAT_OPTIONS, ...(config.format ?? {}) }
 }
 
 export async function read_server_config(base_dir: string): Promise<ServerConfig> {

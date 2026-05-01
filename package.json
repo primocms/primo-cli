@@ -39,6 +39,8 @@
     "inquirer": "^13.3.0",
     "js-yaml": "^4.1.0",
     "ora": "^8.0.1",
+    "prettier": "^3.0.0",
+    "prettier-plugin-svelte": "^3.0.0",
     "svelte": "^5.55.0"
   },
   "devDependencies": {

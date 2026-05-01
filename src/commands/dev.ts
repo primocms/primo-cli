@@ -10,7 +10,8 @@ import { dump as dump_yaml, load as load_yaml } from 'js-yaml'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { ensure_binary, ensure_data_dir } from '../utils/binary.js'
 import { read_site_config, type SiteConfig, SITE_CONFIG_FILE } from '../utils/site-config.js'
-import { read_server_config, type ServerConfig, type SiteGroupConfig, format_group_name, SERVER_CONFIG_FILE } from '../utils/server-config.js'
+import { read_server_config, type ServerConfig, type SiteGroupConfig, format_group_name, SERVER_CONFIG_FILE, resolve_format_options } from '../utils/server-config.js'
+import { format_file_contents, should_format, type FormatOptions } from '../utils/format.js'
 import { normalize_site } from './validate.js'
 
 interface DevOptions {
@@ -43,10 +44,11 @@ let has_pending_library_local_changes = false
 // Map of filepath -> mtime (ms) when we wrote it
 const synced_files = new Map<string, number>()
 const synced_deleted_paths = new Map<string, number>()
+const warned_empty_schema_writebacks = new Set<string>()
 
 // Snapshot of library folder paths known to be in the DB after the last
 // successful push, mapped to the underlying DB record ID (group id or
-// symbol/block id from fields.yaml). Paths are posix-style and relative to
+// symbol/block id from config.yaml). Paths are posix-style and relative to
 // the library root, e.g. "marketing" (group) or "marketing/hero-split"
 // (block). A diff against the current filesystem between pushes is what
 // produces the `deletes` manifest: if a path was in the last snapshot but
@@ -71,10 +73,24 @@ type LocalDevPreparation = {
 	warnings: string[]
 }
 
+type BlockContentReference = {
+	page: string
+	section_index: number
+	keys: string[]
+}
+
+type SyncDirectoryOptions = {
+	workspace_dir?: string
+	format_options?: FormatOptions
+	block_content_refs?: Map<string, BlockContentReference[]>
+	site_name?: string
+}
+
 type ImportTimings = {
 	zip_ms: number
 	request_ms: number
 	mode: 'bootstrap' | 'import' | 'bootstrap+import'
+	warning_count: number
 }
 
 const LOCAL_PUSH_DEBOUNCE_MS = 150
@@ -91,6 +107,16 @@ const LOCAL_CHANGE_PULL_COOLDOWN_MS = 3000
 
 function get_site_sync_key(site_dir: string, config: SiteConfig): string {
 	return config.site_id || site_dir
+}
+
+function update_site_sync_state_after_import(site: SiteInfo, timings: ImportTimings): void {
+	const site_key = get_site_sync_key(site.dir, site.config)
+	if (timings.warning_count > 0) {
+		pending_local_site_keys.add(site_key)
+		console.log(chalk.yellow(`  ${site.config.name}: CMS-to-file sync paused until import warnings are resolved.`))
+		return
+	}
+	pending_local_site_keys.delete(site_key)
 }
 
 async function with_site_import_lock<T>(site_dir: string, config: SiteConfig, fn: () => Promise<T>): Promise<T> {
@@ -277,11 +303,12 @@ export async function dev_server(options: DevOptions) {
 			// Normalize and load all sites
 			spinner.text = `Loading ${sites.length} site${sites.length > 1 ? 's' : ''}...`
 
-		for (const site of sites) {
-			await normalize_site(site.dir)
-			const use_bootstrap = !await site_exists(api_url, site.config.site_id)
-			await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap))
-		}
+			for (const site of sites) {
+				await normalize_site(site.dir)
+				const use_bootstrap = !await site_exists(api_url, site.config.site_id)
+				const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap, base_dir))
+				update_site_sync_state_after_import(site, import_timings)
+			}
 
 		// Verify all sites are accessible before proceeding
 		spinner.text = 'Verifying sites...'
@@ -441,7 +468,7 @@ export async function dev_server(options: DevOptions) {
 						const normalize_started = Date.now()
 						await normalize_site(site.dir)
 						const normalize_ms = Date.now() - normalize_started
-						const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, false))
+						const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, false, base_dir))
 						let reload_ms = 0
 						if (pending_reload) {
 							try {
@@ -453,7 +480,7 @@ export async function dev_server(options: DevOptions) {
 							}
 							pending_reload = false
 						}
-						pending_local_site_keys.delete(get_site_sync_key(site.dir, site.config))
+						update_site_sync_state_after_import(site, import_timings)
 						console.log(chalk.dim(`  ${site.config.name}: normalize ${normalize_ms}ms, zip ${import_timings.zip_ms}ms, ${import_timings.mode} ${import_timings.request_ms}ms${reload_ms ? `, reload ${reload_ms}ms` : ''}`))
 						console.log(chalk.green(`  ✓ ${site.config.name} pushed`))
 					} catch (err) {
@@ -541,12 +568,13 @@ export async function dev_server(options: DevOptions) {
 				for (const site of new_sites) {
 					if (known_sites.has(site.dir)) continue
 
-						known_sites.add(site.dir)
-						sites.push(site)
-						await normalize_site(site.dir)
-						const use_bootstrap = !await site_exists(api_url, site.config.site_id)
-						await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap))
-						setup_site_watchers(site)
+					known_sites.add(site.dir)
+					sites.push(site)
+					await normalize_site(site.dir)
+					const use_bootstrap = !await site_exists(api_url, site.config.site_id)
+					const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap, base_dir))
+					update_site_sync_state_after_import(site, import_timings)
+					setup_site_watchers(site)
 
 					const host = site.config.host || `${path.basename(site.dir).toLowerCase().replace(/\s+/g, '-')}.localhost:${port}`
 					console.log(chalk.green(`  ✓ New site loaded: ${site.config.name}`))
@@ -584,7 +612,7 @@ export async function dev_server(options: DevOptions) {
 						if (importing_site_keys.has(site_key) || pending_local_site_keys.has(site_key)) {
 							continue
 						}
-						await sync_from_cms(site.dir, api_url, site.config)
+						await sync_from_cms(site.dir, api_url, site.config, server_config, base_dir)
 					} catch {
 						// Silently ignore sync errors
 					}
@@ -816,11 +844,19 @@ async function verify_site_ready(api_url: string, site_id: string): Promise<bool
 }
 
 async function site_exists(api_url: string, site_id: string): Promise<boolean> {
+	// Only 404 means the site genuinely doesn't exist. Any other non-ok status
+	// (401/403 from auth, 5xx, rate limits) leaves us uncertain — default to
+	// "exists" so we take the additive `import` path instead of the destructive
+	// `bootstrap` path. Bootstrapping a site that already exists discards
+	// remote state when the request later fails, and the next pull then
+	// stomps in-progress local edits with stale DB content.
 	try {
 		const response = await fetch_with_timeout(`${api_url}/api/collections/sites/records/${site_id}`, {}, 5000)
-		return response.ok
+		if (response.ok) return true
+		if (response.status === 404) return false
+		return true
 	} catch {
-		return false
+		return true
 	}
 }
 
@@ -993,6 +1029,221 @@ function to_posix_path(file_path: string): string {
 	return file_path.split(path.sep).join('/')
 }
 
+function sanitize_file_name(name: string): string {
+	return name
+		.replaceAll('/', '-')
+		.replaceAll('\\', '-')
+		.replaceAll(':', '-')
+		.replaceAll(' ', '-')
+		.toLowerCase()
+}
+
+function add_block_alias(aliases: Map<string, string>, alias: string, block_name: string): void {
+	const trimmed = alias.trim()
+	if (!trimmed) return
+	aliases.set(trimmed, block_name)
+	aliases.set(trimmed.toLowerCase(), block_name)
+	aliases.set(sanitize_file_name(trimmed), block_name)
+}
+
+function content_keys(value: unknown): string[] {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		return []
+	}
+
+	return Object.keys(value as Record<string, unknown>)
+}
+
+function is_empty_fields_yaml(contents: string): boolean {
+	try {
+		const parsed = load_yaml(contents)
+		return Array.isArray(parsed) && parsed.length === 0
+	} catch {
+		return false
+	}
+}
+
+function has_user_authored_fields(contents: string): boolean {
+	try {
+		return get_fields_array(load_yaml(contents)).length > 0
+	} catch {
+		return false
+	}
+}
+
+function block_fields_path_block_name(relative_path: string): string | null {
+	const parts = relative_path.split('/')
+	if (parts.length !== 3 || parts[0] !== 'blocks' || parts[2] !== 'fields.yaml') {
+		return null
+	}
+	return parts[1] || null
+}
+
+async function collect_block_aliases(site_dir: string): Promise<Map<string, string>> {
+	const aliases = new Map<string, string>()
+	const blocks_dir = path.join(site_dir, 'blocks')
+
+	let block_names: string[]
+	try {
+		block_names = await fs.readdir(blocks_dir)
+	} catch {
+		return aliases
+	}
+
+	for (const block_name of block_names) {
+		if (block_name.startsWith('.')) continue
+		add_block_alias(aliases, block_name, block_name)
+
+		try {
+			const raw = await fs.readFile(path.join(blocks_dir, block_name, 'config.yaml'), 'utf-8')
+			const parsed = load_yaml(raw)
+			if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+				const display_name = (parsed as Record<string, unknown>).name
+				if (typeof display_name === 'string') {
+					add_block_alias(aliases, display_name, block_name)
+				}
+			}
+		} catch {
+			// Missing or invalid config.yaml should not make sync destructive.
+		}
+	}
+
+	return aliases
+}
+
+async function collect_block_content_references(site_dir: string): Promise<Map<string, BlockContentReference[]>> {
+	const refs = new Map<string, BlockContentReference[]>()
+	const aliases = await collect_block_aliases(site_dir)
+	const pages_dir = path.join(site_dir, 'pages')
+
+	for (const relative_page_path of await find_page_files(pages_dir)) {
+		const page_path = path.join(site_dir, relative_page_path)
+		let page: unknown
+		try {
+			page = load_yaml(await fs.readFile(page_path, 'utf-8'))
+		} catch {
+			continue
+		}
+
+		if (!page || typeof page !== 'object' || Array.isArray(page)) continue
+		const sections = get_sections_array((page as Record<string, unknown>).sections)
+		for (const [index, section] of sections.entries()) {
+			const block_ref = section.block
+			if (typeof block_ref !== 'string' || !block_ref.trim()) continue
+
+			const keys = content_keys(section.content)
+			if (keys.length === 0) continue
+
+			const block_name = aliases.get(block_ref)
+				?? aliases.get(block_ref.toLowerCase())
+				?? aliases.get(sanitize_file_name(block_ref))
+				?? block_ref
+			const existing = refs.get(block_name) ?? []
+			existing.push({
+				page: relative_page_path,
+				section_index: index,
+				keys
+			})
+			refs.set(block_name, existing)
+		}
+	}
+
+	return refs
+}
+
+function describe_block_content_refs(refs: BlockContentReference[]): string {
+	const details = refs.slice(0, 3).map(ref => {
+		const keys = ref.keys.slice(0, 6).join(', ')
+		const suffix = ref.keys.length > 6 ? ', ...' : ''
+		return `${ref.page} sections[${ref.section_index}] content keys: ${keys}${suffix}`
+	})
+
+	if (refs.length > 3) {
+		details.push(`${refs.length - 3} more section${refs.length === 4 ? '' : 's'}`)
+	}
+
+	return details.join('; ')
+}
+
+function warn_empty_schema_writeback(site_name: string, relative_path: string, block_name: string, refs: BlockContentReference[], preserved: boolean): void {
+	const key = `${site_name}:${relative_path}:${preserved ? 'preserved' : 'empty'}:${refs.length}`
+	if (warned_empty_schema_writebacks.has(key)) return
+	warned_empty_schema_writebacks.add(key)
+
+	if (refs.length > 0) {
+		console.log(chalk.red(`  ✗ ${site_name}: refused CMS-to-file empty schema writeback for ${relative_path}`))
+		console.log(chalk.red(`    Block "${block_name}" has page section content, but the CMS export produced an empty fields.yaml.`))
+		console.log(chalk.red(`    ${describe_block_content_refs(refs)}`))
+		if (preserved) {
+			console.log(chalk.red('    Local fields.yaml was preserved. Re-run the local import or fix the CMS schema before pulling again.'))
+		}
+		return
+	}
+
+	if (preserved) {
+		console.log(chalk.yellow(`  ⚠ ${site_name}: skipped empty CMS schema pull for ${relative_path}; local fields.yaml has authored fields.`))
+	}
+}
+
+function should_skip_empty_block_schema_writeback(relative_path: string, src_content: string, dest_content: string, options: SyncDirectoryOptions): boolean {
+	const block_name = block_fields_path_block_name(relative_path)
+	if (!block_name || !is_empty_fields_yaml(src_content)) {
+		return false
+	}
+
+	const refs = options.block_content_refs?.get(block_name) ?? []
+	const local_has_fields = has_user_authored_fields(dest_content)
+	const should_skip = local_has_fields || refs.length > 0
+	if (should_skip) {
+		warn_empty_schema_writeback(options.site_name ?? 'site', relative_path, block_name, refs, local_has_fields)
+	}
+	return should_skip
+}
+
+async function blocked_empty_schema_writebacks(temp_dir: string, site_dir: string, site_name: string, block_content_refs: Map<string, BlockContentReference[]>): Promise<Set<string>> {
+	const blocked = new Set<string>()
+	const blocks_dir = path.join(temp_dir, 'blocks')
+
+	let block_names: string[]
+	try {
+		block_names = await fs.readdir(blocks_dir)
+	} catch {
+		return blocked
+	}
+
+	for (const block_name of block_names) {
+		if (block_name.startsWith('.')) continue
+
+		const relative_path = `blocks/${block_name}/fields.yaml`
+		let src_content: string
+		try {
+			src_content = await fs.readFile(path.join(blocks_dir, block_name, 'fields.yaml'), 'utf-8')
+		} catch {
+			continue
+		}
+
+		if (!is_empty_fields_yaml(src_content)) continue
+
+		let dest_content = ''
+		try {
+			dest_content = await fs.readFile(path.join(site_dir, relative_path), 'utf-8')
+		} catch {
+			// Missing local file: still block if page content references the block.
+		}
+
+		const refs = block_content_refs.get(block_name) ?? []
+		const local_has_fields = has_user_authored_fields(dest_content)
+		if (local_has_fields || refs.length > 0) {
+			warn_empty_schema_writeback(site_name, relative_path, block_name, refs, local_has_fields)
+		}
+		if (refs.length > 0) {
+			blocked.add(relative_path)
+		}
+	}
+
+	return blocked
+}
+
 function is_excluded_path(relative_path: string, excluded_paths: Set<string>): boolean {
 	const normalized = to_posix_path(relative_path)
 
@@ -1045,7 +1296,7 @@ function describe_duplicate(category: IDCategory, id: string, occurrences: Dupli
 		case 'blocks':
 			return `duplicate block _id "${id}" in ${files.join(' and ')}; skipping those blocks`
 		case 'page_types':
-			return `duplicate page type id "${id}" in ${files.join(' and ')}; skipping those page types`
+			return `duplicate page type _id "${id}" in ${files.join(' and ')}; skipping those page types`
 		case 'site_fields':
 			return `duplicate site field _id "${id}" in ${files.join(' and ')}; skipping site/fields.yaml`
 		case 'block_fields':
@@ -1091,28 +1342,35 @@ async function prepare_site_for_local_dev(site_dir: string): Promise<LocalDevPre
 		for (const block_name of block_names) {
 			if (block_name.startsWith('.')) continue
 
+			// Block _id lives in config.yaml; fields (each with their own _id)
+			// live in a sibling fields.yaml as a bare list.
+			const owner = `blocks/${block_name}`
+			const relative_config_path = `blocks/${block_name}/config.yaml`
+			const config_path = path.join(site_dir, relative_config_path)
+			try {
+				const raw = await fs.readFile(config_path, 'utf-8')
+				const config = load_yaml(raw) as Record<string, unknown> | undefined
+				if (config && typeof config === 'object' && !Array.isArray(config)) {
+					const block_id = get_entity_id(config)
+					if (block_id) {
+						track_occurrence('blocks', block_id, owner, relative_config_path)
+					}
+				}
+			} catch {
+				// No config.yaml — skip
+			}
+
 			const relative_fields_path = `blocks/${block_name}/fields.yaml`
 			const fields_path = path.join(site_dir, relative_fields_path)
-			let raw: string
 			try {
-				raw = await fs.readFile(fields_path, 'utf-8')
+				const raw = await fs.readFile(fields_path, 'utf-8')
+				const block_fields = get_fields_array(load_yaml(raw))
+				collect_field_ids(block_fields, (field_id) => {
+					track_occurrence('block_fields', field_id, owner, relative_fields_path)
+				})
 			} catch {
-				continue
+				// No fields.yaml — skip
 			}
-
-			const block_data = load_yaml(raw) as Record<string, unknown> | undefined
-			if (!block_data || typeof block_data !== 'object' || Array.isArray(block_data)) continue
-
-			const block_id = get_entity_id(block_data)
-			const block_fields = get_fields_array(block_data.fields)
-
-			const owner = `blocks/${block_name}`
-			if (block_id) {
-				track_occurrence('blocks', block_id, owner, relative_fields_path)
-			}
-			collect_field_ids(block_fields, (field_id) => {
-				track_occurrence('block_fields', field_id, owner, relative_fields_path)
-			})
 		}
 	} catch {
 		// No blocks dir
@@ -1124,28 +1382,35 @@ async function prepare_site_for_local_dev(site_dir: string): Promise<LocalDevPre
 		for (const page_type_name of page_type_names) {
 			if (page_type_name.startsWith('.')) continue
 
+			// Page type _id lives in config.yaml; fields live in sibling
+			// fields.yaml as a bare list.
+			const owner = `page-types/${page_type_name}`
 			const relative_config_path = `page-types/${page_type_name}/config.yaml`
 			const config_path = path.join(site_dir, relative_config_path)
-			let raw: string
 			try {
-				raw = await fs.readFile(config_path, 'utf-8')
+				const raw = await fs.readFile(config_path, 'utf-8')
+				const config = load_yaml(raw) as Record<string, unknown> | undefined
+				if (config && typeof config === 'object' && !Array.isArray(config)) {
+					const page_type_id = typeof config._id === 'string' && config._id ? config._id : undefined
+					if (page_type_id) {
+						track_occurrence('page_types', page_type_id, owner, relative_config_path)
+					}
+				}
 			} catch {
-				continue
+				// No config.yaml — skip
 			}
 
-			const config = load_yaml(raw) as Record<string, unknown>
-			if (!config || typeof config !== 'object' || Array.isArray(config)) continue
-
-			const page_type_id = get_entity_id(config)
-			const page_type_fields = get_fields_array(config.fields)
-
-			const owner = `page-types/${page_type_name}`
-			if (page_type_id) {
-				track_occurrence('page_types', page_type_id, owner, relative_config_path)
+			const relative_fields_path = `page-types/${page_type_name}/fields.yaml`
+			const fields_path = path.join(site_dir, relative_fields_path)
+			try {
+				const raw = await fs.readFile(fields_path, 'utf-8')
+				const page_type_fields = get_fields_array(load_yaml(raw))
+				collect_field_ids(page_type_fields, (field_id) => {
+					track_occurrence('page_type_fields', field_id, owner, relative_fields_path)
+				})
+			} catch {
+				// No fields.yaml — skip
 			}
-			collect_field_ids(page_type_fields, (field_id) => {
-				track_occurrence('page_type_fields', field_id, owner, relative_config_path)
-			})
 		}
 	} catch {
 		// No page-types dir
@@ -1197,8 +1462,8 @@ type ImportWarning = {
 // Loudly surface non-fatal import problems (e.g. orphaned fields whose
 // content would otherwise be silently dropped). Printed in yellow with the
 // full details so agents and humans both see exactly what was lost and where.
-function print_import_warnings(site_name: string, warnings: unknown): void {
-	if (!Array.isArray(warnings) || warnings.length === 0) return
+function print_import_warnings(site_name: string, warnings: unknown): number {
+	if (!Array.isArray(warnings) || warnings.length === 0) return 0
 	const list = warnings as ImportWarning[]
 	console.log('')
 	console.log(chalk.yellow(`  ⚠ ${site_name}: ${list.length} import warning${list.length === 1 ? '' : 's'}`))
@@ -1207,9 +1472,10 @@ function print_import_warnings(site_name: string, warnings: unknown): void {
 		console.log(chalk.yellow(`    • ${msg}`))
 	}
 	console.log('')
+	return list.length
 }
 
-async function import_site_files(site_dir: string, api_url: string, config: SiteConfig, port: number, server_config: ServerConfig, use_bootstrap = true): Promise<ImportTimings> {
+async function import_site_files(site_dir: string, api_url: string, config: SiteConfig, port: number, server_config: ServerConfig, use_bootstrap = true, workspace_dir: string = path.dirname(path.dirname(site_dir))): Promise<ImportTimings> {
 	const site_name = config.name || 'My Site'
 	const site_id = config.site_id
 	const site_group = resolve_site_group(config, server_config)
@@ -1249,12 +1515,13 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 		}
 
 		// Write created IDs back to files
+		let warning_count = 0
 		try {
 			const result = await import_response.json() as { created_ids?: Record<string, Record<string, unknown>>, warnings?: ImportWarning[] }
 			if (result.created_ids) {
-				await write_created_ids(site_dir, result.created_ids)
+				await write_created_ids(site_dir, result.created_ids, server_config, workspace_dir)
 			}
-			print_import_warnings(config.name, result.warnings)
+			warning_count = print_import_warnings(config.name, result.warnings)
 		} catch {
 			// ignore JSON parse errors
 		}
@@ -1262,7 +1529,8 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 		return {
 			zip_ms,
 			request_ms,
-			mode: 'import'
+			mode: 'import',
+			warning_count
 		}
 	}
 
@@ -1287,17 +1555,19 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 			}, 300000) // 300s timeout for imports
 			const bootstrap_ms = Date.now() - bootstrap_started
 
+			let warning_count = 0
 			if (bootstrap_response.ok) {
 				try {
 					const result = await bootstrap_response.json() as { warnings?: ImportWarning[] }
-					print_import_warnings(config.name, result.warnings)
+					warning_count = print_import_warnings(config.name, result.warnings)
 				} catch {
 					// ignore JSON parse errors
 				}
 				return {
 					zip_ms,
 					request_ms: bootstrap_ms,
-					mode: 'bootstrap'
+					mode: 'bootstrap',
+					warning_count
 				}
 			}
 
@@ -1330,9 +1600,9 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 				try {
 					const result = await import_response.json() as { created_ids?: Record<string, Record<string, unknown>>, warnings?: ImportWarning[] }
 					if (result.created_ids) {
-						await write_created_ids(site_dir, result.created_ids)
+						await write_created_ids(site_dir, result.created_ids, server_config, workspace_dir)
 					}
-					print_import_warnings(config.name, result.warnings)
+					warning_count = print_import_warnings(config.name, result.warnings)
 				} catch {
 					// ignore JSON parse errors
 				}
@@ -1340,7 +1610,8 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 			return {
 				zip_ms,
 				request_ms: bootstrap_ms + import_ms,
-				mode: 'bootstrap+import'
+				mode: 'bootstrap+import',
+				warning_count
 			}
 		} catch (err) {
 			if (attempt < max_retries) {
@@ -1411,7 +1682,7 @@ async function import_library_files(base_dir: string, api_url: string, delete_gr
 // Returns a map of posix-style relative paths (under library_path) to the
 // underlying record ID for every group folder and block folder currently on
 // disk. Group IDs come from library/groups.yaml, block IDs from the block's
-// fields.yaml. Missing IDs are null (new blocks that have never been pushed).
+// config.yaml. Missing IDs are null (new blocks that have never been pushed).
 async function scan_library_folders(library_path: string): Promise<LibrarySnapshot> {
 	const result: LibrarySnapshot = new Map()
 
@@ -1455,10 +1726,10 @@ async function scan_library_folders(library_path: string): Promise<LibrarySnapsh
 			let block_id: string | null = null
 			try {
 				const files = await fs.readdir(block_dir)
-				has_block_file = files.some(f => f === 'component.svelte' || f === 'fields.yaml' || f === 'content.yaml')
-				if (files.includes('fields.yaml')) {
+				has_block_file = files.some(f => f === 'component.svelte' || f === 'config.yaml' || f === 'fields.yaml' || f === 'content.yaml')
+				if (files.includes('config.yaml')) {
 					try {
-						const raw = await fs.readFile(path.join(block_dir, 'fields.yaml'), 'utf-8')
+						const raw = await fs.readFile(path.join(block_dir, 'config.yaml'), 'utf-8')
 						const parsed = load_yaml(raw)
 						if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
 							const rec = parsed as Record<string, unknown>
@@ -1524,7 +1795,7 @@ async function create_site_zip(dir: string, excluded_paths: Set<string> = new Se
 	})
 }
 
-async function sync_from_cms(site_dir: string, api_url: string, config: SiteConfig): Promise<void> {
+async function sync_from_cms(site_dir: string, api_url: string, config: SiteConfig, server_config: ServerConfig, workspace_dir: string): Promise<void> {
 	const response = await fetch_with_timeout(`${api_url}/api/palacms/export/${config.site_id}`, {}, 15000)
 	if (!response.ok) return
 
@@ -1539,6 +1810,20 @@ async function sync_from_cms(site_dir: string, api_url: string, config: SiteConf
 	await extract(temp_zip, { dir: temp_dir })
 	await fs.unlink(temp_zip)
 
+	const format_options = resolve_format_options(server_config)
+	const block_content_refs = await collect_block_content_references(site_dir)
+	const blocked_writebacks = await blocked_empty_schema_writebacks(temp_dir, site_dir, config.name, block_content_refs)
+	if (blocked_writebacks.size > 0) {
+		await fs.rm(temp_dir, { recursive: true, force: true })
+		return
+	}
+	const sync_options: SyncDirectoryOptions = {
+		workspace_dir,
+		format_options,
+		block_content_refs,
+		site_name: config.name
+	}
+
 	// Compare and sync files
 	const dirs_to_sync = ['blocks', 'page-types', 'pages', 'site']
 	const changed_files: string[] = []
@@ -1548,7 +1833,7 @@ async function sync_from_cms(site_dir: string, api_url: string, config: SiteConf
 		const local_path = path.join(site_dir, dir)
 
 		if (await path_exists(temp_path)) {
-			const files = await sync_directory(temp_path, local_path, dir)
+			const files = await sync_directory(temp_path, local_path, dir, sync_options)
 			changed_files.push(...files)
 		} else if (await path_exists(local_path)) {
 			await remove_tracked_path(local_path)
@@ -1601,7 +1886,12 @@ async function sync_library_from_cms(base_dir: string, api_url: string): Promise
 	}
 }
 
-async function sync_directory(src: string, dest: string, relative_path: string = ''): Promise<string[]> {
+async function sync_directory(
+	src: string,
+	dest: string,
+	relative_path: string = '',
+	options: SyncDirectoryOptions = {}
+): Promise<string[]> {
 	const changed_files: string[] = []
 	const entries = await fs.readdir(src, { withFileTypes: true })
 	const source_names = new Set(entries.map(entry => entry.name))
@@ -1614,16 +1904,28 @@ async function sync_directory(src: string, dest: string, relative_path: string =
 		const file_relative = relative_path ? `${relative_path}/${entry.name}` : entry.name
 
 		if (entry.isDirectory()) {
-			const nested = await sync_directory(src_path, dest_path, file_relative)
+			const nested = await sync_directory(src_path, dest_path, file_relative, options)
 			changed_files.push(...nested)
 		} else {
-			const src_content = await fs.readFile(src_path, 'utf-8')
+			let src_content = await fs.readFile(src_path, 'utf-8')
+
+			// Run server-emitted file through the workspace's formatter so
+			// per-user style (tabs, line width, single quotes, etc.) survives
+			// the round-trip. Without this, every CMS export wipes out the
+			// user's formatting and the file watcher fires another reimport.
+			if (options.format_options && options.workspace_dir && should_format(dest_path)) {
+				src_content = await format_file_contents(dest_path, src_content, options.workspace_dir, options.format_options)
+			}
 
 			let dest_content = ''
 			try {
 				dest_content = await fs.readFile(dest_path, 'utf-8')
 			} catch {
 				// File doesn't exist locally
+			}
+
+			if (should_skip_empty_block_schema_writeback(file_relative, src_content, dest_content, options)) {
+				continue
 			}
 
 			// Normalize to handle trailing newline/whitespace differences
@@ -1668,17 +1970,50 @@ async function has_library_content(library_dir: string): Promise<boolean> {
 	return false
 }
 
-async function write_created_ids(site_dir: string, created_ids: Record<string, Record<string, unknown>>): Promise<void> {
+async function write_created_ids(
+	site_dir: string,
+	created_ids: Record<string, Record<string, unknown>>,
+	server_config: ServerConfig,
+	workspace_dir: string
+): Promise<void> {
+	const format_options = resolve_format_options(server_config)
+
 	for (const [relative_path, id_data] of Object.entries(created_ids)) {
-		if (!id_data._id) continue
+		if (!id_data._id && !Array.isArray(id_data.sections)) continue
 
 		const file_path = path.join(site_dir, relative_path)
 		try {
 			const content = await fs.readFile(file_path, 'utf-8')
-			const data = load_yaml(content) as Record<string, unknown>
-			if (data && !data._id) {
-				const updated = { _id: id_data._id, ...data }
-				await fs.writeFile(file_path, dump_yaml(updated, { lineWidth: -1 }), 'utf-8')
+			const parsed = load_yaml(content)
+			if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue
+
+			let data = parsed as Record<string, unknown>
+			let changed = false
+
+			if (id_data._id && !data._id && !data.id) {
+				data = { _id: id_data._id, ...data }
+				changed = true
+			}
+
+			if (Array.isArray(id_data.sections) && Array.isArray(data.sections)) {
+				const section_ids = id_data.sections
+				const sections = data.sections.map((section, index) => {
+					if (!section || typeof section !== 'object' || Array.isArray(section)) return section
+					const section_record = section as Record<string, unknown>
+					const section_id = section_ids[index]
+					if (!section_id || section_record._id || section_record.id) return section
+					changed = true
+					return { _id: section_id, ...section_record }
+				})
+				if (changed) {
+					data = { ...data, sections }
+				}
+			}
+
+			if (changed) {
+				const raw = dump_yaml(data, { lineWidth: -1 })
+				const formatted = await format_file_contents(file_path, raw, workspace_dir, format_options)
+				await fs.writeFile(file_path, formatted, 'utf-8')
 				await mark_written_file(file_path)
 			}
 		} catch {
