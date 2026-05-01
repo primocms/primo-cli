@@ -292,6 +292,23 @@ function snapshot_value(snapshot: ContentSnapshot, file_path: string): string | 
 	return snapshot.has(file_path) ? snapshot.get(file_path)! : null
 }
 
+// Reads a file but treats ENOENT as a soft miss — palacms' export step can
+// reshape the on-disk layout (e.g. promoting pages/foo.yaml to
+// pages/foo/index.yaml when a child route is added) between when a directory
+// listing is captured and when each file is read. The vanished file isn't an
+// error; it's just out of scope for this snapshot.
+async function read_file_or_vanish(full_path: string, label: string): Promise<string | null> {
+	try {
+		return await fs.readFile(full_path, 'utf-8')
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+			console.log(chalk.dim(`  skipped (vanished): ${label}`))
+			return null
+		}
+		throw error
+	}
+}
+
 function find_conflict_paths(base: ContentSnapshot | undefined, local: ContentSnapshot, cms: ContentSnapshot): string[] {
 	if (!base) return []
 
@@ -386,7 +403,9 @@ async function collect_directory_snapshot(
 		}
 		if (!entry.isFile()) continue
 
-		let contents = await fs.readFile(full_path, 'utf-8')
+		const initial = await read_file_or_vanish(full_path, file_relative)
+		if (initial === null) continue
+		let contents = initial
 		const dest_path = options.dest_root ? path.join(options.dest_root, file_relative) : full_path
 		if (options.format_options && options.workspace_dir && should_format(dest_path)) {
 			contents = await format_file_contents(dest_path, contents, options.workspace_dir, options.format_options)
@@ -1721,7 +1740,8 @@ async function prepare_site_for_local_dev(site_dir: string): Promise<LocalDevPre
 	const pages_dir = path.join(site_dir, 'pages')
 	for (const relative_path of await find_page_files(pages_dir)) {
 		const full_path = path.join(site_dir, relative_path)
-		const raw = await fs.readFile(full_path, 'utf-8')
+		const raw = await read_file_or_vanish(full_path, relative_path)
+		if (raw === null) continue
 		const page = load_yaml(raw) as Record<string, unknown> | undefined
 		if (!page || typeof page !== 'object' || Array.isArray(page)) continue
 
