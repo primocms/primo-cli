@@ -1,6 +1,6 @@
 import fs from 'fs/promises'
 import path from 'path'
-import { randomInt } from 'crypto'
+import { createHash, randomInt } from 'crypto'
 import chalk from 'chalk'
 import ora from 'ora'
 import { spawn, type ChildProcess } from 'child_process'
@@ -18,11 +18,19 @@ interface DevOptions {
 	dir: string
 	port: string
 	force?: boolean
+	filesWin?: boolean
+	cmsWin?: boolean
 }
 
 interface SiteInfo {
 	dir: string
 	config: SiteConfig
+}
+
+type SyncMode = 'bidirectional' | 'files-win' | 'cms-win'
+
+type SyncPolicy = {
+	mode: SyncMode
 }
 
 let cms_process: ChildProcess | null = null
@@ -39,6 +47,7 @@ const importing_site_keys = new Set<string>()
 const pending_local_site_keys = new Set<string>()
 let is_importing_library = false
 let has_pending_library_local_changes = false
+let site_sync_baselines = new Map<string, ContentSnapshot>()
 
 // Track files written by sync to prevent watcher from re-pushing them
 // Map of filepath -> mtime (ms) when we wrote it
@@ -60,6 +69,7 @@ const ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789'
 const SITES_DIR = 'sites'
 const LIBRARY_DIR = 'library'
 const MCP_CONFIG_FILE = '.mcp.json'
+const SITE_SYNC_DIRS = ['blocks', 'page-types', 'pages', 'site']
 
 type IDCategory = 'pages' | 'page_sections' | 'blocks' | 'page_types' | 'site_fields' | 'block_fields' | 'page_type_fields'
 
@@ -86,6 +96,14 @@ type SyncDirectoryOptions = {
 	site_name?: string
 }
 
+type SnapshotOptions = {
+	workspace_dir?: string
+	format_options?: FormatOptions
+	dest_root?: string
+}
+
+type ContentSnapshot = Map<string, string>
+
 type ImportTimings = {
 	zip_ms: number
 	request_ms: number
@@ -104,19 +122,328 @@ const SYNC_MTIME_TOLERANCE_MS = 3000
 // long to prevent a pull that was in-flight before the watcher fired from
 // stomping the just-written content on arrival.
 const LOCAL_CHANGE_PULL_COOLDOWN_MS = 3000
+// Prior file content is copied to .primo/trash/ before any CMS->file
+// overwrite so the user can recover work if the sync picked the wrong side.
+// Entries older than this are pruned on dev server startup.
+const TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
+
+async function trash_existing_file(
+	prior_content: string,
+	workspace_dir: string,
+	site_name: string,
+	file_relative: string
+): Promise<void> {
+	const trash_dir = path.join(workspace_dir, '.primo', 'trash')
+	await fs.mkdir(trash_dir, { recursive: true })
+	const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+	const safe_path = file_relative.replace(/[/\\]/g, '__')
+	const trash_path = path.join(trash_dir, `${stamp}_${site_name}_${safe_path}`)
+	await fs.writeFile(trash_path, prior_content)
+}
+
+// Recursively trash every file under a path before it gets deleted, so
+// CMS->file deletes are recoverable the same way overwrites are.
+async function trash_path_recursive(
+	target_path: string,
+	workspace_dir: string,
+	site_name: string,
+	file_relative: string
+): Promise<void> {
+	let stat
+	try {
+		stat = await fs.stat(target_path)
+	} catch {
+		return
+	}
+
+	if (stat.isFile()) {
+		const content = await fs.readFile(target_path, 'utf-8').catch(() => null)
+		if (content !== null) {
+			await trash_existing_file(content, workspace_dir, site_name, file_relative)
+		}
+		return
+	}
+
+	if (!stat.isDirectory()) return
+
+	const entries = await fs.readdir(target_path, { withFileTypes: true }).catch(() => [])
+	for (const entry of entries) {
+		const child_path = path.join(target_path, entry.name)
+		const child_relative = `${file_relative}/${entry.name}`
+		await trash_path_recursive(child_path, workspace_dir, site_name, child_relative)
+	}
+}
+
+// Compare line counts between prior and incoming content to flag suspicious
+// shrinkage. Returns the negative delta (e.g. -12) when the file lost lines
+// or was emptied; null when it grew, stayed the same, or didn't exist before.
+function compute_shrink_delta(prior: string, next: string): number | null {
+	if (!prior) return null
+	const prior_lines = prior.split('\n').length
+	const next_lines = next.split('\n').length
+	const delta = next_lines - prior_lines
+	return delta < 0 ? delta : null
+}
+
+async function prune_old_trash(workspace_dir: string): Promise<void> {
+	const trash_dir = path.join(workspace_dir, '.primo', 'trash')
+	try {
+		const entries = await fs.readdir(trash_dir)
+		const cutoff = Date.now() - TRASH_RETENTION_MS
+		await Promise.all(entries.map(async name => {
+			const full = path.join(trash_dir, name)
+			const stat = await fs.stat(full).catch(() => null)
+			if (stat && stat.mtimeMs < cutoff) {
+				await fs.unlink(full).catch(() => {})
+			}
+		}))
+	} catch {
+		// trash dir doesn't exist yet — nothing to prune
+	}
+}
 
 function get_site_sync_key(site_dir: string, config: SiteConfig): string {
 	return config.site_id || site_dir
 }
 
-function update_site_sync_state_after_import(site: SiteInfo, timings: ImportTimings): void {
+function resolve_sync_policy(options: DevOptions): SyncPolicy {
+	if (options.filesWin && options.cmsWin) {
+		throw new Error('Use only one sync direction flag: --files-win or --cms-win.')
+	}
+
+	if (options.filesWin) return { mode: 'files-win' }
+	if (options.cmsWin) return { mode: 'cms-win' }
+	return { mode: 'bidirectional' }
+}
+
+function is_file_to_cms_active(sync_policy: SyncPolicy): boolean {
+	return sync_policy.mode !== 'cms-win'
+}
+
+function is_cms_to_file_active(sync_policy: SyncPolicy): boolean {
+	return sync_policy.mode !== 'files-win'
+}
+
+function describe_sync_state(sync_policy: SyncPolicy, sites: SiteInfo[]): string {
+	const file_state = is_file_to_cms_active(sync_policy)
+		? 'file→CMS active'
+		: 'file→CMS paused (--cms-win)'
+
+	let cms_state: string
+	if (!is_cms_to_file_active(sync_policy)) {
+		cms_state = 'CMS→file paused (--files-win)'
+	} else {
+		const pending_sites = sites
+			.filter(site => pending_local_site_keys.has(get_site_sync_key(site.dir, site.config)))
+			.map(site => site.config.name)
+
+		if (pending_sites.length > 0) {
+			const shown = pending_sites.slice(0, 3).join(', ')
+			const suffix = pending_sites.length > 3 ? `, +${pending_sites.length - 3} more` : ''
+			cms_state = `CMS→file paused (pending local imports/warnings: ${shown}${suffix})`
+		} else if (sync_policy.mode === 'bidirectional') {
+			cms_state = 'CMS→file active (auto-pauses during local imports)'
+		} else {
+			cms_state = 'CMS→file active'
+		}
+	}
+
+	return `${file_state}, ${cms_state}`
+}
+
+function print_sync_status(sync_policy: SyncPolicy, sites: SiteInfo[]): void {
+	console.log(chalk.dim(`  watching: ${describe_sync_state(sync_policy, sites)}`))
+}
+
+function update_site_sync_state_after_import(site: SiteInfo, timings: ImportTimings, sync_policy: SyncPolicy): boolean {
 	const site_key = get_site_sync_key(site.dir, site.config)
 	if (timings.warning_count > 0) {
 		pending_local_site_keys.add(site_key)
-		console.log(chalk.yellow(`  ${site.config.name}: CMS-to-file sync paused until import warnings are resolved.`))
+		if (is_cms_to_file_active(sync_policy)) {
+			console.log(chalk.yellow(`  ${site.config.name}: CMS-to-file sync paused until import warnings are resolved.`))
+		}
+		return false
+	}
+
+	const was_pending = pending_local_site_keys.delete(site_key)
+	if (was_pending && is_cms_to_file_active(sync_policy)) {
+		console.log(chalk.dim(`  ${site.config.name}: CMS-to-file sync resumed.`))
+	}
+
+	return true
+}
+
+async function update_site_sync_baseline(site: SiteInfo): Promise<void> {
+	site_sync_baselines.set(
+		get_site_sync_key(site.dir, site.config),
+		await collect_site_snapshot(site.dir)
+	)
+}
+
+function get_site_sync_baseline(site: SiteInfo): ContentSnapshot | undefined {
+	return site_sync_baselines.get(get_site_sync_key(site.dir, site.config))
+}
+
+function hash_snapshot_content(contents: string): string {
+	return createHash('sha256').update(contents.trim()).digest('hex')
+}
+
+function snapshot_value(snapshot: ContentSnapshot, file_path: string): string | null {
+	return snapshot.has(file_path) ? snapshot.get(file_path)! : null
+}
+
+function find_conflict_paths(base: ContentSnapshot | undefined, local: ContentSnapshot, cms: ContentSnapshot): string[] {
+	if (!base) return []
+
+	const paths = new Set<string>([
+		...base.keys(),
+		...local.keys(),
+		...cms.keys()
+	])
+	const local_changed = new Set<string>()
+	const cms_changed = new Set<string>()
+	const diverged = new Set<string>()
+
+	for (const file_path of paths) {
+		const base_value = snapshot_value(base, file_path)
+		const local_value = snapshot_value(local, file_path)
+		const cms_value = snapshot_value(cms, file_path)
+
+		if (local_value !== base_value) {
+			local_changed.add(file_path)
+		}
+		if (cms_value !== base_value) {
+			cms_changed.add(file_path)
+		}
+		if (local_value !== cms_value) {
+			diverged.add(file_path)
+		}
+	}
+
+	if (local_changed.size === 0 || cms_changed.size === 0) {
+		return []
+	}
+
+	return [...diverged].sort()
+}
+
+function log_sync_conflict(site_name: string, winner: 'files' | 'CMS' | 'unresolved', reason: string, paths: string[]): void {
+	if (paths.length === 0) return
+
+	const winner_text = winner === 'unresolved'
+		? chalk.red('NO SIDE WON — files diverged')
+		: winner === 'files'
+			? chalk.green('FILES WON')
+			: chalk.blue('CMS WON')
+
+	// Blank lines + bold header so the conflict is impossible to miss in
+	// the surrounding push/pull spam. Beta users need to see this clearly.
+	console.log('')
+	console.log(chalk.bold.yellow(`  ⚠ SYNC CONFLICT  ${site_name}  →  ${winner_text}`))
+	console.log(chalk.dim(`     reason: ${reason}`))
+	for (const p of paths.slice(0, 10)) {
+		console.log(chalk.yellow(`     • ${p}`))
+	}
+	if (paths.length > 10) {
+		console.log(chalk.dim(`     • +${paths.length - 10} more`))
+	}
+	if (winner === 'CMS') {
+		console.log(chalk.dim(`     prior file content saved to .primo/trash/`))
+	}
+	console.log('')
+}
+
+async function collect_site_snapshot(root_dir: string, options: SnapshotOptions = {}): Promise<ContentSnapshot> {
+	const snapshot: ContentSnapshot = new Map()
+	for (const dir of SITE_SYNC_DIRS) {
+		await collect_directory_snapshot(path.join(root_dir, dir), dir, snapshot, options)
+	}
+	return snapshot
+}
+
+async function collect_directory_snapshot(
+	current_dir: string,
+	relative_dir: string,
+	snapshot: ContentSnapshot,
+	options: SnapshotOptions
+): Promise<void> {
+	let entries
+	try {
+		entries = await fs.readdir(current_dir, { withFileTypes: true })
+	} catch {
 		return
 	}
-	pending_local_site_keys.delete(site_key)
+
+	for (const entry of entries) {
+		if (entry.name.startsWith('.')) continue
+
+		const full_path = path.join(current_dir, entry.name)
+		const file_relative = relative_dir ? `${relative_dir}/${entry.name}` : entry.name
+
+		if (entry.isDirectory()) {
+			await collect_directory_snapshot(full_path, file_relative, snapshot, options)
+			continue
+		}
+		if (!entry.isFile()) continue
+
+		let contents = await fs.readFile(full_path, 'utf-8')
+		const dest_path = options.dest_root ? path.join(options.dest_root, file_relative) : full_path
+		if (options.format_options && options.workspace_dir && should_format(dest_path)) {
+			contents = await format_file_contents(dest_path, contents, options.workspace_dir, options.format_options)
+		}
+		snapshot.set(file_relative, hash_snapshot_content(contents))
+	}
+}
+
+async function fetch_cms_site_snapshot(
+	site_dir: string,
+	api_url: string,
+	config: SiteConfig,
+	server_config: ServerConfig,
+	workspace_dir: string,
+	temp_name: string
+): Promise<ContentSnapshot | null> {
+	const response = await fetch_with_timeout(`${api_url}/api/palacms/export/${config.site_id}`, {}, 15000)
+	if (!response.ok) return null
+
+	const temp_dir = path.join(site_dir, '.primo', temp_name)
+	const temp_zip = path.join(temp_dir, 'export.zip')
+
+	await fs.rm(temp_dir, { recursive: true, force: true })
+	await fs.mkdir(temp_dir, { recursive: true })
+
+	try {
+		const zip_data = await response.arrayBuffer()
+		await fs.writeFile(temp_zip, Buffer.from(zip_data))
+		await extract(temp_zip, { dir: temp_dir })
+		await fs.unlink(temp_zip)
+
+		return await collect_site_snapshot(temp_dir, {
+			workspace_dir,
+			format_options: resolve_format_options(server_config),
+			dest_root: site_dir
+		})
+	} finally {
+		await fs.rm(temp_dir, { recursive: true, force: true })
+	}
+}
+
+async function detect_site_file_push_conflicts(
+	site: SiteInfo,
+	api_url: string,
+	server_config: ServerConfig,
+	workspace_dir: string
+): Promise<string[]> {
+	const baseline = get_site_sync_baseline(site)
+	if (!baseline) return []
+
+	const [local_snapshot, cms_snapshot] = await Promise.all([
+		collect_site_snapshot(site.dir),
+		fetch_cms_site_snapshot(site.dir, api_url, site.config, server_config, workspace_dir, 'conflict-temp')
+	])
+	if (!cms_snapshot) return []
+
+	return find_conflict_paths(baseline, local_snapshot, cms_snapshot)
 }
 
 async function with_site_import_lock<T>(site_dir: string, config: SiteConfig, fn: () => Promise<T>): Promise<T> {
@@ -202,7 +529,10 @@ export async function dev_server(options: DevOptions) {
 	const spinner = ora('Starting Primo...').start()
 
 	try {
+		const sync_policy = resolve_sync_policy(options)
+		site_sync_baselines = new Map()
 		const base_dir = path.resolve(options.dir)
+		await prune_old_trash(base_dir)
 		const mcp_registration_path = await register_primo_mcp_server(base_dir)
 
 		// Check for server config (multi-site mode) or site config (single-site mode)
@@ -291,10 +621,14 @@ export async function dev_server(options: DevOptions) {
 			const api_url = `http://127.0.0.1:${port}`
 
 			if (is_server_mode) {
-				spinner.text = 'Loading shared library...'
+				spinner.text = sync_policy.mode === 'cms-win' ? 'Pulling shared library...' : 'Loading shared library...'
 				is_importing_library = true
 				try {
-					await import_library_files(base_dir, api_url)
+					if (sync_policy.mode === 'cms-win') {
+						await sync_library_from_cms(base_dir, api_url)
+					} else {
+						await import_library_files(base_dir, api_url)
+					}
 				} finally {
 					is_importing_library = false
 				}
@@ -304,10 +638,17 @@ export async function dev_server(options: DevOptions) {
 			spinner.text = `Loading ${sites.length} site${sites.length > 1 ? 's' : ''}...`
 
 			for (const site of sites) {
-				await normalize_site(site.dir)
 				const use_bootstrap = !await site_exists(api_url, site.config.site_id)
+				if (sync_policy.mode === 'cms-win' && !use_bootstrap) {
+					await sync_from_cms(site.dir, api_url, site.config, server_config, base_dir, sync_policy)
+					continue
+				}
+
+				await normalize_site(site.dir)
 				const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap, base_dir))
-				update_site_sync_state_after_import(site, import_timings)
+				if (update_site_sync_state_after_import(site, import_timings, sync_policy)) {
+					await update_site_sync_baseline(site)
+				}
 			}
 
 		// Verify all sites are accessible before proceeding
@@ -357,12 +698,28 @@ export async function dev_server(options: DevOptions) {
 							pollInterval: 30
 						}
 					})
-					const on_event = (full_path: string) => {
-						if (should_skip_synced_delete(full_path)) return
+					const log_library_push_paused = (full_path: string) => {
+						const filename = path.relative(library_path, full_path)
+						console.log(chalk.dim(`  library: ${filename} ignored (file→CMS paused by --cms-win)`))
+					}
+					const push_or_ignore_library_change = (full_path: string) => {
+						if (!is_file_to_cms_active(sync_policy)) {
+							log_library_push_paused(full_path)
+							return
+						}
+
 						// Mark pending synchronously so the sync interval cannot
 						// sneak a pull through between the event and push.
+						const was_pending = has_pending_library_local_changes
 						has_pending_library_local_changes = true
 						last_local_change_time = Date.now()
+						if (!was_pending && sync_policy.mode === 'bidirectional') {
+							console.log(chalk.dim('  library: CMS-to-file sync paused while local import is pending.'))
+						}
+						schedule_library_push()
+					}
+					const on_event = (full_path: string) => {
+						if (should_skip_synced_delete(full_path)) return
 
 						const synced_mtime = synced_files.get(full_path)
 						if (synced_mtime) {
@@ -374,19 +731,18 @@ export async function dev_server(options: DevOptions) {
 										return
 									}
 									synced_files.delete(full_path)
-									schedule_library_push()
+									push_or_ignore_library_change(full_path)
 								})
 								.catch(() => {
 									synced_files.delete(full_path)
-									schedule_library_push()
+									push_or_ignore_library_change(full_path)
 								})
 							return
 						}
-						schedule_library_push()
+						push_or_ignore_library_change(full_path)
 					}
 
 					const schedule_library_push = () => {
-						const rel = (full_path: string) => path.relative(library_path, full_path)
 						if (library_reimport_timeout) clearTimeout(library_reimport_timeout)
 						library_reimport_timeout = setTimeout(async () => {
 							if (is_importing) {
@@ -425,6 +781,9 @@ export async function dev_server(options: DevOptions) {
 								await request_browser_reload(api_url)
 								const reload_ms = Date.now() - reload_started
 								has_pending_library_local_changes = false
+								if (sync_policy.mode === 'bidirectional') {
+									console.log(chalk.dim('  library: CMS-to-file sync resumed.'))
+								}
 								// Update snapshot only on successful push.
 								library_snapshot = current
 								console.log(chalk.dim(`  library: zip ${import_timings.zip_ms}ms, import ${import_timings.request_ms}ms, reload ${reload_ms}ms`))
@@ -451,103 +810,140 @@ export async function dev_server(options: DevOptions) {
 			}
 
 			const setup_site_watchers = (site: SiteInfo) => {
-			let pending_reload = false
+				let pending_reload = false
 
-			const schedule_reimport = () => {
-				if (reimport_timeout) {
-					clearTimeout(reimport_timeout)
-				}
-				reimport_timeout = setTimeout(async () => {
-					// If already importing, reschedule and wait
-					if (is_importing) {
-						schedule_reimport()
-						return
+				const schedule_reimport = () => {
+					if (reimport_timeout) {
+						clearTimeout(reimport_timeout)
 					}
-					try {
-						is_importing = true
-						const normalize_started = Date.now()
-						await normalize_site(site.dir)
-						const normalize_ms = Date.now() - normalize_started
-						const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, false, base_dir))
-						let reload_ms = 0
-						if (pending_reload) {
-							try {
-								const reload_started = Date.now()
-								await request_browser_reload(api_url)
-								reload_ms = Date.now() - reload_started
-							} catch {
-								console.log(chalk.yellow(`  Warning: Failed to trigger browser reload for ${site.config.name}`))
-							}
-							pending_reload = false
-						}
-						update_site_sync_state_after_import(site, import_timings)
-						console.log(chalk.dim(`  ${site.config.name}: normalize ${normalize_ms}ms, zip ${import_timings.zip_ms}ms, ${import_timings.mode} ${import_timings.request_ms}ms${reload_ms ? `, reload ${reload_ms}ms` : ''}`))
-						console.log(chalk.green(`  ✓ ${site.config.name} pushed`))
-					} catch (err) {
-						console.log(chalk.red(`  ✗ ${site.config.name} push failed: ${err}`))
-					} finally {
-						is_importing = false
-						last_import_time = Date.now()  // Track when import finished
-					}
-				}, LOCAL_PUSH_DEBOUNCE_MS)
-			}
-
-			for (const dir of dirs_to_watch) {
-				const watch_path = path.join(site.dir, dir)
-				try {
-					const watcher = chokidar.watch(watch_path, {
-						ignored: (p: string) => path.basename(p).startsWith('.'),
-						ignoreInitial: true,
-						awaitWriteFinish: {
-							stabilityThreshold: 60,
-							pollInterval: 30
-						}
-					})
-					const continue_event = (full_path: string) => {
-						const filename = path.relative(watch_path, full_path)
-						console.log(chalk.dim(`  ${site.config.name}: ${dir}/${filename}`))
-						if (change_requires_reload(dir, filename)) {
-							pending_reload = true
-						}
-						schedule_reimport()
-					}
-					const on_event = (full_path: string) => {
-						if (should_skip_synced_delete(full_path)) return
-						// Mark site as pending synchronously so the sync interval
-						// cannot pull against a site that's actively being edited.
-						pending_local_site_keys.add(get_site_sync_key(site.dir, site.config))
-						last_local_change_time = Date.now()
-
-						const synced_mtime = synced_files.get(full_path)
-						if (synced_mtime) {
-							fs.stat(full_path)
-								.then(stat => {
-									if (Math.abs(stat.mtimeMs - synced_mtime) < SYNC_MTIME_TOLERANCE_MS) {
-										synced_files.delete(full_path)
-										return
-									}
-									synced_files.delete(full_path)
-									continue_event(full_path)
-								})
-								.catch(() => {
-									synced_files.delete(full_path)
-									continue_event(full_path)
-								})
+					reimport_timeout = setTimeout(async () => {
+						// If already importing, reschedule and wait
+						if (is_importing) {
+							schedule_reimport()
 							return
 						}
-						continue_event(full_path)
+						try {
+							is_importing = true
+							const normalize_started = Date.now()
+							await normalize_site(site.dir)
+							const normalize_ms = Date.now() - normalize_started
+							let conflict_paths: string[] = []
+							if (sync_policy.mode === 'bidirectional') {
+								try {
+									conflict_paths = await detect_site_file_push_conflicts(site, api_url, server_config, base_dir)
+								} catch {
+									// Conflict detection must not block the local push.
+								}
+							}
+							const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, false, base_dir))
+							let reload_ms = 0
+							if (pending_reload) {
+								try {
+									const reload_started = Date.now()
+									await request_browser_reload(api_url)
+									reload_ms = Date.now() - reload_started
+								} catch {
+									console.log(chalk.yellow(`  Warning: Failed to trigger browser reload for ${site.config.name}`))
+								}
+								pending_reload = false
+							}
+							if (conflict_paths.length > 0) {
+								if (import_timings.warning_count > 0) {
+									log_sync_conflict(site.config.name, 'unresolved', 'file push completed with import warnings; CMS-to-file sync paused until resolved', conflict_paths)
+								} else {
+									log_sync_conflict(site.config.name, 'files', 'both sides changed since last sync; local push was applied (CMS values from last poll were discarded)', conflict_paths)
+								}
+							}
+							if (update_site_sync_state_after_import(site, import_timings, sync_policy)) {
+								await update_site_sync_baseline(site)
+							}
+							console.log(chalk.dim(`  ${site.config.name}: normalize ${normalize_ms}ms, zip ${import_timings.zip_ms}ms, ${import_timings.mode} ${import_timings.request_ms}ms${reload_ms ? `, reload ${reload_ms}ms` : ''}`))
+							console.log(chalk.green(`  ✓ ${site.config.name} pushed`))
+						} catch (err) {
+							console.log(chalk.red(`  ✗ ${site.config.name} push failed: ${err}`))
+						} finally {
+							is_importing = false
+							last_import_time = Date.now()  // Track when import finished
+						}
+					}, LOCAL_PUSH_DEBOUNCE_MS)
+				}
+
+				for (const dir of dirs_to_watch) {
+					const watch_path = path.join(site.dir, dir)
+					try {
+						const watcher = chokidar.watch(watch_path, {
+							ignored: (p: string) => path.basename(p).startsWith('.'),
+							ignoreInitial: true,
+							awaitWriteFinish: {
+								stabilityThreshold: 60,
+								pollInterval: 30
+							}
+						})
+						const continue_event = (full_path: string) => {
+							const filename = path.relative(watch_path, full_path)
+							console.log(chalk.dim(`  ${site.config.name}: ${dir}/${filename}`))
+							if (change_requires_reload(dir, filename)) {
+								pending_reload = true
+							}
+							schedule_reimport()
+						}
+						const mark_pending_local_change = () => {
+							const site_key = get_site_sync_key(site.dir, site.config)
+							const was_pending = pending_local_site_keys.has(site_key)
+							pending_local_site_keys.add(site_key)
+							last_local_change_time = Date.now()
+							if (!was_pending && sync_policy.mode === 'bidirectional') {
+								console.log(chalk.dim(`  ${site.config.name}: CMS-to-file sync paused while local import is pending.`))
+							}
+						}
+						const log_file_push_paused = (full_path: string) => {
+							const filename = path.relative(watch_path, full_path)
+							console.log(chalk.dim(`  ${site.config.name}: ${dir}/${filename} ignored (file→CMS paused by --cms-win)`))
+						}
+						const push_or_ignore_file_change = (full_path: string) => {
+							if (!is_file_to_cms_active(sync_policy)) {
+								log_file_push_paused(full_path)
+								return
+							}
+
+							// Mark site as pending synchronously so the sync interval
+							// cannot pull against a site that's actively being edited.
+							mark_pending_local_change()
+							continue_event(full_path)
+						}
+						const on_event = (full_path: string) => {
+							if (should_skip_synced_delete(full_path)) return
+
+							const synced_mtime = synced_files.get(full_path)
+							if (synced_mtime) {
+								fs.stat(full_path)
+									.then(stat => {
+										if (Math.abs(stat.mtimeMs - synced_mtime) < SYNC_MTIME_TOLERANCE_MS) {
+											synced_files.delete(full_path)
+											return
+										}
+										synced_files.delete(full_path)
+										push_or_ignore_file_change(full_path)
+									})
+									.catch(() => {
+										synced_files.delete(full_path)
+										push_or_ignore_file_change(full_path)
+									})
+								return
+							}
+							push_or_ignore_file_change(full_path)
+						}
+						watcher.on('add', on_event)
+						watcher.on('change', on_event)
+						watcher.on('unlink', on_event)
+						watcher.on('addDir', on_event)
+						watcher.on('unlinkDir', on_event)
+						watchers.push(watcher)
+					} catch {
+						// Directory might not exist
 					}
-					watcher.on('add', on_event)
-					watcher.on('change', on_event)
-					watcher.on('unlink', on_event)
-					watcher.on('addDir', on_event)
-					watcher.on('unlinkDir', on_event)
-					watchers.push(watcher)
-				} catch {
-					// Directory might not exist
 				}
 			}
-		}
 
 		// Set up watchers for existing sites
 		for (const site of sites) {
@@ -570,10 +966,16 @@ export async function dev_server(options: DevOptions) {
 
 					known_sites.add(site.dir)
 					sites.push(site)
-					await normalize_site(site.dir)
 					const use_bootstrap = !await site_exists(api_url, site.config.site_id)
-					const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap, base_dir))
-					update_site_sync_state_after_import(site, import_timings)
+					if (sync_policy.mode === 'cms-win' && !use_bootstrap) {
+						await sync_from_cms(site.dir, api_url, site.config, server_config, base_dir, sync_policy)
+					} else {
+						await normalize_site(site.dir)
+						const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap, base_dir))
+						if (update_site_sync_state_after_import(site, import_timings, sync_policy)) {
+							await update_site_sync_baseline(site)
+						}
+					}
 					setup_site_watchers(site)
 
 					const host = site.config.host || `${path.basename(site.dir).toLowerCase().replace(/\s+/g, '-')}.localhost:${port}`
@@ -596,41 +998,42 @@ export async function dev_server(options: DevOptions) {
 		// Start polling for CMS changes (sync back to local files)
 		// Wait 3 seconds after import to avoid overwriting just-pushed changes
 		const IMPORT_COOLDOWN_MS = 3000
-		sync_interval = setInterval(async () => {
-			if (is_syncing || is_importing) return
-			if (Date.now() - last_import_time < IMPORT_COOLDOWN_MS) return
-			// Skip the pull if the user just made a local change — otherwise a
-			// pull that started before the watcher fired could overwrite the
-			// fresh local edit on arrival.
-			if (Date.now() - last_local_change_time < LOCAL_CHANGE_PULL_COOLDOWN_MS) return
+		if (is_cms_to_file_active(sync_policy)) {
+			sync_interval = setInterval(async () => {
+				if (is_syncing || is_importing) return
+				if (Date.now() - last_import_time < IMPORT_COOLDOWN_MS) return
+				// Skip the pull if the user just made a local change — otherwise a
+				// pull that started before the watcher fired could overwrite the
+				// fresh local edit on arrival.
+				if (Date.now() - last_local_change_time < LOCAL_CHANGE_PULL_COOLDOWN_MS) return
 
-			is_syncing = true
-			try {
-				for (const site of sites) {
-					try {
-						const site_key = get_site_sync_key(site.dir, site.config)
-						if (importing_site_keys.has(site_key) || pending_local_site_keys.has(site_key)) {
-							continue
+				is_syncing = true
+				try {
+					for (const site of sites) {
+						try {
+							const site_key = get_site_sync_key(site.dir, site.config)
+							if (importing_site_keys.has(site_key) || pending_local_site_keys.has(site_key)) {
+								continue
+							}
+							await sync_from_cms(site.dir, api_url, site.config, server_config, base_dir, sync_policy)
+						} catch {
+							// Silently ignore sync errors
 						}
-						await sync_from_cms(site.dir, api_url, site.config, server_config, base_dir)
-					} catch {
-						// Silently ignore sync errors
 					}
-				}
-				if (is_server_mode && !is_importing_library && !has_pending_library_local_changes && await has_library_content(path.join(base_dir, LIBRARY_DIR))) {
-					try {
-						await sync_library_from_cms(base_dir, api_url)
-					} catch {
-						// Silently ignore library sync errors
+					if (is_server_mode && !is_importing_library && !has_pending_library_local_changes && await has_library_content(path.join(base_dir, LIBRARY_DIR))) {
+						try {
+							await sync_library_from_cms(base_dir, api_url)
+						} catch {
+							// Silently ignore library sync errors
+						}
 					}
+				} finally {
+					is_syncing = false
 				}
-			} finally {
-				is_syncing = false
-			}
-		}, 1000)
+			}, 1000)
+		}
 
-		console.log(chalk.dim('  Watching for changes...'))
-		console.log(chalk.dim('  CMS-to-file sync is enabled when no local edits are pending.'))
+		print_sync_status(sync_policy, sites)
 		console.log(chalk.dim('  Press Ctrl+C to stop'))
 
 		// Handle cleanup
@@ -1795,7 +2198,7 @@ async function create_site_zip(dir: string, excluded_paths: Set<string> = new Se
 	})
 }
 
-async function sync_from_cms(site_dir: string, api_url: string, config: SiteConfig, server_config: ServerConfig, workspace_dir: string): Promise<void> {
+async function sync_from_cms(site_dir: string, api_url: string, config: SiteConfig, server_config: ServerConfig, workspace_dir: string, sync_policy: SyncPolicy = { mode: 'bidirectional' }): Promise<void> {
 	const response = await fetch_with_timeout(`${api_url}/api/palacms/export/${config.site_id}`, {}, 15000)
 	if (!response.ok) return
 
@@ -1805,6 +2208,7 @@ async function sync_from_cms(site_dir: string, api_url: string, config: SiteConf
 	const temp_dir = path.join(site_dir, '.primo', 'sync-temp')
 	const temp_zip = path.join(temp_dir, 'export.zip')
 
+	await fs.rm(temp_dir, { recursive: true, force: true })
 	await fs.mkdir(temp_dir, { recursive: true })
 	await fs.writeFile(temp_zip, Buffer.from(zip_data))
 	await extract(temp_zip, { dir: temp_dir })
@@ -1823,12 +2227,20 @@ async function sync_from_cms(site_dir: string, api_url: string, config: SiteConf
 		block_content_refs,
 		site_name: config.name
 	}
+	const remote_snapshot = await collect_site_snapshot(temp_dir, {
+		workspace_dir,
+		format_options,
+		dest_root: site_dir
+	})
+	const local_snapshot = await collect_site_snapshot(site_dir)
+	const conflict_paths = sync_policy.mode === 'bidirectional'
+		? find_conflict_paths(get_site_sync_baseline({ dir: site_dir, config }), local_snapshot, remote_snapshot)
+		: []
 
 	// Compare and sync files
-	const dirs_to_sync = ['blocks', 'page-types', 'pages', 'site']
 	const changed_files: string[] = []
 
-	for (const dir of dirs_to_sync) {
+	for (const dir of SITE_SYNC_DIRS) {
 		const temp_path = path.join(temp_dir, dir)
 		const local_path = path.join(site_dir, dir)
 
@@ -1843,7 +2255,11 @@ async function sync_from_cms(site_dir: string, api_url: string, config: SiteConf
 
 	// Clean up temp directory
 	await fs.rm(temp_dir, { recursive: true, force: true })
+	await update_site_sync_baseline({ dir: site_dir, config })
 
+	if (conflict_paths.length > 0) {
+		log_sync_conflict(config.name, 'CMS', 'both sides changed since last sync; CMS values were applied (local edits saved to .primo/trash/)', conflict_paths)
+	}
 	if (changed_files.length > 0) {
 		for (const file of changed_files) {
 			console.log(chalk.blue(`  ↓ ${config.name}: ${file}`))
@@ -1862,6 +2278,7 @@ async function sync_library_from_cms(base_dir: string, api_url: string): Promise
 	const temp_dir = path.join(base_dir, '.primo', 'library-sync-temp')
 	const temp_zip = path.join(temp_dir, 'library.zip')
 
+	await fs.rm(temp_dir, { recursive: true, force: true })
 	await fs.mkdir(temp_dir, { recursive: true })
 	await fs.writeFile(temp_zip, Buffer.from(zip_data))
 	await extract(temp_zip, { dir: temp_dir })
@@ -1878,6 +2295,7 @@ async function sync_library_from_cms(base_dir: string, api_url: string): Promise
 	}
 
 	await fs.rm(temp_dir, { recursive: true, force: true })
+	library_snapshot = await scan_library_folders(local_library_path)
 
 	if (changed_files.length > 0) {
 		for (const file of changed_files) {
@@ -1930,6 +2348,17 @@ async function sync_directory(
 
 			// Normalize to handle trailing newline/whitespace differences
 			if (src_content.trim() !== dest_content.trim()) {
+				// Trash the prior content so the user can recover if this
+				// overwrite was unwanted. Skipped when there was no prior file.
+				// Trashing must never block the sync — failures are logged and ignored.
+				if (dest_content && options.workspace_dir && options.site_name) {
+					try {
+						await trash_existing_file(dest_content, options.workspace_dir, options.site_name, file_relative)
+					} catch {
+						console.log(chalk.dim(`  trash failed for ${file_relative}`))
+					}
+				}
+
 				// Track this file BEFORE writing to avoid race with watcher
 				// Use current time as estimate, watcher allows 1 second tolerance
 				synced_files.set(dest_path, Date.now())
@@ -1937,7 +2366,16 @@ async function sync_directory(
 				// Update with actual mtime after write
 				const stat = await fs.stat(dest_path)
 				synced_files.set(dest_path, stat.mtimeMs)
-				changed_files.push(file_relative)
+
+				// Surface shrinkage on the change line itself so a user
+				// scanning the dev log notices when a YAML list silently
+				// loses entries (the failure mode reported during the
+				// column-accounting beta).
+				const shrink_delta = compute_shrink_delta(dest_content, src_content)
+				const annotated = shrink_delta !== null
+					? `${file_relative} (${shrink_delta} lines, prior in .primo/trash/)`
+					: file_relative
+				changed_files.push(annotated)
 			}
 		}
 	}
@@ -1950,8 +2388,20 @@ async function sync_directory(
 
 		const dest_path = path.join(dest, entry.name)
 		const file_relative = relative_path ? `${relative_path}/${entry.name}` : entry.name
+
+		// Trash the file/tree before removing so a CMS-side delete
+		// (often triggered by an upstream parse error dropping references)
+		// is recoverable from .primo/trash/.
+		if (options.workspace_dir && options.site_name) {
+			try {
+				await trash_path_recursive(dest_path, options.workspace_dir, options.site_name, file_relative)
+			} catch {
+				console.log(chalk.dim(`  trash failed for ${file_relative}`))
+			}
+		}
+
 		await remove_tracked_path(dest_path)
-		changed_files.push(file_relative)
+		changed_files.push(`${file_relative} (deleted, prior in .primo/trash/)`)
 	}
 
 	return changed_files

@@ -107,24 +107,37 @@ export async function new_site(options: NewOptions) {
 		}
 		await write_site_config(site_dir, config)
 
-		// Create default page type config
+		// Create default page type config + sibling fields.yaml
 		const page_type_config = {
-			id: generate_id(),
+			_id: generate_id(),
 			name: 'Default',
 			icon: 'mdi:file-document-outline',
 			color: '#2B407D',
-			allowed_blocks: ['hero'],
-			fields: []
+			allowed_blocks: ['hero']
 		}
 		await fs.writeFile(
 			path.join(site_dir, 'page-types', 'default', 'config.yaml'),
-			`id: ${page_type_config.id}
+			`_id: ${page_type_config._id}
 name: ${page_type_config.name}
 icon: ${page_type_config.icon}
 color: "${page_type_config.color}"
 allowed_blocks:
   - hero
-fields: []
+`
+		)
+		await fs.writeFile(
+			path.join(site_dir, 'page-types', 'default', 'fields.yaml'),
+			'[]\n'
+		)
+		await fs.writeFile(
+			path.join(site_dir, 'page-types', 'default', 'layout.yaml'),
+			`# Sections shared by every page of this type. Add blocks here to render
+# the same header/footer across all pages of this type.
+#
+# header:
+#   - block: site-header
+# footer:
+#   - block: site-footer
 `
 		)
 
@@ -160,26 +173,30 @@ fields: []
 `
 		)
 
-		// Create starter hero block
+		// Create starter hero block (4 files: config + fields + content + component)
 		await fs.mkdir(path.join(site_dir, 'blocks', 'hero'), { recursive: true })
 
 		await fs.writeFile(
-			path.join(site_dir, 'blocks', 'hero', 'fields.yaml'),
+			path.join(site_dir, 'blocks', 'hero', 'config.yaml'),
 			`_id: ${generate_id()}
 name: Hero
-fields:
-  - _id: ${generate_id()}
-    name: headline
-    label: Headline
-    type: text
-  - _id: ${generate_id()}
-    name: subheadline
-    label: Subheadline
-    type: text
-  - _id: ${generate_id()}
-    name: cta
-    label: Call to Action
-    type: link
+`
+		)
+
+		await fs.writeFile(
+			path.join(site_dir, 'blocks', 'hero', 'fields.yaml'),
+			`- _id: ${generate_id()}
+  name: headline
+  label: Headline
+  type: text
+- _id: ${generate_id()}
+  name: subheadline
+  label: Subheadline
+  type: text
+- _id: ${generate_id()}
+  name: cta
+  label: Call to Action
+  type: link
 `
 		)
 
@@ -351,7 +368,7 @@ Primo workspace for local development. Each subdirectory under \`sites/\` is an 
 
 The Primo MCP server (\`primo\`) is the source of truth, when present, for schema, validation, field types, and inline editing. Call \`list_docs\` first to see what's documented.
 
-Without the MCP server, read \`sites/*/blocks/*/fields.yaml\` and \`sites/*/page-types/*/config.yaml\` to infer schemas, and treat \`sites/*/pages/*.yaml\` section \`content:\` as the source of truth for rendered content (block \`content.yaml\` files are defaults only).
+Without the MCP server, read \`sites/*/blocks/*/fields.yaml\` and \`sites/*/page-types/*/fields.yaml\` to infer schemas, and treat \`sites/*/pages/*.yaml\` page/section \`content:\` as the source of truth for rendered content (block \`content.yaml\` files are defaults only).
 
 ## Layout
 
@@ -372,9 +389,16 @@ Without the MCP server, read \`sites/*/blocks/*/fields.yaml\` and \`sites/*/page
 - Do not patch the SQLite DB to fix schema or content issues. Edit the source files; the dev server reimports.
 - If local state seems wrong, delete \`.primo/\` and let the dev server reimport from files.
 
+## Recovering overwritten files
+
+When \`primo dev\` syncs CMS changes to disk, the prior file content is copied to \`.primo/trash/\` before the overwrite or delete. Entries are kept for 7 days.
+
+If a file appears to have lost content after a sync (deleted entries, shrunken YAML lists, missing sections, removed files), check \`.primo/trash/\` for the most recent copy and restore with \`cp\`. The dev server also annotates the change log when a synced file shrinks or is deleted.
+
 ## IDs
 
-- Top-level entities use system-owned IDs (\`_id\` for pages/sections/blocks/fields, \`id\` for page types).
+- Top-level entities use system-owned \`_id\` keys (pages, sections, blocks, page types, fields).
+- For blocks, \`_id\` lives in \`blocks/<key>/config.yaml\`. For page types, in \`page-types/<key>/config.yaml\`. The folder name is the stable reference key — editing \`name\` in \`config.yaml\` only changes the editor display label.
 - When creating a new entity, omit the ID. The dev server generates and writes it back on first sync.
 - Do not invent or hand-author IDs. Keep existing IDs stable when editing.
 - Duplicate IDs are treated as conflicts; affected files may be skipped.

@@ -40,6 +40,8 @@ Start the local CMS server. Watches for file changes and syncs edits from the CM
 ```bash
 primo dev                    # Start in current directory
 primo dev -p 8080            # Use custom port
+primo dev --files-win        # Push file edits to the CMS; pause CMS-to-file sync
+primo dev --cms-win          # Pull CMS edits to files; pause file-to-CMS sync
 ```
 
 ### `primo push`
