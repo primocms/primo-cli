@@ -6,7 +6,6 @@ import { save_auth_token } from '../utils/auth.js'
 interface LoginOptions {
 	server: string
 	email?: string
-	password?: string
 }
 
 export async function login(options: LoginOptions) {
@@ -16,17 +15,12 @@ export async function login(options: LoginOptions) {
 	console.log(chalk.bold(`Logging in to ${server}`))
 	console.log('')
 
-	// Get email and password
 	let email = options.email
-	let password = options.password
-
 	if (!email) {
 		email = await prompt('Email: ')
 	}
 
-	if (!password) {
-		password = await prompt_password('Password: ')
-	}
+	const password = await prompt_password('Password: ')
 
 	const spinner = ora('Authenticating...').start()
 

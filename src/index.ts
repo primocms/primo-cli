@@ -38,8 +38,7 @@ program
 	.option('-d, --dir <dir>', 'Site directory', '.')
 	.option('-p, --port <port>', 'Port', '3000')
 	.option('-f, --force', 'Kill existing processes on the port')
-	.option('--files-win', 'Lock sync for this run so file edits push to the CMS and CMS-to-file sync is paused')
-	.option('--cms-win', 'Lock sync for this run so CMS edits write to files and file-to-CMS sync is paused')
+	.option('--author <mode>', 'Who is authoring this session: "files" (push only; CMS UI is read-only — default), "cms" (CMS edits write to files; file edits revert), "both" (bidirectional; CMS edits often lost on conflict — beta)', 'files')
 	.action(dev_server)
 
 program
@@ -93,7 +92,6 @@ program
 	.description('Login to hosted CMS')
 	.argument('<server>', 'Server URL')
 	.option('-e, --email <email>', 'Email')
-	.option('-p, --password <password>', 'Password')
 	.action((server, options) => login({ server, ...options }))
 
 program
