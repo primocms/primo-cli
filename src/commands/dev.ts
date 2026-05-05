@@ -18,8 +18,7 @@ interface DevOptions {
 	dir: string
 	port: string
 	force?: boolean
-	filesWin?: boolean
-	cmsWin?: boolean
+	author?: string
 }
 
 interface SiteInfo {
@@ -27,10 +26,15 @@ interface SiteInfo {
 	config: SiteConfig
 }
 
-type SyncMode = 'bidirectional' | 'files-win' | 'cms-win'
+type SyncMode = 'both' | 'files' | 'cms'
 
 type SyncPolicy = {
 	mode: SyncMode
+}
+
+function local_dev_host(name: string, port: number | string): string {
+	const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'site'
+	return `${slug}.localhost:${port}`
 }
 
 let cms_process: ChildProcess | null = null
@@ -48,6 +52,10 @@ const pending_local_site_keys = new Set<string>()
 let is_importing_library = false
 let has_pending_library_local_changes = false
 let site_sync_baselines = new Map<string, ContentSnapshot>()
+// Tracks the last set of conflict paths logged per site so we don't reprint
+// the same conflict block every pull cycle when palacms's serialization
+// keeps producing the same divergence (e.g. data-key mangling, key reorder).
+const last_logged_conflicts = new Map<string, string>()
 
 // Track files written by sync to prevent watcher from re-pushing them
 // Map of filepath -> mtime (ms) when we wrote it
@@ -94,6 +102,11 @@ type SyncDirectoryOptions = {
 	format_options?: FormatOptions
 	block_content_refs?: Map<string, BlockContentReference[]>
 	site_name?: string
+	// Relative paths the caller has already determined are conflicted.
+	// sync_directory leaves these files untouched on disk and skips both
+	// overwrite and delete for them — implements the "files win on conflict"
+	// default policy.
+	skip_paths?: Set<string>
 }
 
 type SnapshotOptions = {
@@ -185,6 +198,27 @@ function compute_shrink_delta(prior: string, next: string): number | null {
 	return delta < 0 ? delta : null
 }
 
+// Write the most recent push outcome to a file the MCP build_preview tool
+// reads, so the agent learns when its file changes failed to land in the CMS.
+// Without this, build_preview compiles whatever stale DB state existed before
+// the failed push and reports ok:true, leaving the agent to chase phantom
+// rendering bugs instead of fixing the source error.
+async function write_sync_status(
+	site_dir: string,
+	status: { ok: true } | { ok: false; error: string; failed_at: string }
+): Promise<void> {
+	const status_dir = path.join(site_dir, '.primo')
+	try {
+		await fs.mkdir(status_dir, { recursive: true })
+		await fs.writeFile(
+			path.join(status_dir, 'sync_status.json'),
+			JSON.stringify(status, null, 2)
+		)
+	} catch {
+		// Status reporting must not break the push.
+	}
+}
+
 async function prune_old_trash(workspace_dir: string): Promise<void> {
 	const trash_dir = path.join(workspace_dir, '.primo', 'trash')
 	try {
@@ -207,31 +241,32 @@ function get_site_sync_key(site_dir: string, config: SiteConfig): string {
 }
 
 function resolve_sync_policy(options: DevOptions): SyncPolicy {
-	if (options.filesWin && options.cmsWin) {
-		throw new Error('Use only one sync direction flag: --files-win or --cms-win.')
+	// Default mirrors the CLI's --author default: files-authoritative.
+	// This branch matters for callers that invoke dev_server programmatically
+	// (e.g. `primo new` after scaffolding) and bypass commander's default.
+	const raw = options.author ?? 'files'
+	if (raw !== 'files' && raw !== 'cms' && raw !== 'both') {
+		throw new Error(`Invalid --author value "${raw}". Use "files", "cms", or "both".`)
 	}
-
-	if (options.filesWin) return { mode: 'files-win' }
-	if (options.cmsWin) return { mode: 'cms-win' }
-	return { mode: 'bidirectional' }
+	return { mode: raw }
 }
 
 function is_file_to_cms_active(sync_policy: SyncPolicy): boolean {
-	return sync_policy.mode !== 'cms-win'
+	return sync_policy.mode !== 'cms'
 }
 
 function is_cms_to_file_active(sync_policy: SyncPolicy): boolean {
-	return sync_policy.mode !== 'files-win'
+	return sync_policy.mode !== 'files'
 }
 
 function describe_sync_state(sync_policy: SyncPolicy, sites: SiteInfo[]): string {
 	const file_state = is_file_to_cms_active(sync_policy)
 		? 'file→CMS active'
-		: 'file→CMS paused (--cms-win)'
+		: 'file→CMS paused (--author cms)'
 
 	let cms_state: string
 	if (!is_cms_to_file_active(sync_policy)) {
-		cms_state = 'CMS→file paused (--files-win)'
+		cms_state = 'CMS→file paused (--author files)'
 	} else {
 		const pending_sites = sites
 			.filter(site => pending_local_site_keys.has(get_site_sync_key(site.dir, site.config)))
@@ -241,7 +276,7 @@ function describe_sync_state(sync_policy: SyncPolicy, sites: SiteInfo[]): string
 			const shown = pending_sites.slice(0, 3).join(', ')
 			const suffix = pending_sites.length > 3 ? `, +${pending_sites.length - 3} more` : ''
 			cms_state = `CMS→file paused (pending local imports/warnings: ${shown}${suffix})`
-		} else if (sync_policy.mode === 'bidirectional') {
+		} else if (sync_policy.mode === 'both') {
 			cms_state = 'CMS→file active (auto-pauses during local imports)'
 		} else {
 			cms_state = 'CMS→file active'
@@ -273,11 +308,38 @@ function update_site_sync_state_after_import(site: SiteInfo, timings: ImportTimi
 	return true
 }
 
-async function update_site_sync_baseline(site: SiteInfo): Promise<void> {
-	site_sync_baselines.set(
-		get_site_sync_key(site.dir, site.config),
-		await collect_site_snapshot(site.dir)
-	)
+// The baseline must reflect what the CMS actually has after a write, not what
+// we wrote to disk. The import endpoint mutates records as a side effect
+// (bumps `updated`, delete+inserts page_sections and *_entries with new IDs,
+// normalizes field shapes), so a baseline snapshotted from local files
+// disagrees with the CMS export on the very next pull and find_conflict_paths
+// reports a phantom conflict — losing the user's edits to .primo/trash/.
+// Fetching the post-import export and snapshotting that keeps the baseline
+// aligned with the remote. Falls back to the local snapshot if the fetch
+// fails so we don't lose conflict detection on transient network errors.
+async function update_site_sync_baseline(
+	site: SiteInfo,
+	api_url?: string,
+	server_config?: ServerConfig,
+	workspace_dir?: string
+): Promise<void> {
+	const site_key = get_site_sync_key(site.dir, site.config)
+
+	if (api_url && server_config && workspace_dir) {
+		try {
+			const cms_snapshot = await fetch_cms_site_snapshot(
+				site.dir, api_url, site.config, server_config, workspace_dir, 'baseline-temp'
+			)
+			if (cms_snapshot) {
+				site_sync_baselines.set(site_key, cms_snapshot)
+				return
+			}
+		} catch {
+			// Fall through to local snapshot.
+		}
+	}
+
+	site_sync_baselines.set(site_key, await collect_site_snapshot(site.dir))
 }
 
 function get_site_sync_baseline(site: SiteInfo): ContentSnapshot | undefined {
@@ -309,39 +371,41 @@ async function read_file_or_vanish(full_path: string, label: string): Promise<st
 	}
 }
 
+// A path is "in conflict" when local has content that differs from CMS AND
+// the local content represents a real user change — not just CMS-side
+// serialization noise (palacms re-emits YAML with normalized key order,
+// ISO-coerced dates, etc., so the CMS export legitimately differs from a
+// freshly-scaffolded file forever, and we don't want to scream about that
+// every pull cycle).
+//
+// "Real user change" means one of:
+//   - No baseline entry exists for this path (brand-new local file the
+//     CMS hasn't seen yet — protects the post-scaffold race)
+//   - Local content differs from baseline (user has edited the file since
+//     the last successful sync)
+//
+// If the baseline matches local but CMS differs, that's pure CMS-side
+// drift — pure pull, no conflict, the CMS value is allowed to overwrite.
 function find_conflict_paths(base: ContentSnapshot | undefined, local: ContentSnapshot, cms: ContentSnapshot): string[] {
-	if (!base) return []
-
-	const paths = new Set<string>([
-		...base.keys(),
-		...local.keys(),
-		...cms.keys()
-	])
-	const local_changed = new Set<string>()
-	const cms_changed = new Set<string>()
-	const diverged = new Set<string>()
-
-	for (const file_path of paths) {
-		const base_value = snapshot_value(base, file_path)
-		const local_value = snapshot_value(local, file_path)
+	const conflicts: string[] = []
+	for (const [file_path, local_value] of local) {
+		if (local_value === undefined || local_value === null) continue
 		const cms_value = snapshot_value(cms, file_path)
+		const base_value = base ? snapshot_value(base, file_path) : null
 
-		if (local_value !== base_value) {
-			local_changed.add(file_path)
-		}
-		if (cms_value !== base_value) {
-			cms_changed.add(file_path)
-		}
-		if (local_value !== cms_value) {
-			diverged.add(file_path)
-		}
+		// Same content on both sides → not a conflict.
+		if (cms_value !== null && cms_value === local_value) continue
+
+		// CMS-side delete: still a conflict if local has content the user
+		// authored (covers the case of a brand-new local file the CMS
+		// hasn't been told about yet).
+		const local_is_new = base_value === null
+		const local_is_edited = base_value !== null && local_value !== base_value
+		if (!local_is_new && !local_is_edited) continue
+
+		conflicts.push(file_path)
 	}
-
-	if (local_changed.size === 0 || cms_changed.size === 0) {
-		return []
-	}
-
-	return [...diverged].sort()
+	return conflicts.sort()
 }
 
 function log_sync_conflict(site_name: string, winner: 'files' | 'CMS' | 'unresolved', reason: string, paths: string[]): void {
@@ -615,10 +679,14 @@ export async function dev_server(options: DevOptions) {
 
 		spinner.text = 'Starting CMS...'
 
-		// Start the CMS binary with dev mode enabled
+		// Start the CMS binary with dev mode enabled. PRIMO_AUTHOR_MODE
+		// tells palacms which sync mode the CLI is running in so the CMS
+		// UI can gate its editable surfaces accordingly (read-only when
+		// the CLI is in --author files, since CMS edits would be discarded
+		// before they ever round-trip to disk).
 		cms_process = spawn(binary_path, ['serve', '--http', `127.0.0.1:${port}`, '--dir', data_dir], {
 			stdio: ['pipe', 'pipe', 'pipe'],
-			env: { ...process.env, PALA_DEV_MODE: '1' }
+			env: { ...process.env, PALA_DEV_MODE: '1', PRIMO_AUTHOR_MODE: sync_policy.mode }
 		})
 
 		// Capture stderr for errors
@@ -640,10 +708,10 @@ export async function dev_server(options: DevOptions) {
 			const api_url = `http://127.0.0.1:${port}`
 
 			if (is_server_mode) {
-				spinner.text = sync_policy.mode === 'cms-win' ? 'Pulling shared library...' : 'Loading shared library...'
+				spinner.text = sync_policy.mode === 'cms' ? 'Pulling shared library...' : 'Loading shared library...'
 				is_importing_library = true
 				try {
-					if (sync_policy.mode === 'cms-win') {
+					if (sync_policy.mode === 'cms') {
 						await sync_library_from_cms(base_dir, api_url)
 					} else {
 						await import_library_files(base_dir, api_url)
@@ -658,7 +726,7 @@ export async function dev_server(options: DevOptions) {
 
 			for (const site of sites) {
 				const use_bootstrap = !await site_exists(api_url, site.config.site_id)
-				if (sync_policy.mode === 'cms-win' && !use_bootstrap) {
+				if (sync_policy.mode === 'cms' && !use_bootstrap) {
 					await sync_from_cms(site.dir, api_url, site.config, server_config, base_dir, sync_policy)
 					continue
 				}
@@ -666,7 +734,7 @@ export async function dev_server(options: DevOptions) {
 				await normalize_site(site.dir)
 				const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap, base_dir))
 				if (update_site_sync_state_after_import(site, import_timings, sync_policy)) {
-					await update_site_sync_baseline(site)
+					await update_site_sync_baseline(site, api_url, server_config, base_dir)
 				}
 			}
 
@@ -688,7 +756,7 @@ export async function dev_server(options: DevOptions) {
 			console.log('')
 		}
 		for (const site of sites) {
-			const host = site.config.host || `${site.config.name.toLowerCase().replace(/\s+/g, '-')}.localhost:${port}`
+			const host = local_dev_host(site.config.name, port)
 			console.log(`  ${chalk.cyan(site.config.name)}`)
 			console.log(`    ${chalk.dim('Edit:')}    http://${host}/admin/site`)
 			console.log(`    ${chalk.dim('Preview:')} http://${host}/`)
@@ -719,7 +787,7 @@ export async function dev_server(options: DevOptions) {
 					})
 					const log_library_push_paused = (full_path: string) => {
 						const filename = path.relative(library_path, full_path)
-						console.log(chalk.dim(`  library: ${filename} ignored (file→CMS paused by --cms-win)`))
+						console.log(chalk.dim(`  library: ${filename} ignored (file→CMS paused by --author cms)`))
 					}
 					const push_or_ignore_library_change = (full_path: string) => {
 						if (!is_file_to_cms_active(sync_policy)) {
@@ -732,7 +800,7 @@ export async function dev_server(options: DevOptions) {
 						const was_pending = has_pending_library_local_changes
 						has_pending_library_local_changes = true
 						last_local_change_time = Date.now()
-						if (!was_pending && sync_policy.mode === 'bidirectional') {
+						if (!was_pending && sync_policy.mode === 'both') {
 							console.log(chalk.dim('  library: CMS-to-file sync paused while local import is pending.'))
 						}
 						schedule_library_push()
@@ -800,7 +868,7 @@ export async function dev_server(options: DevOptions) {
 								await request_browser_reload(api_url)
 								const reload_ms = Date.now() - reload_started
 								has_pending_library_local_changes = false
-								if (sync_policy.mode === 'bidirectional') {
+								if (sync_policy.mode === 'both') {
 									console.log(chalk.dim('  library: CMS-to-file sync resumed.'))
 								}
 								// Update snapshot only on successful push.
@@ -847,7 +915,7 @@ export async function dev_server(options: DevOptions) {
 							await normalize_site(site.dir)
 							const normalize_ms = Date.now() - normalize_started
 							let conflict_paths: string[] = []
-							if (sync_policy.mode === 'bidirectional') {
+							if (sync_policy.mode === 'both') {
 								try {
 									conflict_paths = await detect_site_file_push_conflicts(site, api_url, server_config, base_dir)
 								} catch {
@@ -874,12 +942,19 @@ export async function dev_server(options: DevOptions) {
 								}
 							}
 							if (update_site_sync_state_after_import(site, import_timings, sync_policy)) {
-								await update_site_sync_baseline(site)
+								await update_site_sync_baseline(site, api_url, server_config, base_dir)
 							}
 							console.log(chalk.dim(`  ${site.config.name}: normalize ${normalize_ms}ms, zip ${import_timings.zip_ms}ms, ${import_timings.mode} ${import_timings.request_ms}ms${reload_ms ? `, reload ${reload_ms}ms` : ''}`))
 							console.log(chalk.green(`  ✓ ${site.config.name} pushed`))
+							await write_sync_status(site.dir, { ok: true })
 						} catch (err) {
-							console.log(chalk.red(`  ✗ ${site.config.name} push failed: ${err}`))
+							const message = err instanceof Error ? err.message : String(err)
+							console.log(chalk.red(`  ✗ ${site.config.name} push failed: ${message}`))
+							await write_sync_status(site.dir, {
+								ok: false,
+								error: message,
+								failed_at: new Date().toISOString()
+							})
 						} finally {
 							is_importing = false
 							last_import_time = Date.now()  // Track when import finished
@@ -911,13 +986,13 @@ export async function dev_server(options: DevOptions) {
 							const was_pending = pending_local_site_keys.has(site_key)
 							pending_local_site_keys.add(site_key)
 							last_local_change_time = Date.now()
-							if (!was_pending && sync_policy.mode === 'bidirectional') {
+							if (!was_pending && sync_policy.mode === 'both') {
 								console.log(chalk.dim(`  ${site.config.name}: CMS-to-file sync paused while local import is pending.`))
 							}
 						}
 						const log_file_push_paused = (full_path: string) => {
 							const filename = path.relative(watch_path, full_path)
-							console.log(chalk.dim(`  ${site.config.name}: ${dir}/${filename} ignored (file→CMS paused by --cms-win)`))
+							console.log(chalk.dim(`  ${site.config.name}: ${dir}/${filename} ignored (file→CMS paused by --author cms)`))
 						}
 						const push_or_ignore_file_change = (full_path: string) => {
 							if (!is_file_to_cms_active(sync_policy)) {
@@ -986,18 +1061,18 @@ export async function dev_server(options: DevOptions) {
 					known_sites.add(site.dir)
 					sites.push(site)
 					const use_bootstrap = !await site_exists(api_url, site.config.site_id)
-					if (sync_policy.mode === 'cms-win' && !use_bootstrap) {
+					if (sync_policy.mode === 'cms' && !use_bootstrap) {
 						await sync_from_cms(site.dir, api_url, site.config, server_config, base_dir, sync_policy)
 					} else {
 						await normalize_site(site.dir)
 						const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap, base_dir))
 						if (update_site_sync_state_after_import(site, import_timings, sync_policy)) {
-							await update_site_sync_baseline(site)
+							await update_site_sync_baseline(site, api_url, server_config, base_dir)
 						}
 					}
 					setup_site_watchers(site)
 
-					const host = site.config.host || `${path.basename(site.dir).toLowerCase().replace(/\s+/g, '-')}.localhost:${port}`
+					const host = local_dev_host(site.config.name || path.basename(site.dir), port)
 					console.log(chalk.green(`  ✓ New site loaded: ${site.config.name}`))
 					console.log(`    ${chalk.dim('Edit:')}    http://${host}/admin/site`)
 					console.log(`    ${chalk.dim('Preview:')} http://${host}/`)
@@ -1913,13 +1988,9 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 	const zip_buffer = await create_site_zip(site_dir, preparation.excluded_paths)
 	const zip_ms = Date.now() - zip_started
 
-	// Use hostname from config, or generate from folder name
-	const folder_name = path.basename(site_dir)
-	const host = config.host || (
-		folder_name.includes('.')
-			? `${folder_name}:${port}`  // Looks like a domain
-			: `${folder_name.toLowerCase().replace(/\s+/g, '-')}.localhost:${port}`
-	)
+	// Always use a localhost-style host in dev — the production host stays in
+	// site.yaml for push, but local routing must hit *.localhost
+	const host = local_dev_host(config.name || path.basename(site_dir), port)
 
 	if (!use_bootstrap) {
 		const import_form = new FormData()
@@ -2218,7 +2289,7 @@ async function create_site_zip(dir: string, excluded_paths: Set<string> = new Se
 	})
 }
 
-async function sync_from_cms(site_dir: string, api_url: string, config: SiteConfig, server_config: ServerConfig, workspace_dir: string, sync_policy: SyncPolicy = { mode: 'bidirectional' }): Promise<void> {
+async function sync_from_cms(site_dir: string, api_url: string, config: SiteConfig, server_config: ServerConfig, workspace_dir: string, sync_policy: SyncPolicy = { mode: 'both' }): Promise<void> {
 	const response = await fetch_with_timeout(`${api_url}/api/palacms/export/${config.site_id}`, {}, 15000)
 	if (!response.ok) return
 
@@ -2241,21 +2312,26 @@ async function sync_from_cms(site_dir: string, api_url: string, config: SiteConf
 		await fs.rm(temp_dir, { recursive: true, force: true })
 		return
 	}
-	const sync_options: SyncDirectoryOptions = {
-		workspace_dir,
-		format_options,
-		block_content_refs,
-		site_name: config.name
-	}
 	const remote_snapshot = await collect_site_snapshot(temp_dir, {
 		workspace_dir,
 		format_options,
 		dest_root: site_dir
 	})
 	const local_snapshot = await collect_site_snapshot(site_dir)
-	const conflict_paths = sync_policy.mode === 'bidirectional'
+	const conflict_paths = sync_policy.mode === 'both'
 		? find_conflict_paths(get_site_sync_baseline({ dir: site_dir, config }), local_snapshot, remote_snapshot)
 		: []
+	// Default conflict policy: files win. The caller can override by
+	// running with --author cms, in which case the policy flips and the
+	// CMS export is allowed to overwrite the conflicted local files.
+	const skip_paths = sync_policy.mode === 'cms' ? new Set<string>() : new Set(conflict_paths)
+	const sync_options: SyncDirectoryOptions = {
+		workspace_dir,
+		format_options,
+		block_content_refs,
+		site_name: config.name,
+		skip_paths
+	}
 
 	// Compare and sync files
 	const changed_files: string[] = []
@@ -2275,10 +2351,35 @@ async function sync_from_cms(site_dir: string, api_url: string, config: SiteConf
 
 	// Clean up temp directory
 	await fs.rm(temp_dir, { recursive: true, force: true })
-	await update_site_sync_baseline({ dir: site_dir, config })
+	// Baseline reflects the on-disk state we just produced. For paths we
+	// skipped (files-win conflict resolution), the local snapshot's value
+	// is correct — using remote_snapshot would re-trigger the conflict on
+	// the next cycle since the file still differs from the CMS state.
+	const post_baseline: ContentSnapshot = new Map(remote_snapshot)
+	for (const skipped of skip_paths) {
+		const local_value = local_snapshot.get(skipped)
+		if (local_value === undefined) {
+			post_baseline.delete(skipped)
+		} else {
+			post_baseline.set(skipped, local_value)
+		}
+	}
+	site_sync_baselines.set(get_site_sync_key(site_dir, config), post_baseline)
 
 	if (conflict_paths.length > 0) {
-		log_sync_conflict(config.name, 'CMS', 'both sides changed since last sync; CMS values were applied (local edits saved to .primo/trash/)', conflict_paths)
+		const site_key = get_site_sync_key(site_dir, config)
+		const conflict_signature = conflict_paths.join('|')
+		if (last_logged_conflicts.get(site_key) !== conflict_signature) {
+			last_logged_conflicts.set(site_key, conflict_signature)
+			if (sync_policy.mode === 'cms') {
+				log_sync_conflict(config.name, 'CMS', 'local and CMS contents differ; CMS values were applied (--author cms; local edits saved to .primo/trash/)', conflict_paths)
+			} else {
+				log_sync_conflict(config.name, 'files', 'local and CMS contents differ; local files were preserved (default policy: files win on conflict; pass --author cms to flip)', conflict_paths)
+			}
+		}
+	} else {
+		// Cleared up — clear the dedupe key so a fresh conflict re-prints.
+		last_logged_conflicts.delete(get_site_sync_key(site_dir, config))
 	}
 	if (changed_files.length > 0) {
 		for (const file of changed_files) {
@@ -2345,6 +2446,13 @@ async function sync_directory(
 			const nested = await sync_directory(src_path, dest_path, file_relative, options)
 			changed_files.push(...nested)
 		} else {
+			// "Files win on conflict" default: caller marked this path as
+			// conflicted, so leave the local file alone and discard the CMS
+			// value silently. Logging happens once at the call site.
+			if (options.skip_paths?.has(file_relative)) {
+				continue
+			}
+
 			let src_content = await fs.readFile(src_path, 'utf-8')
 
 			// Run server-emitted file through the workspace's formatter so
@@ -2409,6 +2517,13 @@ async function sync_directory(
 		const dest_path = path.join(dest, entry.name)
 		const file_relative = relative_path ? `${relative_path}/${entry.name}` : entry.name
 
+		// "Files win on conflict": caller marked this path as conflicted,
+		// so leave the local file in place even though the CMS export
+		// dropped it.
+		if (options.skip_paths?.has(file_relative)) {
+			continue
+		}
+
 		// Trash the file/tree before removing so a CMS-side delete
 		// (often triggered by an upstream parse error dropping references)
 		// is recoverable from .primo/trash/.
@@ -2428,7 +2543,16 @@ async function sync_directory(
 }
 
 async function has_library_content(library_dir: string): Promise<boolean> {
-	const entries = await fs.readdir(library_dir, { withFileTypes: true })
+	let entries: import('fs').Dirent[]
+	try {
+		entries = await fs.readdir(library_dir, { withFileTypes: true })
+	} catch (err: any) {
+		// Missing library/ is normal in workspaces that haven't been
+		// initialized for library sync — treat as empty rather than crashing
+		// the sync loop.
+		if (err?.code === 'ENOENT') return false
+		throw err
+	}
 
 	for (const entry of entries) {
 		if (entry.name.startsWith('.')) {
