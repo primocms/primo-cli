@@ -581,15 +581,18 @@ async function validate_site_fields(site_dir: string): Promise<ValidationError[]
 	return errors
 }
 
-async function validate_site_head(site_dir: string): Promise<ValidationError[]> {
-	const head_path = path.join(site_dir, 'site', 'head.svelte')
+async function validate_head_svelte_file(
+	site_dir: string,
+	relative_path: string
+): Promise<ValidationError[]> {
+	const head_path = path.join(site_dir, relative_path)
 
 	try {
 		const head_content = await fs.readFile(head_path, 'utf-8')
-		const message = get_head_svelte_validation_error(head_content, 'site/head.svelte')
+		const message = get_head_svelte_validation_error(head_content, relative_path)
 		if (message) {
 			return [{
-				file: 'site/head.svelte',
+				file: relative_path,
 				message,
 				severity: 'error'
 			}]
@@ -600,13 +603,32 @@ async function validate_site_head(site_dir: string): Promise<ValidationError[]> 
 		}
 
 		return [{
-			file: 'site/head.svelte',
+			file: relative_path,
 			message: `Failed to read file: ${error}`,
 			severity: 'error'
 		}]
 	}
 
 	return []
+}
+
+async function validate_site_head(site_dir: string): Promise<ValidationError[]> {
+	const errors: ValidationError[] = []
+	errors.push(...await validate_head_svelte_file(site_dir, 'site/head.svelte'))
+
+	// Per-page-type head fragments use the same rules as the site head.
+	const page_types_dir = path.join(site_dir, 'page-types')
+	let entries: string[] = []
+	try {
+		entries = await fs.readdir(page_types_dir)
+	} catch (error: any) {
+		if (error?.code !== 'ENOENT') throw error
+	}
+	for (const name of entries) {
+		errors.push(...await validate_head_svelte_file(site_dir, `page-types/${name}/head.svelte`))
+	}
+
+	return errors
 }
 
 function validate_fields(fields_json: any, file_path: string): ValidationError[] {

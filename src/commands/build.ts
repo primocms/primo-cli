@@ -121,6 +121,10 @@ export async function build_site(options: BuildOptions) {
 		// Cache layouts per page type
 		const layout_cache = new Map<string, Layout>()
 
+		// Cache per-page-type head fragments (mirrors site head behavior; empty
+		// string = no head.svelte for that page type).
+		const page_type_head_cache = new Map<string, string>()
+
 		// Load site data (fields and content)
 		const site_data = await load_site_data(site_dir)
 
@@ -141,6 +145,7 @@ export async function build_site(options: BuildOptions) {
 				site_name: config.name,
 				block_cache,
 				layout_cache,
+				page_type_head_cache,
 				site_data
 			})
 
@@ -199,11 +204,34 @@ interface BuildPageOptions {
 	site_name: string
 	block_cache: Map<string, { js: string; css: string }>
 	layout_cache: Map<string, Layout>
+	page_type_head_cache: Map<string, string>
 	site_data: SiteData
 }
 
+// Lazily load and validate a page type's head.svelte. Cached value is the raw
+// fragment (may include <style>); empty string means "no head file present".
+async function load_page_type_head(
+	site_dir: string,
+	page_type: string,
+	cache: Map<string, string>
+): Promise<string> {
+	const cached = cache.get(page_type)
+	if (cached !== undefined) return cached
+	const head_path = path.join(site_dir, 'page-types', page_type, 'head.svelte')
+	let content = ''
+	try {
+		content = await fs.readFile(head_path, 'utf-8')
+		validate_head_svelte_content(content, `page-types/${page_type}/head.svelte`)
+	} catch (error: any) {
+		if (error?.code !== 'ENOENT') throw error
+		content = ''
+	}
+	cache.set(page_type, content)
+	return content
+}
+
 async function build_page(options: BuildPageOptions): Promise<{ html: string; error?: string }> {
-	const { page, page_path, site_dir, temp_dir, head_content, site_name, block_cache, layout_cache, site_data } = options
+	const { page, page_path, site_dir, temp_dir, head_content, site_name, block_cache, layout_cache, page_type_head_cache, site_data } = options
 
 	try {
 		const page_build_id = safe_temp_id(page._id || page.id || page_path || page.name || 'page')
@@ -216,6 +244,11 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 			layout_cache.set(page_type, layout)
 		}
 
+		// Page-type head is concatenated after the site head, mirroring server
+		// publish behavior (site.head + page_type.head).
+		const page_type_head = await load_page_type_head(site_dir, page_type, page_type_head_cache)
+		const combined_head_content = page_type_head ? `${head_content}\n${page_type_head}` : head_content
+
 		// Combine header + page sections + footer
 		const header_sections = await resolve_layout_sections(layout.header || [], site_dir, site_data)
 		const footer_sections = await resolve_layout_sections(layout.footer || [], site_dir, site_data)
@@ -223,7 +256,7 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 		const all_sections = [...header_sections, ...page_sections, ...footer_sections]
 
 		if (all_sections.length === 0) {
-			return { html: generate_empty_page(site_name, page.name, head_content) }
+			return { html: generate_empty_page(site_name, page.name, combined_head_content) }
 		}
 
 		const sections = all_sections
@@ -326,13 +359,17 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 
 		const rendered = render(PageComponent, { props })
 
-		// Extract CSS from head.svelte
+		// Extract CSS from combined head fragments (site + page-type).
 		let head_css = ''
-		let head_html = head_content
-		const style_match = head_content.match(/<style[^>]*>([\s\S]*?)<\/style>/i)
-		if (style_match) {
-			head_css = style_match[1]
-			head_html = head_content.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+		let head_html = combined_head_content
+		const style_matches = combined_head_content.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)
+		const head_css_parts: string[] = []
+		for (const m of style_matches) {
+			head_css_parts.push(m[1])
+		}
+		if (head_css_parts.length > 0) {
+			head_css = head_css_parts.join('\n')
+			head_html = combined_head_content.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
 		}
 
 		// Combine all CSS (reset first, then head, then blocks)
@@ -363,7 +400,7 @@ ${rendered.body || ''}
 		const error_msg = error instanceof Error ? error.message : String(error)
 		return {
 			html: generate_error_page(site_name, page.name, error_msg, head_content),
-			error: error_msg
+			error: error_msg,
 		}
 	}
 }
