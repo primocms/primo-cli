@@ -60,10 +60,9 @@ program
 
 program
 	.command('pull')
-	.description('Pull from hosted CMS to local files')
+	.description('Pull entire server (all sites + library) to local files')
 	.option('-s, --server <url>', 'Server URL (auto-detects local)')
-	.option('--site <id>', 'Site ID (interactive if not provided)')
-	.option('-o, --output <dir>', 'Output directory', '.')
+	.option('-o, --output <dir>', 'Output directory (defaults to ./<server-hostname>)', '.')
 	.option('-t, --token <token>', 'Auth token')
 	.action(pull_site)
 
@@ -90,9 +89,9 @@ library
 program
 	.command('login')
 	.description('Login to hosted CMS')
-	.argument('<server>', 'Server URL')
+	.requiredOption('-s, --server <url>', 'Server URL')
 	.option('-e, --email <email>', 'Email')
-	.action((server, options) => login({ server, ...options }))
+	.action(login)
 
 program
 	.command('validate')

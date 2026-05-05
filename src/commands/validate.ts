@@ -352,6 +352,8 @@ async function validate_blocks(site_dir: string): Promise<ValidationError[]> {
 		// Check for required files - read actual directory listing to handle case-insensitive filesystems
 		const block_files = await fs.readdir(block_dir)
 		const fields_path = path.join(block_dir, 'fields.yaml')
+		const config_path = path.join(block_dir, 'config.yaml')
+		const content_path = path.join(block_dir, 'content.yaml')
 
 		// Check for component.svelte with correct casing
 		const component_file = block_files.find(f => f.toLowerCase() === 'component.svelte')
@@ -369,18 +371,59 @@ async function validate_blocks(site_dir: string): Promise<ValidationError[]> {
 			})
 		}
 
+		// config.yaml is required (holds _id and display name).
+		try {
+			const raw = await fs.readFile(config_path, 'utf-8')
+			const config = load_yaml(raw)
+			if (!config || typeof config !== 'object' || Array.isArray(config)) {
+				errors.push({
+					file: `blocks/${block_name}/config.yaml`,
+					message: 'Must be a YAML object with at least a `name` key.',
+					severity: 'error'
+				})
+			} else if (!(config as any).name) {
+				errors.push({
+					file: `blocks/${block_name}/config.yaml`,
+					message: 'Missing required "name" field.',
+					severity: 'error'
+				})
+			}
+		} catch {
+			errors.push({
+				file: `blocks/${block_name}/config.yaml`,
+				message: 'Missing config.yaml or invalid YAML syntax. Each block needs a config.yaml with `_id` (system-stamped) and `name`.',
+				severity: 'error'
+			})
+		}
+
+		// fields.yaml is a bare top-level list of field definitions.
 		try {
 			const relative_fields_path = `blocks/${block_name}/fields.yaml`
 			const fields_json = await parse_fields_file(fields_path)
-
-			// Validate fields structure
-			const field_errors = validate_fields(fields_json, relative_fields_path)
-			errors.push(...field_errors)
-
+			if (!Array.isArray(fields_json)) {
+				errors.push({
+					file: relative_fields_path,
+					message: 'Must be a bare list of field definitions (no `fields:` wrapper). Start the file with `- name: ...`.',
+					severity: 'error'
+				})
+			} else {
+				errors.push(...validate_fields(fields_json, relative_fields_path))
+			}
 		} catch {
 			errors.push({
 				file: `blocks/${block_name}/fields.yaml`,
 				message: 'Missing fields.yaml file or invalid YAML syntax',
+				severity: 'error'
+			})
+		}
+
+		// content.yaml is required for blocks — it seeds the editor sidebar.
+		try {
+			await fs.access(content_path)
+		} catch {
+			errors.push({
+				file: `blocks/${block_name}/content.yaml`,
+				message: 'Missing content.yaml. Every block needs default values (use `{}` if there are no defaults yet).',
 				severity: 'error'
 			})
 		}
@@ -413,6 +456,8 @@ async function validate_page_types(site_dir: string): Promise<ValidationError[]>
 		if (!stat.isDirectory()) continue
 
 		const config_path = path.join(page_type_dir, 'config.yaml')
+		const fields_path = path.join(page_type_dir, 'fields.yaml')
+		const layout_path = path.join(page_type_dir, 'layout.yaml')
 
 		try {
 			const config_data = await fs.readFile(config_path, 'utf-8')
@@ -430,6 +475,14 @@ async function validate_page_types(site_dir: string): Promise<ValidationError[]>
 			}
 
 			// Validate config has required fields
+			if (!config || typeof config !== 'object' || Array.isArray(config)) {
+				errors.push({
+					file: `page-types/${page_type_name}/config.yaml`,
+					message: 'Must be a YAML object',
+					severity: 'error'
+				})
+				continue
+			}
 			if (!config.name) {
 				errors.push({
 					file: `page-types/${page_type_name}/config.yaml`,
@@ -437,20 +490,54 @@ async function validate_page_types(site_dir: string): Promise<ValidationError[]>
 					severity: 'error'
 				})
 			}
-
-			// Validate page type fields if they exist
-			if (config.fields) {
-				const field_errors = validate_fields(
-					{ fields: config.fields },
-					`page-types/${page_type_name}/config.yaml`
-				)
-				errors.push(...field_errors)
+			if ('fields' in config) {
+				errors.push({
+					file: `page-types/${page_type_name}/config.yaml`,
+					message: 'Page-type fields no longer live in config.yaml — move them to a sibling fields.yaml as a bare list.',
+					severity: 'error'
+				})
 			}
 
 		} catch {
 			errors.push({
 				file: `page-types/${page_type_name}/`,
 				message: 'Missing config.yaml file',
+				severity: 'error'
+			})
+		}
+
+		// fields.yaml is a sibling bare list (may be `[]`); absent is allowed.
+		try {
+			const relative_fields_path = `page-types/${page_type_name}/fields.yaml`
+			const fields_json = await parse_fields_file(fields_path)
+			if (!Array.isArray(fields_json)) {
+				errors.push({
+					file: relative_fields_path,
+					message: 'Must be a bare list of field definitions (no `fields:` wrapper). Use `[]` if there are no fields.',
+					severity: 'error'
+				})
+			} else if (fields_json.length > 0) {
+				errors.push(...validate_fields(fields_json, relative_fields_path))
+			}
+		} catch (err: any) {
+			if (err?.code !== 'ENOENT') {
+				errors.push({
+					file: `page-types/${page_type_name}/fields.yaml`,
+					message: 'Invalid YAML syntax in fields.yaml',
+					severity: 'error'
+				})
+			}
+		}
+
+		// layout.yaml is required — comment-only stub is fine, but the file
+		// must exist so the page type's shared header/footer slots are
+		// discoverable.
+		try {
+			await fs.access(layout_path)
+		} catch {
+			errors.push({
+				file: `page-types/${page_type_name}/layout.yaml`,
+				message: 'Missing layout.yaml. Each page type needs one (use the comment-only stub if there are no shared header/footer sections yet).',
 				severity: 'error'
 			})
 		}
@@ -477,9 +564,9 @@ async function validate_site_fields(site_dir: string): Promise<ValidationError[]
 			return errors
 		}
 
-		// Validate as array of fields
+		// Validate as bare array of fields
 		if (fields_json.length > 0) {
-			const field_errors = validate_fields({ fields: fields_json }, relative_path)
+			const field_errors = validate_fields(fields_json, relative_path)
 			errors.push(...field_errors)
 		}
 
@@ -525,19 +612,22 @@ async function validate_site_head(site_dir: string): Promise<ValidationError[]> 
 function validate_fields(fields_json: any, file_path: string): ValidationError[] {
 	const errors: ValidationError[] = []
 
-	if (!fields_json.fields || !Array.isArray(fields_json.fields)) {
+	// Accept a bare list (canonical fields.yaml shape) or an object with a
+	// `fields:` array (page/site doc passing its already-parsed fields list).
+	const fields_array = get_fields_array(fields_json)
+	if (fields_array.length === 0 && !Array.isArray(fields_json) && !is_plain_object(fields_json)) {
 		errors.push({
 			file: file_path,
-			message: 'Missing or invalid "fields" array',
+			message: 'Expected a list of field definitions',
 			severity: 'error'
 		})
 		return errors
 	}
 
 	const field_ids = new Set<string>()
-	const field_names = collect_field_names(fields_json.fields)
+	const field_names = collect_field_names(fields_array)
 
-	for (const field of fields_json.fields) {
+	for (const field of fields_array) {
 		errors.push(...validate_field_recursive(field, field.name || get_field_id(field) || '(unnamed)', file_path, field_ids, field_names))
 	}
 
