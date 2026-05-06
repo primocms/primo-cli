@@ -1554,7 +1554,19 @@ function content_keys(value: unknown): string[] {
 function is_empty_fields_yaml(contents: string): boolean {
 	try {
 		const parsed = load_yaml(contents)
+		if (parsed == null) return true
 		return Array.isArray(parsed) && parsed.length === 0
+	} catch {
+		return false
+	}
+}
+
+function is_empty_content_yaml(contents: string): boolean {
+	try {
+		const parsed = load_yaml(contents)
+		if (parsed == null) return true
+		if (typeof parsed !== 'object' || Array.isArray(parsed)) return false
+		return Object.keys(parsed as Record<string, unknown>).length === 0
 	} catch {
 		return false
 	}
@@ -1568,12 +1580,30 @@ function has_user_authored_fields(contents: string): boolean {
 	}
 }
 
+function has_user_authored_content(contents: string): boolean {
+	try {
+		const parsed = load_yaml(contents)
+		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false
+		return Object.keys(parsed as Record<string, unknown>).length > 0
+	} catch {
+		return false
+	}
+}
+
 function block_fields_path_block_name(relative_path: string): string | null {
 	const parts = relative_path.split('/')
 	if (parts.length !== 3 || parts[0] !== 'blocks' || parts[2] !== 'fields.yaml') {
 		return null
 	}
 	return parts[1] || null
+}
+
+function is_site_fields_path(relative_path: string): boolean {
+	return relative_path === 'site/fields.yaml'
+}
+
+function is_site_content_path(relative_path: string): boolean {
+	return relative_path === 'site/content.yaml'
 }
 
 async function collect_block_aliases(site_dir: string): Promise<Map<string, string>> {
@@ -1695,6 +1725,37 @@ function should_skip_empty_block_schema_writeback(relative_path: string, src_con
 		warn_empty_schema_writeback(options.site_name ?? 'site', relative_path, block_name, refs, local_has_fields)
 	}
 	return should_skip
+}
+
+// Symmetric guard for site-level files. The CMS export now always emits
+// site/fields.yaml and site/content.yaml (so the on-disk layout documents
+// itself), which means a site with no DB-side fields/values would
+// otherwise wipe local authored content on every pull. Refuse the
+// writeback when the local file has authored content and the incoming
+// CMS export is empty.
+const warned_empty_site_writebacks = new Set<string>()
+
+function warn_empty_site_writeback(site_name: string, relative_path: string): void {
+	const key = `${site_name}:${relative_path}`
+	if (warned_empty_site_writebacks.has(key)) return
+	warned_empty_site_writebacks.add(key)
+	console.log(chalk.yellow(`  ⚠ ${site_name}: skipped empty CMS pull for ${relative_path}; local file has authored content.`))
+}
+
+function should_skip_empty_site_writeback(relative_path: string, src_content: string, dest_content: string, options: SyncDirectoryOptions): boolean {
+	if (is_site_fields_path(relative_path)) {
+		if (!is_empty_fields_yaml(src_content)) return false
+		if (!has_user_authored_fields(dest_content)) return false
+		warn_empty_site_writeback(options.site_name ?? 'site', relative_path)
+		return true
+	}
+	if (is_site_content_path(relative_path)) {
+		if (!is_empty_content_yaml(src_content)) return false
+		if (!has_user_authored_content(dest_content)) return false
+		warn_empty_site_writeback(options.site_name ?? 'site', relative_path)
+		return true
+	}
+	return false
 }
 
 async function blocked_empty_schema_writebacks(temp_dir: string, site_dir: string, site_name: string, block_content_refs: Map<string, BlockContentReference[]>): Promise<Set<string>> {
@@ -2471,6 +2532,10 @@ async function sync_directory(
 			}
 
 			if (should_skip_empty_block_schema_writeback(file_relative, src_content, dest_content, options)) {
+				continue
+			}
+
+			if (should_skip_empty_site_writeback(file_relative, src_content, dest_content, options)) {
 				continue
 			}
 

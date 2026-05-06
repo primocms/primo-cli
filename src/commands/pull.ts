@@ -139,6 +139,7 @@ export async function pull_site(options: PullOptions) {
 
 		// Write minimal server.yaml so MCP registration + dev work at the root
 		await write_server_config(root_dir, {
+			port: 3000,
 			site_groups: site_groups.length > 0 ? site_groups : undefined
 		})
 
