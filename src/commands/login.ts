@@ -1,15 +1,37 @@
 import chalk from 'chalk'
 import ora from 'ora'
 import readline from 'readline'
+import fs from 'fs/promises'
 import { save_auth_token } from '../utils/auth.js'
+import { read_server_config, get_server_config_path } from '../utils/server-config.js'
 
 interface LoginOptions {
-	server: string
+	server?: string
 	email?: string
 }
 
 export async function login(options: LoginOptions) {
-	const server = normalize_server_url(options.server)
+	let server_url = options.server
+	if (!server_url) {
+		// Fall back to `server:` in server.yaml when run from a workspace.
+		try {
+			await fs.access(get_server_config_path(process.cwd()))
+			const config = await read_server_config(process.cwd())
+			if (config.server) server_url = config.server
+		} catch {
+			// not in a workspace, fall through
+		}
+	}
+
+	if (!server_url) {
+		console.log('')
+		console.log(chalk.red('Server URL required.'))
+		console.log(chalk.dim('  Pass -s <url>, or run from a workspace whose server.yaml has a `server:` field.'))
+		console.log('')
+		process.exit(1)
+	}
+
+	const server = normalize_server_url(server_url)
 
 	console.log('')
 	console.log(chalk.bold(`Logging in to ${server}`))

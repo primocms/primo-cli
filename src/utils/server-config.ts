@@ -13,6 +13,9 @@ export interface ServerConfig {
 	port?: number
 	site_groups?: SiteGroupConfig[]
 	format?: Partial<FormatOptions>
+	// Default hosted server for `primo push` / `primo login` when no site.yaml
+	// declares one. Written by `primo deploy` after a successful provision.
+	server?: string
 }
 
 export const SERVER_CONFIG_FILE = 'server.yaml'
@@ -49,7 +52,10 @@ export function normalize_server_config(config: ServerConfig): ServerConfig {
 	return {
 		port: config.port,
 		site_groups,
-		format: config.format
+		format: config.format,
+		server: typeof config.server === 'string' && config.server.trim()
+			? config.server.trim().replace(/\/+$/, '')
+			: undefined
 	}
 }
 

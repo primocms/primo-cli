@@ -46,11 +46,14 @@ primo dev --cms-win          # Pull CMS edits to files; pause file-to-CMS sync
 
 ### `primo push`
 
-Push local files to a hosted Primo instance.
+Sync local changes to an existing hosted Primo server. Requires a server you've
+already deployed (run `primo deploy` first) and authenticated against (`primo
+login -s <server-url>`).
 
 ```bash
 primo push -s https://cms.example.com --site abc123
 primo push --preview         # Preview changes without applying
+primo push --dry-run         # Show what would be sent without making requests
 ```
 
 Options:
@@ -59,6 +62,7 @@ Options:
 - `-d, --dir <dir>` - Directory (default: `.`)
 - `-t, --token <token>` - Auth token
 - `--preview` - Preview only
+- `--dry-run` - Show what would be pushed without sending requests
 
 ### `primo pull`
 
@@ -112,15 +116,29 @@ primo login https://cms.example.com
 primo login https://cms.example.com -e user@example.com
 ```
 
-### `primo publish`
+### `primo deploy`
 
-Deploy your site with CMS to Railway or Fly.io.
+Deploy the entire workspace — all sites under `sites/`, plus `library/` and
+`server.yaml` — as one editable-CMS unit, to Railway or Fly.io. Must be run
+from the workspace root (the directory containing `server.yaml`).
 
 ```bash
-primo publish                # Interactive provider selection
-primo publish -p railway     # Deploy to Railway
-primo publish -p fly         # Deploy to Fly.io
+primo deploy                 # Interactive provider selection
+primo deploy -p railway      # Deploy to Railway
+primo deploy -p fly          # Deploy to Fly.io
+primo deploy --dry-run       # Show what would be deployed without doing anything
 ```
+
+For other hosts (Netlify, Vercel, Cloudflare, GitHub Pages), use `primo build`
+on a single site and deploy the output folder with that host's CLI.
+
+#### Picking the right "going-live" command
+
+| You want to…                                  | Use            |
+| --------------------------------------------- | -------------- |
+| Let collaborators edit content from a CMS UI  | `primo deploy` |
+| Ship a static site to any static host         | `primo build`  |
+| Sync local edits to an existing hosted server | `primo push`   |
 
 ### `primo validate`
 
@@ -209,4 +227,4 @@ Full documentation: [primo.page/docs](https://primo.page/docs)
 ## Requirements
 
 - Node.js 18+
-- For `primo publish`: Railway CLI or Fly.io CLI
+- For `primo deploy`: Railway CLI or Fly.io CLI

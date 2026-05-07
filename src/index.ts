@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander'
+import chalk from 'chalk'
 import { init_workspace } from './commands/init.js'
 import { new_site } from './commands/new.js'
 import { pull_site } from './commands/pull.js'
@@ -10,7 +11,7 @@ import { push_library } from './commands/push-library.js'
 import { dev_server } from './commands/dev.js'
 import { login } from './commands/login.js'
 import { validate_site } from './commands/validate.js'
-import { publish } from './commands/publish.js'
+import { deploy } from './commands/deploy.js'
 import { build_site } from './commands/build.js'
 
 const program = new Command()
@@ -19,6 +20,19 @@ program
 	.name('primo')
 	.description('Build sites visually, edit them anywhere')
 	.version('0.1.3')
+
+// Top-level help: prepend a Deploy-vs-build-vs-push decision tree so first-time
+// users can pick a command without reading every description. Use 'before' so
+// it only renders for the root program, not subcommand help.
+program.addHelpText('before', `
+${chalk.bold('Local development')}
+  ${chalk.cyan('primo dev')}      Run the local CMS on this workspace
+
+${chalk.bold('Going live — pick one')}
+  Want others to edit content? .................. ${chalk.cyan('primo deploy')}
+  Just hosting a static blog? ................... ${chalk.cyan('primo build')}
+  Already have a hosted Primo server? ........... ${chalk.cyan('primo push')}
+`)
 
 program
 	.command('init [name]')
@@ -42,20 +56,47 @@ program
 	.action(dev_server)
 
 program
-	.command('publish')
-	.description('Deploy site with CMS')
-	.option('-d, --dir <dir>', 'Site directory', '.')
-	.option('-p, --provider <provider>', 'Provider (railway, fly)')
-	.action(publish)
+	.command('deploy')
+	.description('Deploy this workspace (all sites) with editable CMS (Railway, Fly)')
+	.option('-p, --provider <provider>', 'Provider: railway | fly')
+	.option('--dry-run', 'Show what would be deployed without doing anything')
+	.addHelpText('after', `
+${chalk.bold('Supported providers')}
+  railway   Railway (railway.com) — requires the Railway CLI and a logged-in account
+  fly       Fly.io — requires the flyctl CLI and a logged-in account
+
+For other hosts (Netlify, Vercel, Cloudflare, GitHub Pages), use ${chalk.cyan('primo build')}
+on a single site and deploy the output folder with that host's CLI.
+
+${chalk.bold('Workspace layout uploaded as one unit')}
+  server.yaml
+  library/      (if present)
+  sites/        (every site under this directory)
+
+${chalk.bold('See also')}
+  primo build   Export a single site as static files
+  primo push    Sync local changes to an existing hosted Primo server
+`)
+	.action(deploy)
 
 program
 	.command('push')
-	.description('Push local files to hosted CMS')
+	.description('Sync local changes to an existing hosted Primo server')
 	.option('-s, --server <url>', 'Server URL')
 	.option('--site <id>', 'Site ID')
 	.option('-d, --dir <dir>', 'Directory', '.')
 	.option('-t, --token <token>', 'Auth token')
 	.option('--preview', 'Preview only')
+	.option('--dry-run', 'Show what would be pushed without sending requests')
+	.addHelpText('after', `
+${chalk.bold('Requires an existing hosted Primo server.')}
+Run ${chalk.cyan('primo deploy')} first to create one, then ${chalk.cyan('primo login -s <server-url>')}
+to authenticate this machine before pushing.
+
+${chalk.bold('See also')}
+  primo deploy  Stand up a new hosted Primo server
+  primo login   Authenticate with a hosted Primo server
+`)
 	.action(push_site)
 
 program
@@ -89,7 +130,7 @@ library
 program
 	.command('login')
 	.description('Login to hosted CMS')
-	.requiredOption('-s, --server <url>', 'Server URL')
+	.option('-s, --server <url>', 'Server URL (defaults to `server:` in server.yaml)')
 	.option('-e, --email <email>', 'Email')
 	.action(login)
 
@@ -102,9 +143,34 @@ program
 
 program
 	.command('build')
-	.description('Build static site')
+	.description('Export a single site as static files for any host (Netlify, Vercel, etc.)')
 	.option('-d, --dir <dir>', 'Site directory', '.')
 	.option('-o, --output <dir>', 'Output directory', '_site')
+	.addHelpText('after', `
+${chalk.bold('See also')}
+  primo deploy  Want collaborators to edit content from a CMS UI? Use deploy instead —
+                it ships the workspace with an editable CMS to Railway or Fly.
+`)
 	.action(build_site)
+
+// Custom unknown-command handler. commander's default suggestion engine is
+// based on Levenshtein distance and won't reach across renames like
+// publish→deploy, so handle the common renamed/unknown cases explicitly.
+program.on('command:*', (operands: string[]) => {
+	const cmd = operands[0]
+	console.error('')
+	console.error(chalk.red(`Unknown command: ${cmd}`))
+	console.error('')
+	if (cmd === 'publish') {
+		console.error(`  ${chalk.cyan('primo publish')} has been replaced by ${chalk.cyan('primo deploy')}.`)
+		console.error(`  ${chalk.dim('It now deploys your whole workspace (all sites + library) as one unit.')}`)
+		console.error('')
+		console.error(`  Run: ${chalk.cyan('primo deploy --help')}`)
+	} else {
+		console.error(`  Run ${chalk.cyan('primo --help')} to see available commands.`)
+	}
+	console.error('')
+	process.exit(1)
+})
 
 program.parse()
