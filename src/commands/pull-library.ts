@@ -37,11 +37,11 @@ export async function pull_library(options: PullLibraryOptions) {
 	try {
 		let server: string
 		if (options.server) {
-			server = options.server
+			server = options.server.replace(/\/+$/, '')
 		} else {
 			spinner.text = 'Looking for local server...'
 			const detected = await detect_server()
-			server = detected || 'http://localhost:3000'
+			server = (detected || 'http://localhost:3000').replace(/\/+$/, '')
 			spinner.text = `Using ${server}`
 		}
 

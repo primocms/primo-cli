@@ -10,6 +10,7 @@ import { get_server_config_path, read_server_config } from '../utils/server-conf
 interface PushOptions {
 	server?: string
 	site?: string
+	only?: string
 	dir: string
 	token?: string
 	preview?: boolean
@@ -181,6 +182,26 @@ async function push_server(root_dir: string, options: PushOptions) {
 	if (site_dirs.length === 0) {
 		console.log(chalk.yellow('  No site folders found in this server directory.'))
 		process.exit(1)
+	}
+
+	// --only <slug>: push just one site folder, skip the library
+	if (options.only) {
+		const match = site_dirs.find((d) => path.basename(d) === options.only)
+		if (!match) {
+			const available = site_dirs.map((d) => path.basename(d)).join(', ')
+			console.log(chalk.red(`  No site folder named "${options.only}" under sites/.`))
+			console.log(chalk.dim(`  Available: ${available}`))
+			process.exit(1)
+		}
+		const spinner = ora(`Pushing ${chalk.cyan(path.basename(match))}...`).start()
+		try {
+			await push_single_site(match, { ...options, dir: match }, spinner)
+		} catch (error) {
+			spinner.fail(`${path.basename(match)}: ${error instanceof Error ? error.message : error}`)
+			if (is_auth_error(error)) print_auth_hint()
+			process.exit(1)
+		}
+		return
 	}
 
 	let saw_auth_error = false

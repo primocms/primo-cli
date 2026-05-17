@@ -80,10 +80,11 @@ ${chalk.bold('See also')}
 	.action(deploy)
 
 program
-	.command('push')
+	.command('push [server]')
 	.description('Sync local changes to an existing hosted Primo server')
 	.option('-s, --server <url>', 'Server URL')
 	.option('--site <id>', 'Site ID')
+	.option('--only <slug>', 'Push only the named site folder under sites/ (skips library)')
 	.option('-d, --dir <dir>', 'Directory', '.')
 	.option('-t, --token <token>', 'Auth token')
 	.option('--preview', 'Preview only')
@@ -97,35 +98,35 @@ ${chalk.bold('See also')}
   primo deploy  Stand up a new hosted Primo server
   primo login   Authenticate with a hosted Primo server
 `)
-	.action(push_site)
+	.action((server, options) => push_site({ ...options, server: server || options.server }))
 
 program
-	.command('pull')
+	.command('pull [server]')
 	.description('Pull entire server (all sites + library) to local files')
 	.option('-s, --server <url>', 'Server URL (auto-detects local)')
 	.option('-o, --output <dir>', 'Output directory (defaults to ./<server-hostname>)', '.')
 	.option('-t, --token <token>', 'Auth token')
-	.action(pull_site)
+	.action((server, options) => pull_site({ ...options, server: server || options.server }))
 
 const library = program
 	.command('library')
 	.description('Manage shared block library')
 
 library
-	.command('pull')
+	.command('pull [server]')
 	.description('Pull shared library to local files')
 	.option('-s, --server <url>', 'Server URL (auto-detects local)')
 	.option('-o, --output <dir>', 'Output directory', '.')
 	.option('-t, --token <token>', 'Auth token')
-	.action(pull_library)
+	.action((server, options) => pull_library({ ...options, server: server || options.server }))
 
 library
-	.command('push')
+	.command('push [server]')
 	.description('Push local shared library to hosted CMS')
 	.option('-s, --server <url>', 'Server URL')
 	.option('-d, --dir <dir>', 'Workspace directory', '.')
 	.option('-t, --token <token>', 'Auth token')
-	.action(push_library)
+	.action((server, options) => push_library({ ...options, server: server || options.server }))
 
 program
 	.command('login')

@@ -23,6 +23,15 @@ primo new my-site
 
 ## Commands
 
+### `primo init [name]`
+
+Initialize a new Primo workspace (server) in a new folder or the current directory.
+
+```bash
+primo init                   # Initialize in the current directory
+primo init my-workspace      # Create and initialize "my-workspace"
+```
+
 ### `primo new [name]`
 
 Create a new site with starter files.
@@ -40,8 +49,9 @@ Start the local CMS server. Watches for file changes and syncs edits from the CM
 ```bash
 primo dev                    # Start in current directory
 primo dev -p 8080            # Use custom port
-primo dev --files-win        # Push file edits to the CMS; pause CMS-to-file sync
-primo dev --cms-win          # Pull CMS edits to files; pause file-to-CMS sync
+primo dev --author files     # Push file edits to the CMS; CMS UI is read-only (default)
+primo dev --author cms       # CMS edits write to files; file edits revert
+primo dev --author both      # Bidirectional sync (beta; CMS edits often lost on conflict)
 ```
 
 ### `primo push`
@@ -51,7 +61,8 @@ already deployed (run `primo deploy` first) and authenticated against (`primo
 login -s <server-url>`).
 
 ```bash
-primo push -s https://cms.example.com --site abc123
+primo push https://cms.example.com --site abc123
+primo push --only my-site    # Push just one site folder (workspace root)
 primo push --preview         # Preview changes without applying
 primo push --dry-run         # Show what would be sent without making requests
 ```
@@ -59,6 +70,7 @@ primo push --dry-run         # Show what would be sent without making requests
 Options:
 - `-s, --server <url>` - Server URL
 - `--site <id>` - Site ID
+- `--only <slug>` - Push only the named site folder under `sites/` (skips library)
 - `-d, --dir <dir>` - Directory (default: `.`)
 - `-t, --token <token>` - Auth token
 - `--preview` - Preview only
@@ -66,17 +78,16 @@ Options:
 
 ### `primo pull`
 
-Pull from a hosted Primo instance to local files.
+Pull an entire hosted Primo server — all sites plus the shared library — to local files.
 
 ```bash
-primo pull -s https://cms.example.com
-primo pull --site abc123 -o ./my-site
+primo pull https://cms.example.com
+primo pull https://cms.example.com -o ./my-workspace
 ```
 
 Options:
 - `-s, --server <url>` - Server URL (auto-detects local)
-- `--site <id>` - Site ID (interactive if not provided)
-- `-o, --output <dir>` - Output directory (default: `.`)
+- `-o, --output <dir>` - Output directory (defaults to `./<server-hostname>`)
 - `-t, --token <token>` - Auth token
 
 ### `primo library pull`
@@ -84,7 +95,7 @@ Options:
 Pull the shared block library into a workspace root.
 
 ```bash
-primo library pull -s https://cms.example.com
+primo library pull https://cms.example.com
 primo library pull -o ./my-workspace
 ```
 
@@ -98,8 +109,8 @@ Options:
 Push the local shared block library back to a hosted Primo instance.
 
 ```bash
-primo library push -s https://cms.example.com
-primo library push -s https://cms.example.com -d ./my-workspace
+primo library push https://cms.example.com
+primo library push https://cms.example.com -d ./my-workspace
 ```
 
 Options:

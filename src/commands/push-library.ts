@@ -37,9 +37,9 @@ export async function push_library(options: PushLibraryOptions) {
 			process.exit(1)
 		}
 
-		const server = options.server
+		const server = options.server?.replace(/\/+$/, '')
 		if (!server) {
-			spinner.fail('Server URL required. Use --server.')
+			spinner.fail('Server URL required. Pass it as the first argument or use --server.')
 			process.exit(1)
 		}
 
