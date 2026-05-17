@@ -104,7 +104,7 @@ export async function pull_site(options: PullOptions) {
 
 		if (sites.length === 0) {
 			if (!token) {
-				spinner.fail(`Not authenticated. Run \`primo login --server ${server}\` first.`)
+				spinner.fail(`Not authenticated. Run \`primo login ${server}\` first.`)
 			} else {
 				spinner.fail('No sites visible — your token may be expired. Try `primo login` again.')
 			}

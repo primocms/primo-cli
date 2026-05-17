@@ -26,7 +26,7 @@ export async function login(options: LoginOptions) {
 	if (!server_url) {
 		console.log('')
 		console.log(chalk.red('Server URL required.'))
-		console.log(chalk.dim('  Pass -s <url>, or run from a workspace whose server.yaml has a `server:` field.'))
+		console.log(chalk.dim('  Pass it as the first argument, use -s <url>, or run from a workspace whose server.yaml has a `server:` field.'))
 		console.log('')
 		process.exit(1)
 	}

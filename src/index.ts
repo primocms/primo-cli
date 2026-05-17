@@ -129,11 +129,11 @@ library
 	.action((server, options) => push_library({ ...options, server: server || options.server }))
 
 program
-	.command('login')
+	.command('login [server]')
 	.description('Login to hosted CMS')
 	.option('-s, --server <url>', 'Server URL (defaults to `server:` in server.yaml)')
 	.option('-e, --email <email>', 'Email')
-	.action(login)
+	.action((server, options) => login({ ...options, server: server || options.server }))
 
 program
 	.command('validate')
