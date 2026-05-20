@@ -3,7 +3,7 @@ import path from 'path'
 import { createHash, randomInt } from 'crypto'
 import chalk from 'chalk'
 import ora from 'ora'
-import { spawn, type ChildProcess } from 'child_process'
+import { spawn, execFileSync, type ChildProcess } from 'child_process'
 import archiver from 'archiver'
 import extract from 'extract-zip'
 import { dump as dump_yaml, load as load_yaml } from 'js-yaml'
@@ -564,16 +564,48 @@ async function kill_port(port: number): Promise<boolean> {
 				resolve(false)
 				return
 			}
+			// Don't kill ourselves or our ancestors — lsof returns every PID
+			// holding the port, which on macOS includes parent processes that
+			// inherited the fd. SIGKILL'ing them takes this CLI down too.
+			const self_ancestry = get_self_ancestry()
+			let killed_any = false
 			for (const pid of pid_list) {
+				const pid_num = parseInt(pid, 10)
+				if (self_ancestry.has(pid_num)) continue
 				try {
-					process.kill(parseInt(pid, 10), 'SIGKILL')
+					process.kill(pid_num, 'SIGKILL')
+					killed_any = true
 				} catch {
 					// Process may have already exited
 				}
 			}
-			resolve(true)
+			resolve(killed_any)
 		})
 	})
+}
+
+function get_self_ancestry(): Set<number> {
+	const ancestry = new Set<number>()
+	let pid: number | undefined = process.pid
+	while (pid && pid > 1) {
+		ancestry.add(pid)
+		pid = get_parent_pid(pid)
+		if (pid && ancestry.has(pid)) break
+	}
+	return ancestry
+}
+
+function get_parent_pid(pid: number): number | undefined {
+	try {
+		const result = execFileSync('ps', ['-o', 'ppid=', '-p', String(pid)], {
+			encoding: 'utf-8',
+			stdio: ['ignore', 'pipe', 'ignore']
+		})
+		const parsed = parseInt(String(result).trim(), 10)
+		return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
+	} catch {
+		return undefined
+	}
 }
 
 // Fetch with timeout helper
@@ -1132,7 +1164,12 @@ export async function dev_server(options: DevOptions) {
 
 		// Handle cleanup
 		const cleanup = async () => {
-			if (is_cleaning_up) return
+			if (is_cleaning_up) {
+				// Second Ctrl-C while we're still cleaning up — bail immediately
+				// so the user isn't stuck waiting on an in-flight push/sync.
+				console.log(chalk.dim('\n  Force exit'))
+				process.exit(130)
+			}
 			is_cleaning_up = true
 
 			console.log(chalk.dim('\n  Shutting down...'))

@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import { Command } from 'commander'
 import chalk from 'chalk'
 import { init_workspace } from './commands/init.js'
@@ -14,12 +17,15 @@ import { validate_site } from './commands/validate.js'
 import { deploy } from './commands/deploy.js'
 import { build_site } from './commands/build.js'
 
+const pkg_path = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json')
+const pkg_version = JSON.parse(fs.readFileSync(pkg_path, 'utf-8')).version as string
+
 const program = new Command()
 
 program
 	.name('primo')
 	.description('Build sites visually, edit them anywhere')
-	.version('0.1.3')
+	.version(pkg_version)
 
 // Top-level help: prepend a Deploy-vs-build-vs-push decision tree so first-time
 // users can pick a command without reading every description. Use 'before' so
