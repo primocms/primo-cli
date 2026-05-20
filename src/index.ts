@@ -101,24 +101,30 @@ ${chalk.bold('See also')}
 	.action((server, options) => push_site({ ...options, server: server || options.server }))
 
 program
-	.command('pull [server]')
-	.description('Pull entire server (all sites + library) to local files')
+	.command('pull [server] [dir]')
+	.description('Pull entire server (all sites + library) to local files (defaults to ./<server-hostname>)')
 	.option('-s, --server <url>', 'Server URL (auto-detects local)')
-	.option('-o, --output <dir>', 'Output directory (defaults to ./<server-hostname>)', '.')
 	.option('-t, --token <token>', 'Auth token')
-	.action((server, options) => pull_site({ ...options, server: server || options.server }))
+	.action((server, dir, options) => pull_site({
+		...options,
+		server: server || options.server,
+		output: dir
+	}))
 
 const library = program
 	.command('library')
 	.description('Manage shared block library')
 
 library
-	.command('pull [server]')
+	.command('pull [server] [dir]')
 	.description('Pull shared library to local files')
 	.option('-s, --server <url>', 'Server URL (auto-detects local)')
-	.option('-o, --output <dir>', 'Output directory', '.')
 	.option('-t, --token <token>', 'Auth token')
-	.action((server, options) => pull_library({ ...options, server: server || options.server }))
+	.action((server, dir, options) => pull_library({
+		...options,
+		server: server || options.server,
+		output: dir
+	}))
 
 library
 	.command('push [server]')

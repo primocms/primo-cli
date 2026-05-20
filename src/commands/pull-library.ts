@@ -7,7 +7,7 @@ import { get_auth_token } from '../utils/auth.js'
 
 interface PullLibraryOptions {
 	server?: string
-	output: string
+	output?: string
 	token?: string
 }
 
@@ -51,7 +51,7 @@ export async function pull_library(options: PullLibraryOptions) {
 			headers.Authorization = `Bearer ${token}`
 		}
 
-		const output_dir = path.resolve(options.output)
+		const output_dir = path.resolve(options.output || '.')
 		await fs.mkdir(output_dir, { recursive: true })
 
 		spinner.text = 'Exporting library...'

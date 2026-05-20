@@ -6,11 +6,11 @@ import extract from 'extract-zip'
 import { dump as dump_yaml, load as load_yaml } from 'js-yaml'
 import { get_auth_token } from '../utils/auth.js'
 import { write_site_config } from '../utils/site-config.js'
-import { write_server_config, type SiteGroupConfig } from '../utils/server-config.js'
+import { read_server_config, write_server_config, type ServerConfig, type SiteGroupConfig } from '../utils/server-config.js'
 
 interface PullOptions {
 	server?: string
-	output: string
+	output?: string
 	token?: string
 }
 
@@ -59,19 +59,40 @@ function server_folder_name(server: string): string {
 	}
 }
 
+async function read_configured_server(dir: string): Promise<string | null> {
+	const config = await read_configured_server_config(dir)
+	return config?.server || null
+}
+
+async function read_configured_server_config(dir: string): Promise<ServerConfig | null> {
+	try {
+		return await read_server_config(dir)
+	} catch {
+		return null
+	}
+}
+
 export async function pull_site(options: PullOptions) {
 	const spinner = ora('Connecting...').start()
 
 	try {
-		// Resolve server (flag > local detect)
+		// Resolve server (flag > server.yaml in cwd > local detect)
 		let server: string
+		let used_configured = false
 		if (options.server) {
 			server = options.server.replace(/\/+$/, '')
 		} else {
-			spinner.text = 'Looking for local server...'
-			const detected = await detect_server()
-			server = (detected || 'http://localhost:3000').replace(/\/+$/, '')
-			spinner.text = `Using ${server}`
+			const configured = await read_configured_server(process.cwd())
+			if (configured) {
+				server = configured
+				used_configured = true
+				spinner.text = `Using ${server}`
+			} else {
+				spinner.text = 'Looking for local server...'
+				const detected = await detect_server()
+				server = (detected || 'http://localhost:3000').replace(/\/+$/, '')
+				spinner.text = `Using ${server}`
+			}
 		}
 
 		// Auth (optional for local)
@@ -81,11 +102,13 @@ export async function pull_site(options: PullOptions) {
 			headers['Authorization'] = `Bearer ${token}`
 		}
 
-		// Decide root dir: if --output is default ('.'), nest under server hostname.
-		// Otherwise use --output verbatim.
-		const root_dir = options.output === '.'
-			? path.resolve(server_folder_name(server))
-			: path.resolve(options.output)
+		// Decide root dir: explicit --output wins; if cwd already has a configured
+		// server.yaml, pull in place; otherwise nest under server hostname.
+		const root_dir = options.output
+			? path.resolve(options.output)
+			: used_configured
+				? process.cwd()
+				: path.resolve(server_folder_name(server))
 		await fs.mkdir(root_dir, { recursive: true })
 
 		// List all sites
@@ -137,10 +160,13 @@ export async function pull_site(options: PullOptions) {
 		// Fetch site groups so server.yaml has them
 		const site_groups = await fetch_site_groups(server, headers)
 
-		// Write minimal server.yaml so MCP registration + dev work at the root
+		// Preserve any existing server.yaml (port, format, server URL) and just
+		// refresh site_groups from the source of truth.
+		const existing = await read_configured_server_config(root_dir)
 		await write_server_config(root_dir, {
-			port: 3000,
-			site_groups: site_groups.length > 0 ? site_groups : undefined
+			...existing,
+			port: existing?.port ?? 3000,
+			site_groups: site_groups.length > 0 ? site_groups : existing?.site_groups
 		})
 
 		spinner.succeed(`Server pulled to ${chalk.cyan(root_dir)}`)
