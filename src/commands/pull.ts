@@ -72,6 +72,15 @@ async function read_configured_server_config(dir: string): Promise<ServerConfig 
 	}
 }
 
+function is_remote_server(server: string): boolean {
+	try {
+		const hostname = new URL(server).hostname
+		return hostname !== 'localhost' && hostname !== '127.0.0.1' && hostname !== '::1'
+	} catch {
+		return false
+	}
+}
+
 export async function pull_site(options: PullOptions) {
 	const spinner = ora('Connecting...').start()
 
@@ -104,23 +113,40 @@ export async function pull_site(options: PullOptions) {
 
 		// Decide root dir: explicit --output wins; if cwd already has a configured
 		// server.yaml, pull in place; otherwise nest under server hostname.
+		// Refuse to auto-create a `localhost/` folder — the user almost certainly
+		// didn't mean that. Require --output or --server explicitly in that case.
+		if (!options.output && !used_configured && !is_remote_server(server)) {
+			spinner.fail(
+				`Resolved to ${server} but no output dir was given. ` +
+				`Pass --server <url> or --output <dir> to pull a local server.`
+			)
+			process.exit(1)
+		}
 		const root_dir = options.output
 			? path.resolve(options.output)
 			: used_configured
 				? process.cwd()
 				: path.resolve(server_folder_name(server))
-		await fs.mkdir(root_dir, { recursive: true })
 
-		// List all sites
+		// Validate the server is reachable BEFORE creating the output dir, so a
+		// failed pull doesn't leave an empty folder behind.
 		spinner.text = 'Fetching sites...'
-		const sites_response = await fetch(`${server}/api/collections/sites/records?perPage=200`, {
-			headers
-		})
+		let sites_response: Response
+		try {
+			sites_response = await fetch(`${server}/api/collections/sites/records?perPage=200`, {
+				headers
+			})
+		} catch (error) {
+			spinner.fail(`Could not reach ${server}: ${error instanceof Error ? error.message : error}`)
+			process.exit(1)
+		}
 
 		if (!sites_response.ok) {
 			spinner.fail(`Failed to fetch sites (${sites_response.status})`)
 			process.exit(1)
 		}
+
+		await fs.mkdir(root_dir, { recursive: true })
 
 		const sites_data = await sites_response.json() as { items: Site[] }
 		const sites = sites_data.items || []
@@ -160,13 +186,15 @@ export async function pull_site(options: PullOptions) {
 		// Fetch site groups so server.yaml has them
 		const site_groups = await fetch_site_groups(server, headers)
 
-		// Preserve any existing server.yaml (port, format, server URL) and just
-		// refresh site_groups from the source of truth.
+		// Preserve any existing server.yaml (port, format) and refresh
+		// site_groups from the source of truth. Also persist the server URL
+		// when it's a remote so subsequent bare `primo pull` runs in this dir
+		// don't fall back to localhost detection.
 		const existing = await read_configured_server_config(root_dir)
 		await write_server_config(root_dir, {
 			...existing,
-			port: existing?.port ?? 3000,
-			site_groups: site_groups.length > 0 ? site_groups : existing?.site_groups
+			site_groups: site_groups.length > 0 ? site_groups : existing?.site_groups,
+			server: existing?.server ?? (is_remote_server(server) ? server : undefined)
 		})
 
 		spinner.succeed(`Server pulled to ${chalk.cyan(root_dir)}`)
@@ -215,7 +243,6 @@ async function pull_one_site(
 
 	await write_site_config(site_dir, {
 		name: site.name || 'Imported Site',
-		host: site.host || '',
 		site_id: site.id,
 		server,
 		group: site.group

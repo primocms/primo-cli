@@ -5,7 +5,6 @@ import { dump as dump_yaml, load as load_yaml } from 'js-yaml'
 export interface SiteConfig {
 	name: string
 	site_id: string
-	host?: string
 	server?: string
 	group?: string
 }

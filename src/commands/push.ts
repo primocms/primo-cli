@@ -339,7 +339,6 @@ async function try_bootstrap_site(
 	const form = new FormData()
 	form.append('site_id', site_id)
 	if (config?.name) form.append('name', config.name)
-	if (config?.host) form.append('host', config.host)
 	if (config?.group) form.append('group', config.group)
 	form.append('file', new Blob([zip_buffer]), 'site.zip')
 

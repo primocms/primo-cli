@@ -100,9 +100,6 @@ export async function new_site(options: NewOptions) {
 		const config = {
 			name: display_name,
 			site_id: generate_id(),
-			// Leave host empty for local dev - dev.ts will generate coffee-shop.localhost:3000
-			// Only set host if it looks like a real domain (has a dot)
-			host: site_name!.includes('.') ? site_name : '',
 			group: 'default'
 		}
 		await write_site_config(site_dir, config)

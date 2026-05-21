@@ -2376,7 +2376,17 @@ async function create_site_zip(dir: string, excluded_paths: Set<string> = new Se
 
 				const site_json = path.join(dir, SITE_CONFIG_FILE)
 				if (!is_excluded_path(SITE_CONFIG_FILE, excluded_paths)) {
-					archive.file(site_json, { name: SITE_CONFIG_FILE })
+					// Strip `host` if present — `site.yaml` no longer carries it,
+					// but older dirs pulled by previous CLI versions still do,
+					// and the local CMS's /import endpoint persists whatever
+					// host the zipped yaml declares, overwriting bootstrap's
+					// *.localhost value and breaking preview routing.
+					const sanitized = await read_site_yaml_without_host(site_json)
+					if (sanitized !== null) {
+						archive.append(sanitized, { name: SITE_CONFIG_FILE })
+					} else {
+						archive.file(site_json, { name: SITE_CONFIG_FILE })
+					}
 				}
 
 				await archive.finalize()
@@ -2385,6 +2395,20 @@ async function create_site_zip(dir: string, excluded_paths: Set<string> = new Se
 			}
 		})()
 	})
+}
+
+async function read_site_yaml_without_host(site_yaml_path: string): Promise<string | null> {
+	try {
+		const raw = await fs.readFile(site_yaml_path, 'utf-8')
+		const parsed = load_yaml(raw)
+		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+		const data = parsed as Record<string, unknown>
+		if (!('host' in data)) return null
+		const { host: _, ...rest } = data
+		return dump_yaml(rest, { lineWidth: -1, noRefs: true })
+	} catch {
+		return null
+	}
 }
 
 async function sync_from_cms(site_dir: string, api_url: string, config: SiteConfig, server_config: ServerConfig, workspace_dir: string, sync_policy: SyncPolicy = { mode: 'both' }): Promise<void> {
