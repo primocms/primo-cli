@@ -57,9 +57,13 @@ let site_sync_baselines = new Map<string, ContentSnapshot>()
 // keeps producing the same divergence (e.g. data-key mangling, key reorder).
 const last_logged_conflicts = new Map<string, string>()
 
-// Track files written by sync to prevent watcher from re-pushing them
-// Map of filepath -> mtime (ms) when we wrote it
-const synced_files = new Map<string, number>()
+// Track files written by sync to prevent watcher from re-pushing them.
+// Keyed by absolute path; value is the SHA-256 of the content we wrote.
+// We compare against the file's *current* hash in the watcher, so a user
+// edit that happens within the polling cycle is detected by content
+// divergence rather than mtime±tolerance (which used to drop edits made
+// within 3 seconds of a sync-write).
+const synced_files = new Map<string, string>()
 const synced_deleted_paths = new Map<string, number>()
 const warned_empty_schema_writebacks = new Set<string>()
 
@@ -126,11 +130,25 @@ type ImportTimings = {
 
 const LOCAL_PUSH_DEBOUNCE_MS = 150
 const LOCAL_ZIP_COMPRESSION_LEVEL = 0
-// Tolerance for matching a file mtime against the synced_files map to decide
-// whether an fs.watch event was caused by our own sync-write. Wider values
-// trade duplicate push work for safety against slow I/O and flaky watchers
-// (macOS fs.watch fires inconsistently for recursive writes).
-const SYNC_MTIME_TOLERANCE_MS = 3000
+
+function hash_content(content: string | Buffer): string {
+	return createHash('sha256').update(content).digest('hex')
+}
+
+// Returns true iff the file at `full_path` still has the exact content
+// we last synced to it. Used by watcher event handlers to ignore their
+// own writes without the old mtime-tolerance race that swallowed user
+// edits made within seconds of a sync-write.
+async function event_matches_synced_write(full_path: string): Promise<boolean> {
+	const expected_hash = synced_files.get(full_path)
+	if (!expected_hash) return false
+	try {
+		const current = await fs.readFile(full_path)
+		return hash_content(current) === expected_hash
+	} catch {
+		return false
+	}
+}
 // When the user writes a file locally, suppress CMS->local pulls for this
 // long to prevent a pull that was in-flight before the watcher fired from
 // stomping the just-written content on arrival.
@@ -205,7 +223,10 @@ function compute_shrink_delta(prior: string, next: string): number | null {
 // rendering bugs instead of fixing the source error.
 async function write_sync_status(
 	site_dir: string,
-	status: { ok: true } | { ok: false; error: string; failed_at: string }
+	status:
+		| { ok: true }
+		| { ok: true; warnings: number; warned_at: string }
+		| { ok: false; error: string; failed_at: string }
 ): Promise<void> {
 	const status_dir = path.join(site_dir, '.primo')
 	try {
@@ -840,16 +861,17 @@ export async function dev_server(options: DevOptions) {
 					const on_event = (full_path: string) => {
 						if (should_skip_synced_delete(full_path)) return
 
-						const synced_mtime = synced_files.get(full_path)
-						if (synced_mtime) {
-							// Our own sync-write — skip.
-							fs.stat(full_path)
-								.then(stat => {
-									if (Math.abs(stat.mtimeMs - synced_mtime) < SYNC_MTIME_TOLERANCE_MS) {
-										synced_files.delete(full_path)
-										return
-									}
+						if (synced_files.has(full_path)) {
+							// We last wrote this file from a CMS pull. If the
+							// content on disk still matches our write, the
+							// chokidar event is just our own write echoing
+							// back — drop it. If it differs, the user edited
+							// the file (possibly very shortly after our pull
+							// landed) and we must push.
+							event_matches_synced_write(full_path)
+								.then(matches => {
 									synced_files.delete(full_path)
+									if (matches) return
 									push_or_ignore_library_change(full_path)
 								})
 								.catch(() => {
@@ -978,7 +1000,15 @@ export async function dev_server(options: DevOptions) {
 							}
 							console.log(chalk.dim(`  ${site.config.name}: normalize ${normalize_ms}ms, zip ${import_timings.zip_ms}ms, ${import_timings.mode} ${import_timings.request_ms}ms${reload_ms ? `, reload ${reload_ms}ms` : ''}`))
 							console.log(chalk.green(`  ✓ ${site.config.name} pushed`))
-							await write_sync_status(site.dir, { ok: true })
+							if (import_timings.warning_count > 0) {
+								await write_sync_status(site.dir, {
+									ok: true,
+									warnings: import_timings.warning_count,
+									warned_at: new Date().toISOString()
+								})
+							} else {
+								await write_sync_status(site.dir, { ok: true })
+							}
 						} catch (err) {
 							const message = err instanceof Error ? err.message : String(err)
 							console.log(chalk.red(`  ✗ ${site.config.name} push failed: ${message}`))
@@ -1040,15 +1070,19 @@ export async function dev_server(options: DevOptions) {
 						const on_event = (full_path: string) => {
 							if (should_skip_synced_delete(full_path)) return
 
-							const synced_mtime = synced_files.get(full_path)
-							if (synced_mtime) {
-								fs.stat(full_path)
-									.then(stat => {
-										if (Math.abs(stat.mtimeMs - synced_mtime) < SYNC_MTIME_TOLERANCE_MS) {
-											synced_files.delete(full_path)
-											return
-										}
+							if (synced_files.has(full_path)) {
+								// We last wrote this file from a CMS pull. Compare
+								// the file's *current* content against the hash we
+								// stored: if identical, this watcher event is the
+								// echo of our own write and must be ignored; if
+								// different, the user edited the file (possibly
+								// within ms of our pull) and the edit must push,
+								// which is exactly the case the old mtime-tolerance
+								// check used to swallow for site/head.svelte.
+								event_matches_synced_write(full_path)
+									.then(matches => {
 										synced_files.delete(full_path)
+										if (matches) return
 										push_or_ignore_file_change(full_path)
 									})
 									.catch(() => {
@@ -1472,14 +1506,8 @@ function track_duplicate(
 	by_id.set(id, existing)
 }
 
-async function mark_written_file(file_path: string) {
-	synced_files.set(file_path, Date.now())
-	try {
-		const stat = await fs.stat(file_path)
-		synced_files.set(file_path, stat.mtimeMs)
-	} catch {
-		// Ignore files that disappeared
-	}
+function mark_written_file(file_path: string, content: string | Buffer) {
+	synced_files.set(file_path, hash_content(content))
 }
 
 function mark_deleted_path(file_path: string) {
@@ -2086,8 +2114,10 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 	const zip_buffer = await create_site_zip(site_dir, preparation.excluded_paths)
 	const zip_ms = Date.now() - zip_started
 
-	// Always use a localhost-style host in dev — the production host stays in
-	// site.yaml for push, but local routing must hit *.localhost
+	// Dev sites route via *.localhost. The host is computed from name+port
+	// here and passed only to bootstrap (which seeds new sites with this
+	// routing host); site.yaml does not carry host at all, and the regular
+	// import path never sets host — so dashboard-managed routing is safe.
 	const host = local_dev_host(config.name || path.basename(site_dir), port)
 
 	if (!use_bootstrap) {
@@ -2376,17 +2406,7 @@ async function create_site_zip(dir: string, excluded_paths: Set<string> = new Se
 
 				const site_json = path.join(dir, SITE_CONFIG_FILE)
 				if (!is_excluded_path(SITE_CONFIG_FILE, excluded_paths)) {
-					// Strip `host` if present — `site.yaml` no longer carries it,
-					// but older dirs pulled by previous CLI versions still do,
-					// and the local CMS's /import endpoint persists whatever
-					// host the zipped yaml declares, overwriting bootstrap's
-					// *.localhost value and breaking preview routing.
-					const sanitized = await read_site_yaml_without_host(site_json)
-					if (sanitized !== null) {
-						archive.append(sanitized, { name: SITE_CONFIG_FILE })
-					} else {
-						archive.file(site_json, { name: SITE_CONFIG_FILE })
-					}
+					archive.file(site_json, { name: SITE_CONFIG_FILE })
 				}
 
 				await archive.finalize()
@@ -2395,20 +2415,6 @@ async function create_site_zip(dir: string, excluded_paths: Set<string> = new Se
 			}
 		})()
 	})
-}
-
-async function read_site_yaml_without_host(site_yaml_path: string): Promise<string | null> {
-	try {
-		const raw = await fs.readFile(site_yaml_path, 'utf-8')
-		const parsed = load_yaml(raw)
-		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
-		const data = parsed as Record<string, unknown>
-		if (!('host' in data)) return null
-		const { host: _, ...rest } = data
-		return dump_yaml(rest, { lineWidth: -1, noRefs: true })
-	} catch {
-		return null
-	}
 }
 
 async function sync_from_cms(site_dir: string, api_url: string, config: SiteConfig, server_config: ServerConfig, workspace_dir: string, sync_policy: SyncPolicy = { mode: 'both' }): Promise<void> {
@@ -2613,13 +2619,12 @@ async function sync_directory(
 					}
 				}
 
-				// Track this file BEFORE writing to avoid race with watcher
-				// Use current time as estimate, watcher allows 1 second tolerance
-				synced_files.set(dest_path, Date.now())
+				// Track this file's content hash BEFORE writing so the
+				// chokidar event our own write produces can be matched
+				// against `synced_files` and dropped, while a genuine user
+				// edit (different content) still falls through and pushes.
+				synced_files.set(dest_path, hash_content(src_content))
 				await fs.writeFile(dest_path, src_content)
-				// Update with actual mtime after write
-				const stat = await fs.stat(dest_path)
-				synced_files.set(dest_path, stat.mtimeMs)
 
 				// Surface shrinkage on the change line itself so a user
 				// scanning the dev log notices when a YAML list silently
@@ -2734,10 +2739,11 @@ async function write_created_ids(
 				const raw = dump_yaml(data, { lineWidth: -1 })
 				const formatted = await format_file_contents(file_path, raw, workspace_dir, format_options)
 				await fs.writeFile(file_path, formatted, 'utf-8')
-				await mark_written_file(file_path)
+				mark_written_file(file_path, formatted)
 			}
 		} catch {
 			// skip if file doesn't exist or can't be read
 		}
 	}
 }
+
