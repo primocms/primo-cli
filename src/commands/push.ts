@@ -340,6 +340,13 @@ async function try_bootstrap_site(
 	form.append('site_id', site_id)
 	if (config?.name) form.append('name', config.name)
 	if (config?.group) form.append('group', config.group)
+	// Register the site against the deploy URL's host so the first visit to
+	// that domain finds a matching site instead of dropping into CreateSite.
+	try {
+		form.append('host', new URL(server).host)
+	} catch {
+		// Malformed server URL — let the server fall back to its own default.
+	}
 	form.append('file', new Blob([zip_buffer]), 'site.zip')
 
 	const headers: Record<string, string> = {}
