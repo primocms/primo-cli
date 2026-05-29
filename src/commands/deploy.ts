@@ -239,11 +239,11 @@ async function check_provider_auth(provider: Provider): Promise<boolean> {
 	}
 }
 
-// Pinned to the upstream-published image. palacms's main.yml workflow
+// Pinned to the upstream-published image. primocms's main.yml workflow
 // publishes branch tags for whitelisted prefixes (main, feature/**, rc/**),
 // with slashes slugified to dashes (feature/local-dev-cli → :feature-local-dev-cli).
-// Bump to a release tag (:v3.0.0) when palacms cuts a stable release.
-const PRIMO_SERVER_IMAGE = 'ghcr.io/palacms/palacms:feature-local-dev-cli'
+// Bump to a release tag (:v3.0.0) when primocms cuts a stable release.
+const PRIMO_SERVER_IMAGE = 'ghcr.io/primocms/primo:main'
 
 async function generate_dockerfile(inventory: WorkspaceInventory) {
 	// One-line Dockerfile: pull the published palacms image and run it
