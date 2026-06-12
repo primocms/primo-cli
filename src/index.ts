@@ -65,6 +65,7 @@ program
 	.command('deploy')
 	.description('Deploy this workspace (all sites) with editable CMS (Railway, Fly)')
 	.option('-p, --provider <provider>', 'Provider: railway | fly')
+	.option('--no-push', 'Skip uploading the workspace after provisioning (you can run `primo push` later)')
 	.option('--dry-run', 'Show what would be deployed without doing anything')
 	.addHelpText('after', `
 ${chalk.bold('Supported providers')}

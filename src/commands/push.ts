@@ -5,7 +5,7 @@ import ora, { type Ora } from 'ora'
 import archiver from 'archiver'
 import { get_auth_token } from '../utils/auth.js'
 import { read_site_config, get_site_config_path, type SiteConfig, SITE_CONFIG_FILE } from '../utils/site-config.js'
-import { get_server_config_path, read_server_config } from '../utils/server-config.js'
+import { get_server_config_path, read_server_config, type SiteGroupConfig } from '../utils/server-config.js'
 
 interface PushOptions {
 	server?: string
@@ -24,6 +24,27 @@ async function path_exists(p: string): Promise<boolean> {
 	} catch {
 		return false
 	}
+}
+
+// Look up the display name for a group ID by walking up from the site dir
+// to find a workspace server.yaml. site.yaml only stores the group ID, so
+// without this the server has nothing to label the group with on first push
+// and falls back to humanizing the random ID ("8Y17hao5jt2xmd8").
+async function resolve_group_name(site_dir: string, group_id: string | undefined): Promise<string | undefined> {
+	if (!group_id) return undefined
+	// Typical layout: <workspace>/sites/<slug>/site.yaml — server.yaml lives two levels up.
+	const candidates = [path.dirname(path.dirname(site_dir)), path.dirname(site_dir), site_dir]
+	for (const dir of candidates) {
+		if (!(await path_exists(get_server_config_path(dir)))) continue
+		try {
+			const cfg = await read_server_config(dir)
+			const match = cfg.site_groups?.find((g: SiteGroupConfig) => g.id === group_id)
+			if (match?.name) return match.name
+		} catch {
+			// ignore — bad server.yaml shouldn't block the push
+		}
+	}
+	return undefined
 }
 
 interface PushDiff {
@@ -255,6 +276,7 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 
 	spinner.text = 'Packaging files...'
 	const zip_buffer = await create_zip(site_dir)
+	const group_name = await resolve_group_name(site_dir, config?.group)
 
 	// If the user isn't logged in yet, skip the import attempt and try
 	// bootstrap directly. Bootstrap doesn't require auth (only allowed when
@@ -265,7 +287,7 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 			throw new Error('Authentication required for --preview. Run `primo login` first.')
 		}
 		spinner.text = 'No auth token — attempting bootstrap...'
-		const bootstrap_result = await try_bootstrap_site(server, undefined, zip_buffer, config, site_id)
+		const bootstrap_result = await try_bootstrap_site(server, undefined, zip_buffer, config, site_id, group_name)
 		if (bootstrap_result.ok) {
 			spinner.succeed(`Bootstrapped ${config?.name || path.basename(site_dir)}`)
 			console.log('')
@@ -277,13 +299,14 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 	}
 
 	const endpoint = options.preview
-		? `${server}/api/palacms/import/${site_id}/preview`
-		: `${server}/api/palacms/import/${site_id}`
+		? `${server}/api/primo/import/${site_id}/preview`
+		: `${server}/api/primo/import/${site_id}`
 
 	spinner.text = options.preview ? 'Previewing changes...' : 'Pushing changes...'
 
 	const form_data = new FormData()
 	form_data.append('file', new Blob([zip_buffer]), 'site.zip')
+	if (group_name) form_data.append('group_name', group_name)
 
 	const response = await fetch(endpoint, {
 		method: 'POST',
@@ -292,13 +315,13 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 	})
 
 	// 404 from import means the site doesn't exist on the server yet. On a
-	// freshly-deployed server we can fall back to /api/palacms/bootstrap,
+	// freshly-deployed server we can fall back to /api/primo/bootstrap,
 	// which creates the site and ingests the zip in one shot. Bootstrap is
 	// only available when the server has zero sites — past the first site,
 	// new sites must be created via the dashboard UI.
 	if (response.status === 404 && !options.preview) {
 		spinner.text = 'Site not found on server — bootstrapping...'
-		const bootstrap_result = await try_bootstrap_site(server, token, zip_buffer, config, site_id)
+		const bootstrap_result = await try_bootstrap_site(server, token, zip_buffer, config, site_id, group_name)
 		if (bootstrap_result.ok) {
 			spinner.succeed(`Bootstrapped ${config?.name || path.basename(site_dir)}`)
 			console.log('')
@@ -334,12 +357,14 @@ async function try_bootstrap_site(
 	token: string | undefined,
 	zip_buffer: Buffer,
 	config: SiteConfig | null,
-	site_id: string
+	site_id: string,
+	group_name?: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
 	const form = new FormData()
 	form.append('site_id', site_id)
 	if (config?.name) form.append('name', config.name)
 	if (config?.group) form.append('group', config.group)
+	if (group_name) form.append('group_name', group_name)
 	// Register the site against the deploy URL's host so the first visit to
 	// that domain finds a matching site instead of dropping into CreateSite.
 	try {
@@ -352,7 +377,7 @@ async function try_bootstrap_site(
 	const headers: Record<string, string> = {}
 	if (token) headers['Authorization'] = `Bearer ${token}`
 
-	const response = await fetch(`${server}/api/palacms/bootstrap`, {
+	const response = await fetch(`${server}/api/primo/bootstrap`, {
 		method: 'POST',
 		headers,
 		body: form
@@ -412,7 +437,7 @@ async function push_library_dir(root_dir: string, options: PushOptions, spinner:
 	const form_data = new FormData()
 	form_data.append('file', new Blob([zip_buffer]), 'library.zip')
 
-	const response = await fetch(`${server}/api/palacms/import-library`, {
+	const response = await fetch(`${server}/api/primo/import-library`, {
 		method: 'POST',
 		headers: { 'Authorization': `Bearer ${token}` },
 		body: form_data

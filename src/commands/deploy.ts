@@ -2,14 +2,17 @@ import fs from 'fs/promises'
 import path from 'path'
 import chalk from 'chalk'
 import ora from 'ora'
-import { select } from '@inquirer/prompts'
+import { select, confirm } from '@inquirer/prompts'
 import { execSync, spawn } from 'child_process'
 import { read_server_config, write_server_config, get_server_config_path, SERVER_CONFIG_FILE } from '../utils/server-config.js'
 import { read_site_config, get_site_config_path, type SiteConfig, SITE_CONFIG_FILE } from '../utils/site-config.js'
+import { push_site } from './push.js'
 
 interface DeployOptions {
 	provider?: string
 	dryRun?: boolean
+	// commander maps --no-push to { push: false }. Defaults to true.
+	push?: boolean
 }
 
 type Provider = 'railway' | 'fly'
@@ -157,10 +160,13 @@ export async function deploy(options: DeployOptions) {
 		}
 		spinner.succeed('Deployment files generated')
 
+		// commander's --no-push sets push:false; treat anything else as opt-in.
+		const auto_push = options.push !== false
+
 		if (provider === 'railway') {
-			await deploy_to_railway(inventory)
+			await deploy_to_railway(inventory, auto_push)
 		} else {
-			await deploy_to_fly(inventory)
+			await deploy_to_fly(inventory, auto_push)
 		}
 	} catch (error) {
 		spinner.fail(`Deployment failed: ${error instanceof Error ? error.message : error}`)
@@ -184,7 +190,7 @@ function print_dry_run(inventory: WorkspaceInventory, provider?: Provider) {
 	}
 	console.log(`    ${chalk.green('+')} Dockerfile in this workspace`)
 	console.log('')
-	console.log(chalk.bold('  Will be uploaded after first boot via primo push:'))
+	console.log(chalk.bold('  Will be uploaded automatically once the server is online:'))
 	console.log(`    ${chalk.dim('—')} ${SERVER_CONFIG_FILE}`)
 	if (inventory.has_library) {
 		console.log(`    ${chalk.dim('—')} library/`)
@@ -246,10 +252,10 @@ async function check_provider_auth(provider: Provider): Promise<boolean> {
 const PRIMO_SERVER_IMAGE = 'ghcr.io/primocms/primo:main'
 
 async function generate_dockerfile(inventory: WorkspaceInventory) {
-	// One-line Dockerfile: pull the published palacms image and run it
+	// One-line Dockerfile: pull the published primo image and run it
 	// unchanged. Workspace data (server.yaml, sites/, library/) is uploaded
-	// after deploy via `primo push`, which calls /api/palacms/bootstrap on
-	// first push (server with no sites) and /api/palacms/import/<id> on
+	// after deploy via `primo push`, which calls /api/primo/bootstrap on
+	// first push (server with no sites) and /api/primo/import/<id> on
 	// subsequent pushes. The volume mounted at /app/pb_data persists the
 	// SQLite database between restarts.
 	void inventory
@@ -274,7 +280,7 @@ EXPOSE 8080
 async function generate_fly_toml(inventory: WorkspaceInventory) {
 	const app_name = workspace_app_name(inventory.root_dir)
 
-	// palacms binds 0.0.0.0:8080 in its CMD; mount /app/pb_data on a persistent
+	// primo binds 0.0.0.0:8080 in its CMD; mount /app/pb_data on a persistent
 	// volume so the SQLite db + uploads survive restarts. Auto-start/stop keeps
 	// the small instance free-tier-friendly.
 	const fly_toml = `app = "${app_name}"
@@ -302,7 +308,7 @@ primary_region = "sjc"
 	await fs.writeFile(path.join(inventory.root_dir, 'fly.toml'), fly_toml)
 }
 
-async function deploy_to_railway(inventory: WorkspaceInventory) {
+async function deploy_to_railway(inventory: WorkspaceInventory, auto_push: boolean) {
 	console.log('')
 	console.log(chalk.cyan('Deploying to Railway...'))
 
@@ -350,10 +356,49 @@ async function deploy_to_railway(inventory: WorkspaceInventory) {
 				await record_workspace_server(inventory.root_dir, url)
 			}
 
-			print_post_deploy_next_steps('railway', url)
+			// Railway needs a manual volume mount before the server can persist
+			// /app/pb_data. Print the instructions, wait for the user, then poll
+			// readiness and push. If anything in that chain fails we fall back
+			// to the old "next steps" message so the user can finish by hand.
+			const pushed = url
+				? await finish_railway_deploy(inventory, url, auto_push)
+				: false
+
+			print_post_deploy_next_steps('railway', url, { auto_push, pushed })
 			resolve()
 		})
 	})
+}
+
+async function finish_railway_deploy(
+	inventory: WorkspaceInventory,
+	url: string,
+	auto_push: boolean
+): Promise<boolean> {
+	console.log('')
+	console.log(chalk.bold('  One manual step on Railway'))
+	console.log(chalk.dim('    Open the project in the Railway dashboard, then:'))
+	console.log(chalk.dim('      Settings → Volumes → mount on /app/pb_data (size 1GB+)'))
+	console.log('')
+
+	if (!auto_push) return false
+
+	let confirmed = false
+	try {
+		confirmed = await confirm({
+			message: 'Mounted the volume? (press enter to upload your workspace)',
+			default: true
+		})
+	} catch {
+		// Ctrl+C / non-interactive — bail out, user can run primo push later.
+		return false
+	}
+	if (!confirmed) return false
+
+	const ready = await wait_for_ready(url)
+	if (!ready) return false
+
+	return await run_auto_push(inventory)
 }
 
 async function try_railway_domain(cwd: string): Promise<string | undefined> {
@@ -380,29 +425,100 @@ async function record_workspace_server(root_dir: string, url: string): Promise<v
 	}
 }
 
-function print_post_deploy_next_steps(provider: Provider, url?: string) {
+interface PostDeployContext {
+	auto_push: boolean
+	pushed: boolean
+}
+
+function print_post_deploy_next_steps(provider: Provider, url: string | undefined, ctx: PostDeployContext) {
 	console.log('')
-	console.log(chalk.green('✓ Deployment started'))
+	if (ctx.pushed) {
+		console.log(chalk.green('✓ Deployment complete — your workspace is live'))
+	} else {
+		console.log(chalk.green('✓ Server provisioned'))
+	}
 	console.log('')
 	if (url) {
 		console.log(chalk.bold('  URL: ') + chalk.cyan(url))
 		console.log(chalk.dim('  (saved as `server:` in server.yaml — primo push/login pick it up automatically)'))
 		console.log('')
 	}
+
+	if (ctx.pushed) {
+		console.log(chalk.bold('Next steps'))
+		console.log('')
+		console.log(chalk.dim('  Open the URL above and create your editor account.'))
+		console.log(chalk.dim('  Future edits: `primo push` to upload, `primo pull` to fetch.'))
+		console.log('')
+		return
+	}
+
 	console.log(chalk.bold('Next steps'))
 	console.log('')
-	if (provider === 'railway') {
+	if (provider === 'railway' && !ctx.auto_push) {
+		// User passed --no-push; remind them about the volume since we
+		// skipped the prompt that would normally cover it.
 		console.log(chalk.dim('  Railway needs one manual setting the CLI can\'t set for you:'))
 		console.log(chalk.dim('    Settings → Volumes → mount on /app/pb_data (size 1GB+)'))
 		console.log('')
 	}
-	console.log(chalk.dim('  Then upload your workspace into the deployed server:'))
+	console.log(chalk.dim('  Upload your workspace into the deployed server:'))
 	console.log(chalk.dim(`    primo push${url ? '' : ' -s <url>'}`))
 	console.log(chalk.dim('  (first push bootstraps the sites; later pushes update them incrementally)'))
 	console.log('')
 }
 
-async function deploy_to_fly(inventory: WorkspaceInventory) {
+// Poll the deployed server until it answers /api/health with HTTP 200. The
+// timeout is generous because Railway's first build can be slow and the user
+// may have just mounted the volume which forces a restart.
+async function wait_for_ready(url: string): Promise<boolean> {
+	const health_url = `${url.replace(/\/+$/, '')}/api/health`
+	const deadline = Date.now() + 5 * 60 * 1000
+	const spinner = ora(`Waiting for ${url} to come online...`).start()
+	let attempt = 0
+	while (Date.now() < deadline) {
+		attempt += 1
+		try {
+			const controller = new AbortController()
+			const timer = setTimeout(() => controller.abort(), 5000)
+			const response = await fetch(health_url, { signal: controller.signal })
+			clearTimeout(timer)
+			if (response.ok) {
+				spinner.succeed('Server is online')
+				return true
+			}
+		} catch {
+			// not ready yet — keep polling
+		}
+		spinner.text = `Waiting for ${url} to come online... (attempt ${attempt})`
+		await new Promise((r) => setTimeout(r, 3000))
+	}
+	spinner.fail(`Server did not respond at ${health_url} within 5 minutes`)
+	console.log('')
+	console.log(chalk.dim('  The server may still be starting (or the volume is not mounted yet).'))
+	console.log(chalk.dim('  Once the URL above loads in a browser, run `primo push` to upload.'))
+	return false
+}
+
+// Run the equivalent of `primo push` against the local workspace. push_site
+// resolves the server URL from server.yaml (which we just wrote), so no extra
+// flags are needed. We surface failures but don't re-throw — the deploy already
+// succeeded and the user can rerun push manually.
+async function run_auto_push(inventory: WorkspaceInventory): Promise<boolean> {
+	console.log('')
+	console.log(chalk.cyan('Uploading your workspace...'))
+	try {
+		await push_site({ dir: inventory.root_dir })
+		return true
+	} catch (error) {
+		console.log('')
+		console.log(chalk.yellow(`Auto-push failed: ${error instanceof Error ? error.message : error}`))
+		console.log(chalk.dim('  Your server is live — rerun `primo push` once the issue is sorted.'))
+		return false
+	}
+}
+
+async function deploy_to_fly(inventory: WorkspaceInventory, auto_push: boolean) {
 	console.log('')
 	console.log(chalk.cyan('Deploying to Fly.io...'))
 
@@ -441,7 +557,16 @@ async function deploy_to_fly(inventory: WorkspaceInventory) {
 			}
 			const url = `https://${app_name}.fly.dev`
 			await record_workspace_server(inventory.root_dir, url)
-			print_post_deploy_next_steps('fly', url)
+
+			// Fly's CLI provisions the volume for us, so we can go straight to
+			// readiness + push. No interactive prompt required.
+			let pushed = false
+			if (auto_push) {
+				const ready = await wait_for_ready(url)
+				if (ready) pushed = await run_auto_push(inventory)
+			}
+
+			print_post_deploy_next_steps('fly', url, { auto_push, pushed })
 			resolve()
 		})
 	})

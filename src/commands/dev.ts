@@ -53,7 +53,7 @@ let is_importing_library = false
 let has_pending_library_local_changes = false
 let site_sync_baselines = new Map<string, ContentSnapshot>()
 // Tracks the last set of conflict paths logged per site so we don't reprint
-// the same conflict block every pull cycle when palacms's serialization
+// the same conflict block every pull cycle when primo's serialization
 // keeps producing the same divergence (e.g. data-key mangling, key reorder).
 const last_logged_conflicts = new Map<string, string>()
 
@@ -375,7 +375,7 @@ function snapshot_value(snapshot: ContentSnapshot, file_path: string): string | 
 	return snapshot.has(file_path) ? snapshot.get(file_path)! : null
 }
 
-// Reads a file but treats ENOENT as a soft miss — palacms' export step can
+// Reads a file but treats ENOENT as a soft miss — primo' export step can
 // reshape the on-disk layout (e.g. promoting pages/foo.yaml to
 // pages/foo/index.yaml when a child route is added) between when a directory
 // listing is captured and when each file is read. The vanished file isn't an
@@ -394,7 +394,7 @@ async function read_file_or_vanish(full_path: string, label: string): Promise<st
 
 // A path is "in conflict" when local has content that differs from CMS AND
 // the local content represents a real user change — not just CMS-side
-// serialization noise (palacms re-emits YAML with normalized key order,
+// serialization noise (primo re-emits YAML with normalized key order,
 // ISO-coerced dates, etc., so the CMS export legitimately differs from a
 // freshly-scaffolded file forever, and we don't want to scream about that
 // every pull cycle).
@@ -507,7 +507,7 @@ async function fetch_cms_site_snapshot(
 	workspace_dir: string,
 	temp_name: string
 ): Promise<ContentSnapshot | null> {
-	const response = await fetch_with_timeout(`${api_url}/api/palacms/export/${config.site_id}`, {}, 15000)
+	const response = await fetch_with_timeout(`${api_url}/api/primo/export/${config.site_id}`, {}, 15000)
 	if (!response.ok) return null
 
 	const temp_dir = path.join(site_dir, '.primo', temp_name)
@@ -724,7 +724,7 @@ export async function dev_server(options: DevOptions) {
 		}
 
 		// Ensure binary is installed
-		spinner.text = 'Checking palacms...'
+		spinner.text = 'Checking primo...'
 		const binary_path = await ensure_binary()
 
 		// Create data directory in project folder
@@ -733,13 +733,13 @@ export async function dev_server(options: DevOptions) {
 		spinner.text = 'Starting CMS...'
 
 		// Start the CMS binary with dev mode enabled. PRIMO_AUTHOR_MODE
-		// tells palacms which sync mode the CLI is running in so the CMS
+		// tells primo which sync mode the CLI is running in so the CMS
 		// UI can gate its editable surfaces accordingly (read-only when
 		// the CLI is in --author files, since CMS edits would be discarded
 		// before they ever round-trip to disk).
 		cms_process = spawn(binary_path, ['serve', '--http', `127.0.0.1:${port}`, '--dir', data_dir], {
 			stdio: ['pipe', 'pipe', 'pipe'],
-			env: { ...process.env, PALA_DEV_MODE: '1', PRIMO_AUTHOR_MODE: sync_policy.mode }
+			env: { ...process.env, PRIMO_DEV_MODE: '1', PRIMO_AUTHOR_MODE: sync_policy.mode }
 		})
 
 		// Capture stderr for errors
@@ -1436,7 +1436,7 @@ function change_requires_reload(_dir: string, _filename: string): boolean {
 }
 
 async function request_browser_reload(api_url: string): Promise<void> {
-	await fetch_with_timeout(`${api_url}/api/palacms/dev/reload`, {
+	await fetch_with_timeout(`${api_url}/api/primo/dev/reload`, {
 		method: 'POST'
 	}, 5000)
 }
@@ -2128,7 +2128,7 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 		import_form.append('file', new Blob([zip_buffer]), 'site.zip')
 
 		const request_started = Date.now()
-		const import_response = await fetch_with_timeout(`${api_url}/api/palacms/import/${site_id}`, {
+		const import_response = await fetch_with_timeout(`${api_url}/api/primo/import/${site_id}`, {
 			method: 'POST',
 			body: import_form
 		}, 300000)
@@ -2174,7 +2174,7 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 
 		try {
 			const bootstrap_started = Date.now()
-			const bootstrap_response = await fetch_with_timeout(`${api_url}/api/palacms/bootstrap`, {
+			const bootstrap_response = await fetch_with_timeout(`${api_url}/api/primo/bootstrap`, {
 				method: 'POST',
 				body: form_data
 			}, 300000) // 300s timeout for imports
@@ -2211,7 +2211,7 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 			import_form.append('file', new Blob([zip_buffer]), 'site.zip')
 
 			const import_started = Date.now()
-			const import_response = await fetch_with_timeout(`${api_url}/api/palacms/import/${site_id}`, {
+			const import_response = await fetch_with_timeout(`${api_url}/api/primo/import/${site_id}`, {
 				method: 'POST',
 				body: import_form
 			}, 300000) // 300s timeout for imports
@@ -2286,14 +2286,14 @@ async function import_library_files(base_dir: string, api_url: string, delete_gr
 	}
 
 	const request_started = Date.now()
-	const response = await fetch_with_timeout(`${api_url}/api/palacms/import-library`, {
+	const response = await fetch_with_timeout(`${api_url}/api/primo/import-library`, {
 		method: 'POST',
 		body: form_data
 	}, 120000)
 	const request_ms = Date.now() - request_started
 
 	if (response.status === 404) {
-		throw new Error('Shared library sync is not supported by the current palacms binary/server. Rebuild or update palacms to use library sync.')
+		throw new Error('Shared library sync is not supported by the current primo binary/server. Rebuild or update primo to use library sync.')
 	}
 
 	if (!response.ok) {
@@ -2421,7 +2421,7 @@ async function create_site_zip(dir: string, excluded_paths: Set<string> = new Se
 }
 
 async function sync_from_cms(site_dir: string, api_url: string, config: SiteConfig, server_config: ServerConfig, workspace_dir: string, sync_policy: SyncPolicy = { mode: 'both' }): Promise<void> {
-	const response = await fetch_with_timeout(`${api_url}/api/palacms/export/${config.site_id}`, {}, 15000)
+	const response = await fetch_with_timeout(`${api_url}/api/primo/export/${config.site_id}`, {}, 15000)
 	if (!response.ok) return
 
 	const zip_data = await response.arrayBuffer()
@@ -2520,9 +2520,9 @@ async function sync_from_cms(site_dir: string, api_url: string, config: SiteConf
 }
 
 async function sync_library_from_cms(base_dir: string, api_url: string): Promise<void> {
-	const response = await fetch_with_timeout(`${api_url}/api/palacms/export-library`, {}, 15000)
+	const response = await fetch_with_timeout(`${api_url}/api/primo/export-library`, {}, 15000)
 	if (response.status === 404) {
-		throw new Error('Shared library sync is not supported by the current palacms binary/server. Rebuild or update palacms to use library sync.')
+		throw new Error('Shared library sync is not supported by the current primo binary/server. Rebuild or update primo to use library sync.')
 	}
 	if (!response.ok) return
 
