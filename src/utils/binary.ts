@@ -10,7 +10,7 @@ import ora from 'ora'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PRIMO_HOME = path.join(os.homedir(), '.primo')
 const BIN_DIR = path.join(PRIMO_HOME, 'bin')
-const VERSION = '3.2.0' // matches primo releases
+const VERSION = '3.2.1' // matches primo releases
 
 // Path to locally built binary (for development)
 // The binary is at primo/primo (inside the primo repo directory)
@@ -65,6 +65,16 @@ function get_download_url(platform: PlatformInfo): string {
 	return `${base}/v${VERSION}/${filename}`
 }
 
+// Extract a bare semver (e.g. "3.2.1") from a binary's --version output.
+// The server prints a build banner first, then "<name> version vX.Y.Z", so we
+// scan for the semver rather than trusting the whole string. Returns null when
+// no semver is present (e.g. a "dev" build), which callers treat as a mismatch.
+function parse_semver(output: string | null): string | null {
+	if (!output) return null
+	const match = output.match(/\bv?(\d+\.\d+\.\d+)\b/)
+	return match ? match[1] : null
+}
+
 export async function get_binary_path(): Promise<string> {
 	// Explicit override wins — layout-independent, the way to point at a
 	// local server build regardless of where this CLI lives on disk.
@@ -113,15 +123,35 @@ export async function ensure_binary(): Promise<string> {
 		return await get_binary_path()
 	}
 
+	// A sibling dev build (running from source next to a `primo` checkout) is
+	// developer-chosen — never replace it with a download, even if its version
+	// differs from the pinned release.
+	try {
+		await fs.access(LOCAL_BINARY, fs.constants.X_OK)
+		return LOCAL_BINARY
+	} catch {}
+
+	// A managed binary already on disk is reused only when it matches the pinned
+	// version. A stale binary (older release, or a pre-rename "palacms" build
+	// reporting a different version) is re-downloaded so fixes actually reach
+	// users who already have a binary installed.
+	let updating_from: string | null = null
 	if (await is_binary_installed()) {
-		return await get_binary_path()
+		if (await is_binary_current()) {
+			return await get_binary_path()
+		}
+		updating_from = await get_binary_version()
 	}
 
 	// Need to download - get the target path
 	const platform = get_platform()
 	const binary_path = path.join(BIN_DIR, `primo${platform.ext}`)
 
-	const spinner = ora('Setting up Primo...').start()
+	const spinner = ora(
+		updating_from
+			? `Updating primo ${updating_from} → ${VERSION}...`
+			: 'Setting up Primo...'
+	).start()
 
 	try {
 		// Create directories
@@ -131,21 +161,24 @@ export async function ensure_binary(): Promise<string> {
 
 		spinner.text = `Downloading primo for ${platform.os}/${platform.arch}...`
 
-		// Download binary
+		// Download binary. Stream to a temp path and rename into place so an
+		// interrupted download can't leave a half-written binary that later
+		// looks "installed". rename() is atomic within the same directory.
 		const response = await fetch(url)
 
 		if (!response.ok) {
 			throw new Error(`Download failed: ${response.status} ${response.statusText}`)
 		}
 
-		// Save to file
-		const file_stream = createWriteStream(binary_path)
+		const tmp_path = `${binary_path}.download`
+		const file_stream = createWriteStream(tmp_path)
 		await pipeline(response.body as any, file_stream)
 
-		// Make executable
-		await fs.chmod(binary_path, 0o755)
+		// Make executable, then atomically replace any existing binary.
+		await fs.chmod(tmp_path, 0o755)
+		await fs.rename(tmp_path, binary_path)
 
-		spinner.succeed('Primo setup complete')
+		spinner.succeed(updating_from ? `Primo updated to ${VERSION}` : 'Primo setup complete')
 		return binary_path
 
 	} catch (error) {
@@ -163,13 +196,26 @@ export async function ensure_binary(): Promise<string> {
 	}
 }
 
+// Return the installed binary's semver (e.g. "3.2.1"), or null if it can't be
+// determined (missing binary, dev build, or unparseable output).
 export async function get_binary_version(): Promise<string | null> {
 	try {
 		const binary_path = await get_binary_path()
-		const { execSync } = await import('child_process')
-		const output = execSync(`"${binary_path}" --version`, { encoding: 'utf-8' })
-		return output.trim()
+		const { execFileSync } = await import('child_process')
+		// execFile (not execSync) avoids shell quoting issues with the path, and
+		// the timeout prevents a wedged binary from hanging CLI startup.
+		const output = execFileSync(binary_path, ['--version'], { encoding: 'utf-8', timeout: 5000 })
+		return parse_semver(output)
 	} catch {
 		return null
 	}
+}
+
+// Whether the installed binary matches the version this CLI pins. A dev/unknown
+// version (null) counts as not-current so we refresh to a known-good release.
+// Skipped when PRIMO_BINARY or a sibling dev build is in use — those are
+// developer-chosen and must not be clobbered by a download.
+async function is_binary_current(): Promise<boolean> {
+	const installed = await get_binary_version()
+	return installed === VERSION
 }
