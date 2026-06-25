@@ -1290,11 +1290,11 @@ async function register_primo_mcp_server(base_dir: string): Promise<string | nul
 		return null
 	}
 
+	// Default to the published package; PRIMO_MCP_LOCAL opts into a local dist build.
 	const local_mcp = process.env.PRIMO_MCP_LOCAL
-		?? '/Users/mateo/Desktop/primo/primo-mcp/dist/index.js'
 	mcp_servers.primo = local_mcp
 		? { command: 'node', args: [local_mcp] }
-		: { command: 'npx', args: ['-y', '@primo/mcp'] }
+		: { command: 'npx', args: ['-y', 'primo-mcp'] }
 	config.mcpServers = mcp_servers
 
 	// Claude Code reads project-root .mcp.json. .primo/ is gitignored local
