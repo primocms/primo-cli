@@ -129,10 +129,14 @@ allowed_blocks:
 		await fs.writeFile(
 			path.join(site_dir, 'page-types', 'default', 'layout.yaml'),
 			`# Sections shared by every page of this type. Add blocks here to render
-# the same header/footer across all pages of this type.
+# the same header/footer across all pages of this type. Body sections are
+# seeded onto each newly created page of this type (and locked when the type
+# has no allowed_blocks).
 #
 # header:
 #   - block: site-header
+# body:
+#   - block: hero
 # footer:
 #   - block: site-footer
 `
