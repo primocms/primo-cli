@@ -530,14 +530,14 @@ async function validate_page_types(site_dir: string): Promise<ValidationError[]>
 		}
 
 		// layout.yaml is required — comment-only stub is fine, but the file
-		// must exist so the page type's shared header/footer slots are
+		// must exist so the page type's header/body/footer slots are
 		// discoverable.
 		try {
 			await fs.access(layout_path)
 		} catch {
 			errors.push({
 				file: `page-types/${page_type_name}/layout.yaml`,
-				message: 'Missing layout.yaml. Each page type needs one (use the comment-only stub if there are no shared header/footer sections yet).',
+				message: 'Missing layout.yaml. Each page type needs one (use the comment-only stub if there are no shared header/body/footer sections yet).',
 				severity: 'error'
 			})
 		}

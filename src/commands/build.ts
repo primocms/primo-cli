@@ -40,6 +40,11 @@ interface Page {
 
 interface Layout {
 	header?: PageSection[]
+	// body sections are page-type seed defaults — the editor copies them onto a
+	// page at creation. The renderer sources body from each page's own sections
+	// (see resolve_page_sections below), so body is intentionally NOT rendered
+	// from the layout here. It is parsed only so layout.yaml validates.
+	body?: PageSection[]
 	footer?: PageSection[]
 }
 
