@@ -61,14 +61,14 @@ export async function push_library(options: PushLibraryOptions) {
 			headers.Authorization = `Bearer ${token}`
 		}
 
-		const response = await fetch(`${server}/api/palacms/import-library`, {
+		const response = await fetch(`${server}/api/primo/import-library`, {
 			method: 'POST',
 			headers,
 			body: form_data
 		})
 
 		if (response.status === 404) {
-			spinner.fail('Shared library sync is not supported by this palacms server. Update the server before using `primo library push`.')
+			spinner.fail('Shared library sync is not supported by this primo server. Update the server before using `primo library push`.')
 			process.exit(1)
 		}
 

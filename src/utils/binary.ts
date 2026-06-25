@@ -10,12 +10,11 @@ import ora from 'ora'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PRIMO_HOME = path.join(os.homedir(), '.primo')
 const BIN_DIR = path.join(PRIMO_HOME, 'bin')
-const DATA_DIR = path.join(PRIMO_HOME, 'data')
-const VERSION = '3.1.0' // matches palacms releases
+const VERSION = '3.2.0' // matches primo releases
 
 // Path to locally built binary (for development)
-// The binary is at palacms/palacms (inside the palacms repo directory)
-const LOCAL_BINARY = path.resolve(__dirname, '..', '..', '..', 'palacms', 'palacms')
+// The binary is at primo/primo (inside the primo repo directory)
+const LOCAL_BINARY = path.resolve(__dirname, '..', '..', '..', 'primo', 'primo')
 
 interface PlatformInfo {
 	os: string
@@ -61,14 +60,26 @@ function get_platform(): PlatformInfo {
 }
 
 function get_download_url(platform: PlatformInfo): string {
-	// TODO: Update to actual GitHub releases URL
-	const base = 'https://github.com/palacms/palacms/releases/download'
-	const filename = `palacms_${platform.os}_${platform.arch}${platform.ext}`
+	const base = 'https://github.com/primocms/primo/releases/download'
+	const filename = `primo_${platform.os}_${platform.arch}${platform.ext}`
 	return `${base}/v${VERSION}/${filename}`
 }
 
 export async function get_binary_path(): Promise<string> {
-	// Check for locally built binary first (development)
+	// Explicit override wins — layout-independent, the way to point at a
+	// local server build regardless of where this CLI lives on disk.
+	const override = process.env.PRIMO_BINARY
+	if (override) {
+		try {
+			await fs.access(override, fs.constants.X_OK)
+			return override
+		} catch {
+			throw new Error(`PRIMO_BINARY is set to "${override}" but it is not an executable file`)
+		}
+	}
+
+	// Otherwise prefer a sibling dev build (only resolves when running from
+	// source next to a `primo` checkout), then fall back to the download.
 	try {
 		await fs.access(LOCAL_BINARY, fs.constants.X_OK)
 		return LOCAL_BINARY
@@ -76,7 +87,7 @@ export async function get_binary_path(): Promise<string> {
 
 	// Fall back to downloaded binary
 	const platform = get_platform()
-	return path.join(BIN_DIR, `palacms${platform.ext}`)
+	return path.join(BIN_DIR, `primo${platform.ext}`)
 }
 
 export async function ensure_data_dir(base_dir: string): Promise<string> {
@@ -96,15 +107,21 @@ export async function is_binary_installed(): Promise<boolean> {
 }
 
 export async function ensure_binary(): Promise<string> {
+	// If PRIMO_BINARY is set, honor it exclusively — surface a bad override
+	// rather than silently downloading a release binary behind the user's back.
+	if (process.env.PRIMO_BINARY) {
+		return await get_binary_path()
+	}
+
 	if (await is_binary_installed()) {
 		return await get_binary_path()
 	}
 
 	// Need to download - get the target path
 	const platform = get_platform()
-	const binary_path = path.join(BIN_DIR, `palacms${platform.ext}`)
+	const binary_path = path.join(BIN_DIR, `primo${platform.ext}`)
 
-	const spinner = ora('Setting up Pala...').start()
+	const spinner = ora('Setting up Primo...').start()
 
 	try {
 		// Create directories
@@ -112,7 +129,7 @@ export async function ensure_binary(): Promise<string> {
 
 		const url = get_download_url(platform)
 
-		spinner.text = `Downloading palacms for ${platform.os}/${platform.arch}...`
+		spinner.text = `Downloading primo for ${platform.os}/${platform.arch}...`
 
 		// Download binary
 		const response = await fetch(url)
@@ -128,7 +145,7 @@ export async function ensure_binary(): Promise<string> {
 		// Make executable
 		await fs.chmod(binary_path, 0o755)
 
-		spinner.succeed('Pala setup complete')
+		spinner.succeed('Primo setup complete')
 		return binary_path
 
 	} catch (error) {
@@ -137,9 +154,9 @@ export async function ensure_binary(): Promise<string> {
 		// Provide manual instructions
 		console.log('')
 		console.log(chalk.yellow('To install manually:'))
-		console.log(chalk.dim('  1. Download palacms from https://github.com/palacms/palacms/releases'))
+		console.log(chalk.dim('  1. Download primo from https://github.com/primocms/primo/releases'))
 		console.log(chalk.dim(`  2. Place it in ${BIN_DIR}`))
-		console.log(chalk.dim('  3. Make it executable: chmod +x palacms'))
+		console.log(chalk.dim('  3. Make it executable: chmod +x primo'))
 		console.log('')
 
 		throw error
@@ -148,7 +165,7 @@ export async function ensure_binary(): Promise<string> {
 
 export async function get_binary_version(): Promise<string | null> {
 	try {
-		const binary_path = get_binary_path()
+		const binary_path = await get_binary_path()
 		const { execSync } = await import('child_process')
 		const output = execSync(`"${binary_path}" --version`, { encoding: 'utf-8' })
 		return output.trim()

@@ -227,7 +227,7 @@ async function pull_one_site(
 	await fs.mkdir(site_dir, { recursive: true })
 
 	spinner.text = `Exporting ${site.name}...`
-	const response = await fetch(`${server}/api/palacms/export/${site.id}`, { headers })
+	const response = await fetch(`${server}/api/primo/export/${site.id}`, { headers })
 	if (!response.ok) {
 		const error = await response.text()
 		throw new Error(`Export failed for ${site.name}: ${error}`)
@@ -259,7 +259,7 @@ async function pull_library_into(
 	spinner: Ora
 ): Promise<boolean> {
 	spinner.start('Pulling library...')
-	const response = await fetch(`${server}/api/palacms/export-library`, { headers })
+	const response = await fetch(`${server}/api/primo/export-library`, { headers })
 	if (response.status === 404) {
 		spinner.warn('Library export not supported by this server — skipping')
 		return false

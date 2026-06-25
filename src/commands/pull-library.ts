@@ -55,12 +55,12 @@ export async function pull_library(options: PullLibraryOptions) {
 		await fs.mkdir(output_dir, { recursive: true })
 
 		spinner.text = 'Exporting library...'
-		const response = await fetch(`${server}/api/palacms/export-library`, {
+		const response = await fetch(`${server}/api/primo/export-library`, {
 			headers
 		})
 
 		if (response.status === 404) {
-			spinner.fail('Shared library sync is not supported by this palacms server. Update the server before using `primo library pull`.')
+			spinner.fail('Shared library sync is not supported by this primo server. Update the server before using `primo library pull`.')
 			process.exit(1)
 		}
 
