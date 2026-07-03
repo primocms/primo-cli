@@ -2,7 +2,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import chalk from 'chalk'
 import ora from 'ora'
-import { select, confirm } from '@inquirer/prompts'
+import { select } from '@inquirer/prompts'
 import { execSync, spawn } from 'child_process'
 import { read_server_config, write_server_config, get_server_config_path, SERVER_CONFIG_FILE } from '../utils/server-config.js'
 import { read_site_config, get_site_config_path, type SiteConfig, SITE_CONFIG_FILE } from '../utils/site-config.js'
@@ -329,6 +329,29 @@ async function deploy_to_railway(inventory: WorkspaceInventory, auto_push: boole
 		throw error
 	}
 
+	// Attach a persistent volume at /app/pb_data BEFORE the first deploy. If the
+	// container starts without it, primo writes the SQLite db to ephemeral
+	// storage and it's lost on the next image change or restart. Mounting after
+	// data already exists starts from an empty volume, so ordering matters.
+	spinner.start('Ensuring persistent volume at /app/pb_data...')
+	try {
+		if (railway_volume_exists(inventory.root_dir, PB_DATA_MOUNT_PATH)) {
+			spinner.succeed('Persistent volume already mounted at /app/pb_data')
+		} else {
+			execSync(`railway volume add --mount-path ${PB_DATA_MOUNT_PATH}`, {
+				cwd: inventory.root_dir,
+				stdio: 'ignore'
+			})
+			spinner.succeed('Created persistent volume at /app/pb_data')
+		}
+	} catch {
+		// Volume creation can fail (e.g. plan limits, already-attached on another
+		// service). Don't abort the deploy — warn and fall back to the manual
+		// dashboard step so the user can still finish.
+		spinner.warn('Could not attach volume automatically — mount it manually')
+		console.log(chalk.dim('    Settings → Volumes → mount on /app/pb_data (size 1GB+)'))
+	}
+
 	console.log('')
 	console.log(chalk.dim('Building and deploying...'))
 	console.log('')
@@ -356,10 +379,9 @@ async function deploy_to_railway(inventory: WorkspaceInventory, auto_push: boole
 				await record_workspace_server(inventory.root_dir, url)
 			}
 
-			// Railway needs a manual volume mount before the server can persist
-			// /app/pb_data. Print the instructions, wait for the user, then poll
-			// readiness and push. If anything in that chain fails we fall back
-			// to the old "next steps" message so the user can finish by hand.
+			// Volume is already attached (before deploy), so just wait for the
+			// server to come online and push. If anything fails we fall back to
+			// the "next steps" message so the user can finish by hand.
 			const pushed = url
 				? await finish_railway_deploy(inventory, url, auto_push)
 				: false
@@ -375,30 +397,33 @@ async function finish_railway_deploy(
 	url: string,
 	auto_push: boolean
 ): Promise<boolean> {
-	console.log('')
-	console.log(chalk.bold('  One manual step on Railway'))
-	console.log(chalk.dim('    Open the project in the Railway dashboard, then:'))
-	console.log(chalk.dim('      Settings → Volumes → mount on /app/pb_data (size 1GB+)'))
-	console.log('')
-
+	// The persistent volume is attached before deploy, so there's no manual
+	// dashboard step left — just wait for the server and push.
 	if (!auto_push) return false
-
-	let confirmed = false
-	try {
-		confirmed = await confirm({
-			message: 'Mounted the volume? (press enter to upload your workspace)',
-			default: true
-		})
-	} catch {
-		// Ctrl+C / non-interactive — bail out, user can run primo push later.
-		return false
-	}
-	if (!confirmed) return false
 
 	const ready = await wait_for_ready(url)
 	if (!ready) return false
 
 	return await run_auto_push(inventory)
+}
+
+const PB_DATA_MOUNT_PATH = '/app/pb_data'
+
+// Check whether the linked Railway project already has a volume mounted at the
+// given path. The list JSON field name has varied across CLI versions, so we
+// accept a few spellings rather than pinning one.
+function railway_volume_exists(cwd: string, mount_path: string): boolean {
+	try {
+		const out = execSync('railway volume list --json', { cwd, stdio: ['ignore', 'pipe', 'ignore'] }).toString()
+		const volumes = JSON.parse(out) as Array<Record<string, unknown>>
+		if (!Array.isArray(volumes)) return false
+		return volumes.some((v) => {
+			const path = v.mountPath ?? v.mount_path ?? v.mountpath
+			return typeof path === 'string' && path.replace(/\/+$/, '') === mount_path.replace(/\/+$/, '')
+		})
+	} catch {
+		return false
+	}
 }
 
 async function try_railway_domain(cwd: string): Promise<string | undefined> {
@@ -455,13 +480,6 @@ function print_post_deploy_next_steps(provider: Provider, url: string | undefine
 
 	console.log(chalk.bold('Next steps'))
 	console.log('')
-	if (provider === 'railway' && !ctx.auto_push) {
-		// User passed --no-push; remind them about the volume since we
-		// skipped the prompt that would normally cover it.
-		console.log(chalk.dim('  Railway needs one manual setting the CLI can\'t set for you:'))
-		console.log(chalk.dim('    Settings → Volumes → mount on /app/pb_data (size 1GB+)'))
-		console.log('')
-	}
 	console.log(chalk.dim('  Upload your workspace into the deployed server:'))
 	console.log(chalk.dim(`    primo push${url ? '' : ' -s <url>'}`))
 	console.log(chalk.dim('  (first push bootstraps the sites; later pushes update them incrementally)'))

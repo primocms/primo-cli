@@ -10,7 +10,7 @@ import ora from 'ora'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PRIMO_HOME = path.join(os.homedir(), '.primo')
 const BIN_DIR = path.join(PRIMO_HOME, 'bin')
-const VERSION = '3.2.2' // matches primo releases
+const VERSION = '3.2.3' // matches primo releases
 
 // Path to locally built binary (for development)
 // The binary is at primo/primo (inside the primo repo directory)
