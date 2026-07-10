@@ -2183,7 +2183,15 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 			let warning_count = 0
 			if (bootstrap_response.ok) {
 				try {
-					const result = await bootstrap_response.json() as { warnings?: ImportWarning[] }
+					const result = await bootstrap_response.json() as { created_ids?: Record<string, Record<string, unknown>>, warnings?: ImportWarning[] }
+					// Bootstrap runs the same import as the regular path, so it
+					// must write back created ids too — otherwise the very first
+					// push never renames upload files to their canonical suffixed
+					// names or rewrites symbolic refs, and later pushes keep
+					// re-sending the un-suffixed names (the upload dup bug).
+					if (result.created_ids) {
+						await write_created_ids(site_dir, result.created_ids, server_config, workspace_dir)
+					}
 					warning_count = print_import_warnings(config.name, result.warnings)
 				} catch {
 					// ignore JSON parse errors
