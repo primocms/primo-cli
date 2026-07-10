@@ -6,7 +6,7 @@ import extract from 'extract-zip'
 import { dump as dump_yaml, load as load_yaml } from 'js-yaml'
 import { get_auth_token } from '../utils/auth.js'
 import { write_site_config } from '../utils/site-config.js'
-import { read_server_config, write_server_config, type ServerConfig, type SiteGroupConfig } from '../utils/server-config.js'
+import { read_server_config, write_server_config, normalize_server_url, type ServerConfig, type SiteGroupConfig } from '../utils/server-config.js'
 
 interface PullOptions {
 	server?: string
@@ -89,7 +89,7 @@ export async function pull_site(options: PullOptions) {
 		let server: string
 		let used_configured = false
 		if (options.server) {
-			server = options.server.replace(/\/+$/, '')
+			server = normalize_server_url(options.server)
 		} else {
 			const configured = await read_configured_server(process.cwd())
 			if (configured) {
