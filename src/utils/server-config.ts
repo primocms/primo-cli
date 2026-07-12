@@ -24,6 +24,18 @@ export function get_server_config_path(base_dir: string): string {
 	return path.join(base_dir, SERVER_CONFIG_FILE)
 }
 
+// Normalize a user-supplied server value: prepend a protocol when missing and
+// strip trailing slashes. Bare localhost/127.0.0.1 stay on http:// (local dev);
+// everything else gets https://.
+export function normalize_server_url(server: string): string {
+	let normalized = server.trim()
+	if (!/^https?:\/\//.test(normalized)) {
+		const is_local = /^(localhost|127\.0\.0\.1|\[::1\]|::1)(:\d+)?(\/|$)/.test(normalized)
+		normalized = `${is_local ? 'http' : 'https'}://${normalized}`
+	}
+	return normalized.replace(/\/+$/, '')
+}
+
 export function format_group_name(group_id: string): string {
 	if (!group_id.trim()) return 'Default'
 

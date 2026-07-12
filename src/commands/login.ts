@@ -3,7 +3,7 @@ import ora from 'ora'
 import readline from 'readline'
 import fs from 'fs/promises'
 import { save_auth_token } from '../utils/auth.js'
-import { read_server_config, get_server_config_path } from '../utils/server-config.js'
+import { read_server_config, get_server_config_path, normalize_server_url } from '../utils/server-config.js'
 
 interface LoginOptions {
 	server?: string
@@ -79,15 +79,6 @@ export async function login(options: LoginOptions) {
 		spinner.fail(`Login failed: ${error instanceof Error ? error.message : error}`)
 		process.exit(1)
 	}
-}
-
-function normalize_server_url(server: string): string {
-	// Add https:// if no protocol specified
-	if (!server.startsWith('http://') && !server.startsWith('https://')) {
-		server = `https://${server}`
-	}
-	// Remove trailing slash
-	return server.replace(/\/+$/, '')
 }
 
 function prompt(question: string): Promise<string> {
