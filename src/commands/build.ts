@@ -118,6 +118,12 @@ export async function build_site(options: BuildOptions) {
 		const pages_dir = path.join(site_dir, 'pages')
 		const page_files = await find_pages(pages_dir)
 
+		// Map each page's _id to its live URL so internal `page:` links resolve.
+		// The URL is derived from the page's file location (same convention the
+		// build uses to write output), not the slug, so a page-ref and a raw
+		// url pointing at the same page produce identical hrefs.
+		const page_url_map = await build_page_url_map(site_dir, page_files)
+
 		spinner.text = `Building ${page_files.length} page${page_files.length !== 1 ? 's' : ''}...`
 
 		// Compile all blocks once and cache them
@@ -151,7 +157,8 @@ export async function build_site(options: BuildOptions) {
 				block_cache,
 				layout_cache,
 				page_type_head_cache,
-				site_data
+				site_data,
+				page_url_map
 			})
 
 			if (result.error) {
@@ -211,6 +218,7 @@ interface BuildPageOptions {
 	layout_cache: Map<string, Layout>
 	page_type_head_cache: Map<string, string>
 	site_data: SiteData
+	page_url_map: Map<string, string>
 }
 
 // Lazily load and validate a page type's head.svelte. Cached value is the raw
@@ -236,7 +244,7 @@ async function load_page_type_head(
 }
 
 async function build_page(options: BuildPageOptions): Promise<{ html: string; error?: string }> {
-	const { page, page_path, site_dir, temp_dir, head_content, site_name, block_cache, layout_cache, page_type_head_cache, site_data } = options
+	const { page, page_path, site_dir, temp_dir, head_content, site_name, block_cache, layout_cache, page_type_head_cache, site_data, page_url_map } = options
 
 	try {
 		const page_build_id = safe_temp_id(page._id || page.id || page_path || page.name || 'page')
@@ -255,9 +263,9 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 		const combined_head_content = page_type_head ? `${head_content}\n${page_type_head}` : head_content
 
 		// Combine header + page sections + footer
-		const header_sections = await resolve_layout_sections(layout.header || [], site_dir, site_data)
-		const footer_sections = await resolve_layout_sections(layout.footer || [], site_dir, site_data)
-		const page_sections = await resolve_page_sections(page.sections || [], site_dir, site_data)
+		const header_sections = await resolve_layout_sections(layout.header || [], site_dir, site_data, page_url_map)
+		const footer_sections = await resolve_layout_sections(layout.footer || [], site_dir, site_data, page_url_map)
+		const page_sections = await resolve_page_sections(page.sections || [], site_dir, site_data, page_url_map)
 		const all_sections = [...header_sections, ...page_sections, ...footer_sections]
 
 		if (all_sections.length === 0) {
@@ -595,7 +603,7 @@ async function load_layout(site_dir: string, page_type: string): Promise<Layout>
 	}
 }
 
-async function resolve_layout_sections(sections: PageSection[], site_dir: string, site_data: SiteData): Promise<PageSection[]> {
+async function resolve_layout_sections(sections: PageSection[], site_dir: string, site_data: SiteData, page_url_map: Map<string, string>): Promise<PageSection[]> {
 	// For layout sections without content, load from block's content.yaml
 	const resolved: PageSection[] = []
 	for (const section of sections) {
@@ -608,20 +616,73 @@ async function resolve_layout_sections(sections: PageSection[], site_dir: string
 		}
 		// Resolve any site-field references in the content
 		const resolved_content = await resolve_site_fields(site_dir, section.block, content, site_data)
-		resolved.push({ ...section, content: resolved_content })
+		// Resolve internal page: links to URLs (walks nested repeaters/groups too)
+		resolved.push({ ...section, content: resolve_links(resolved_content, page_url_map) as Record<string, unknown> })
 	}
 	return resolved
 }
 
-async function resolve_page_sections(sections: PageSection[], site_dir: string, site_data: SiteData): Promise<PageSection[]> {
+async function resolve_page_sections(sections: PageSection[], site_dir: string, site_data: SiteData, page_url_map: Map<string, string>): Promise<PageSection[]> {
 	// Resolve site-field references in page sections
 	const resolved: PageSection[] = []
 	for (const section of sections) {
 		const content = section.content || {}
 		const resolved_content = await resolve_site_fields(site_dir, section.block, content, site_data)
-		resolved.push({ ...section, content: resolved_content })
+		// Resolve internal page: links to URLs (walks nested repeaters/groups too)
+		resolved.push({ ...section, content: resolve_links(resolved_content, page_url_map) as Record<string, unknown> })
 	}
 	return resolved
+}
+
+// Build a map of page _id -> live URL path. The URL is derived from the page
+// file's location (the same convention used to write output HTML), so a
+// `page:` reference resolves to exactly the path that page is deployed at.
+async function build_page_url_map(site_dir: string, page_files: string[]): Promise<Map<string, string>> {
+	const map = new Map<string, string>()
+	for (const page_file of page_files) {
+		try {
+			const page = load_yaml(await fs.readFile(page_file, 'utf-8')) as Page
+			const id = page._id || page.id
+			if (!id) continue
+			const page_path = get_page_path_from_file(site_dir, page_file)
+			map.set(id, page_path === '' ? '/' : `/${page_path}`)
+		} catch {
+			// Skip unparseable page files; they'll surface elsewhere in the build.
+		}
+	}
+	return map
+}
+
+// Recursively resolve internal `page:` links to their URL. Walks arbitrarily
+// nested content (repeaters, groups, page-lists), so links inside a
+// site-field-referenced repeater resolve the same as top-level link fields.
+//
+// A link value is any object carrying a `page` id. We look the id up in the
+// page URL map and populate `url`:
+//   - known page id      -> the page's live URL
+//   - missing/deleted id -> '' (degrades to href="#" downstream, never crashes)
+// Objects with only `url` (raw/external links) are left untouched, and every
+// other key on the link object (label, etc.) is preserved.
+function resolve_links(value: unknown, page_url_map: Map<string, string>): unknown {
+	if (Array.isArray(value)) {
+		return value.map((item) => resolve_links(item, page_url_map))
+	}
+	if (value && typeof value === 'object') {
+		const obj = value as Record<string, unknown>
+		// A link with a page reference: resolve it to a URL.
+		if (typeof obj.page === 'string' && obj.page) {
+			const url = page_url_map.get(obj.page) ?? ''
+			return { ...obj, url }
+		}
+		// Otherwise recurse into every value (covers repeater arrays, groups,
+		// and the `{ link: {...} }` wrapper repeaters produce).
+		const result: Record<string, unknown> = {}
+		for (const [key, child] of Object.entries(obj)) {
+			result[key] = resolve_links(child, page_url_map)
+		}
+		return result
+	}
+	return value
 }
 
 async function load_block_defaults(site_dir: string, block_name: string): Promise<Record<string, unknown>> {
