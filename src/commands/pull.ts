@@ -94,7 +94,10 @@ export async function pull_site(options: PullOptions) {
 		} else {
 			const configured = await read_configured_server(process.cwd())
 			if (configured) {
-				server = configured
+				// A hand-edited server.yaml may hold a bare host; normalize it so
+				// is_remote_server() and the inline-login guard below behave the
+				// same as they do for a --server flag.
+				server = normalize_server_url(configured)
 				used_configured = true
 				spinner.text = `Using ${server}`
 			} else {
