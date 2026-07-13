@@ -5,6 +5,7 @@ import ora, { type Ora } from 'ora'
 import extract from 'extract-zip'
 import { dump as dump_yaml, load as load_yaml } from 'js-yaml'
 import { get_auth_token } from '../utils/auth.js'
+import { authenticate_interactively } from './login.js'
 import { write_site_config } from '../utils/site-config.js'
 import { read_server_config, write_server_config, normalize_server_url, type ServerConfig, type SiteGroupConfig } from '../utils/server-config.js'
 
@@ -104,8 +105,21 @@ export async function pull_site(options: PullOptions) {
 			}
 		}
 
-		// Auth (optional for local)
-		const token = options.token || await get_auth_token(server)
+		// Auth (optional for local). For a remote server with no cached token,
+		// prompt for login inline instead of bailing out — the user almost
+		// always wants to authenticate and continue rather than re-run.
+		let token = options.token || await get_auth_token(server)
+		if (!token && is_remote_server(server)) {
+			spinner.stop()
+			console.log('')
+			console.log(chalk.dim(`  Not logged in to ${server}. Log in to continue.`))
+			console.log('')
+			token = await authenticate_interactively(server)
+			if (!token) {
+				process.exit(1)
+			}
+			spinner.start('Fetching sites...')
+		}
 		const headers: Record<string, string> = {}
 		if (token) {
 			headers['Authorization'] = `Bearer ${token}`

@@ -37,7 +37,23 @@ export async function login(options: LoginOptions) {
 	console.log(chalk.bold(`Logging in to ${server}`))
 	console.log('')
 
-	let email = options.email
+	const token = await authenticate_interactively(server, options.email)
+	if (!token) {
+		process.exit(1)
+	}
+	console.log('')
+	console.log(chalk.dim('  Token saved to ~/.primo/tokens.json'))
+	console.log(chalk.dim('  You can now use `primo pull` and `primo push` without --token'))
+}
+
+// Prompt for credentials (email if not supplied, then password), authenticate
+// against the server, and persist the token on success. Returns the token, or
+// null if authentication failed. Shared by `login` and the auto-login prompt
+// that `pull`/`push` fall back to when no token is cached.
+export async function authenticate_interactively(
+	server: string,
+	email?: string
+): Promise<string | null> {
 	if (!email) {
 		email = await prompt('Email: ')
 	}
@@ -62,7 +78,7 @@ export async function login(options: LoginOptions) {
 		if (!response.ok) {
 			const error = await response.json().catch(() => ({ message: 'Authentication failed' })) as { message?: string }
 			spinner.fail(`Login failed: ${error.message || 'Invalid credentials'}`)
-			process.exit(1)
+			return null
 		}
 
 		const data = await response.json() as { token: string; record: { email: string } }
@@ -71,13 +87,11 @@ export async function login(options: LoginOptions) {
 		await save_auth_token(server, data.token)
 
 		spinner.succeed(`Logged in as ${chalk.cyan(data.record.email)}`)
-		console.log('')
-		console.log(chalk.dim('  Token saved to ~/.primo/tokens.json'))
-		console.log(chalk.dim('  You can now use `primo pull` and `primo push` without --token'))
+		return data.token
 
 	} catch (error) {
 		spinner.fail(`Login failed: ${error instanceof Error ? error.message : error}`)
-		process.exit(1)
+		return null
 	}
 }
 

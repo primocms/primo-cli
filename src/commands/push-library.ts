@@ -4,6 +4,7 @@ import chalk from 'chalk'
 import ora from 'ora'
 import archiver from 'archiver'
 import { get_auth_token } from '../utils/auth.js'
+import { normalize_server_url } from '../utils/server-config.js'
 
 interface PushLibraryOptions {
 	server?: string
@@ -37,7 +38,7 @@ export async function push_library(options: PushLibraryOptions) {
 			process.exit(1)
 		}
 
-		const server = options.server?.replace(/\/+$/, '')
+		const server = options.server ? normalize_server_url(options.server) : undefined
 		if (!server) {
 			spinner.fail('Server URL required. Pass it as the first argument or use --server.')
 			process.exit(1)
