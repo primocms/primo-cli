@@ -5,7 +5,7 @@ import ora, { type Ora } from 'ora'
 import archiver from 'archiver'
 import { get_auth_token } from '../utils/auth.js'
 import { read_site_config, get_site_config_path, type SiteConfig, SITE_CONFIG_FILE } from '../utils/site-config.js'
-import { get_server_config_path, read_server_config, type SiteGroupConfig } from '../utils/server-config.js'
+import { get_server_config_path, read_server_config, normalize_server_url, type SiteGroupConfig } from '../utils/server-config.js'
 
 interface PushOptions {
 	server?: string
@@ -151,7 +151,8 @@ async function print_push_dry_run(root_dir: string, has_site_yaml: boolean, has_
 		library_present = await path_exists(path.join(root_dir, 'library'))
 	}
 
-	const server = (options.server || inferred_server)?.replace(/\/+$/, '')
+	const server_raw = options.server || inferred_server
+	const server = server_raw ? normalize_server_url(server_raw) : undefined
 
 	console.log(`  Target server: ${chalk.cyan(server || '(not set — pass --server or set in site.yaml)')}`)
 	console.log('')
@@ -262,7 +263,8 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 		// No config file, must provide options
 	}
 
-	const server = (options.server || config?.server)?.replace(/\/+$/, '')
+	const server_raw = options.server || config?.server
+	const server = server_raw ? normalize_server_url(server_raw) : undefined
 	const site_id = options.site || config?.site_id
 
 	if (!server) {
@@ -400,7 +402,7 @@ async function try_bootstrap_site(
 
 async function push_library_dir(root_dir: string, options: PushOptions, spinner: Ora) {
 	// Resolve server: --server > any site.yaml's server (they all point at the same server)
-	let server = options.server?.replace(/\/+$/, '')
+	let server = options.server ? normalize_server_url(options.server) : undefined
 	if (!server) {
 		const sites_root = path.join(root_dir, 'sites')
 		if (await path_exists(sites_root)) {

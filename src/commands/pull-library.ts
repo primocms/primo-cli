@@ -4,6 +4,7 @@ import chalk from 'chalk'
 import ora from 'ora'
 import extract from 'extract-zip'
 import { get_auth_token } from '../utils/auth.js'
+import { normalize_server_url } from '../utils/server-config.js'
 
 interface PullLibraryOptions {
 	server?: string
@@ -37,7 +38,7 @@ export async function pull_library(options: PullLibraryOptions) {
 	try {
 		let server: string
 		if (options.server) {
-			server = options.server.replace(/\/+$/, '')
+			server = normalize_server_url(options.server)
 		} else {
 			spinner.text = 'Looking for local server...'
 			const detected = await detect_server()
