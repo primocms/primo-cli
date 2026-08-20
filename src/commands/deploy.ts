@@ -245,11 +245,13 @@ async function check_provider_auth(provider: Provider): Promise<boolean> {
 	}
 }
 
-// Pinned to the upstream-published image. primocms's main.yml workflow
-// publishes branch tags for whitelisted prefixes (main, feature/**, rc/**),
-// with slashes slugified to dashes (feature/local-dev-cli → :feature-local-dev-cli).
-// Bump to a release tag (:v3.0.0) when primocms cuts a stable release.
-const PRIMO_SERVER_IMAGE = 'ghcr.io/primocms/primo:main'
+// Track the latest stable release. primocms's tag.yml workflow publishes a
+// :latest image (alongside semver tags) on every version tag — the comment
+// there calls out that "Railway/self-host deployers follow this tag to track
+// releases". Following :latest means deploys pick up new releases on their next
+// rebuild without a per-release bump here. (main.yml still publishes branch tags
+// like :main / :feature-* for testing; :latest is the released line.)
+const PRIMO_SERVER_IMAGE = 'ghcr.io/primocms/primo:latest'
 
 async function generate_dockerfile(inventory: WorkspaceInventory) {
 	// One-line Dockerfile: pull the published primo image and run it

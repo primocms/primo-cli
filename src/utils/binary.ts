@@ -10,7 +10,28 @@ import ora from 'ora'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PRIMO_HOME = path.join(os.homedir(), '.primo')
 const BIN_DIR = path.join(PRIMO_HOME, 'bin')
-const VERSION = '3.2.3' // matches primo releases
+const REPO = 'primocms/primo'
+
+// Resolve the latest primo release tag at runtime rather than pinning a version
+// here — a pinned constant silently goes stale (it sat on 3.2.3 through two
+// releases). Cached for the process so repeated calls in one CLI run don't
+// re-hit the API. Returns a bare semver (e.g. "3.2.6") or null if the API is
+// unreachable, which callers treat as "can't confirm currency".
+let latest_version_cache: string | null | undefined
+async function get_latest_version(): Promise<string | null> {
+	if (latest_version_cache !== undefined) return latest_version_cache
+	try {
+		const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
+			headers: { Accept: 'application/vnd.github+json' }
+		})
+		if (!res.ok) throw new Error(`GitHub API ${res.status}`)
+		const data = (await res.json()) as { tag_name?: string }
+		latest_version_cache = parse_semver(data.tag_name ?? null)
+	} catch {
+		latest_version_cache = null
+	}
+	return latest_version_cache
+}
 
 // Path to locally built binary (for development)
 // The binary is at primo/primo (inside the primo repo directory)
@@ -60,9 +81,12 @@ function get_platform(): PlatformInfo {
 }
 
 function get_download_url(platform: PlatformInfo): string {
-	const base = 'https://github.com/primocms/primo/releases/download'
+	// /releases/latest/download/<asset> 302-redirects to the newest release's
+	// asset, so we never name a version here — the binary always tracks the
+	// latest published release. fetch() follows the redirect automatically.
+	const base = `https://github.com/${REPO}/releases/latest/download`
 	const filename = `primo_${platform.os}_${platform.arch}${platform.ext}`
-	return `${base}/v${VERSION}/${filename}`
+	return `${base}/${filename}`
 }
 
 // Extract a bare semver (e.g. "3.2.1") from a binary's --version output.
@@ -131,8 +155,8 @@ export async function ensure_binary(): Promise<string> {
 		return LOCAL_BINARY
 	} catch {}
 
-	// A managed binary already on disk is reused only when it matches the pinned
-	// version. A stale binary (older release, or a pre-rename "palacms" build
+	// A managed binary already on disk is reused only when it matches the latest
+	// release. A stale binary (older release, or a pre-rename "palacms" build
 	// reporting a different version) is re-downloaded so fixes actually reach
 	// users who already have a binary installed.
 	let updating_from: string | null = null
@@ -147,9 +171,13 @@ export async function ensure_binary(): Promise<string> {
 	const platform = get_platform()
 	const binary_path = path.join(BIN_DIR, `primo${platform.ext}`)
 
+	// Resolve the target version for display only (the download URL follows the
+	// /latest redirect regardless). Falls back to "latest" if the API is down.
+	const target_version = (await get_latest_version()) ?? 'latest'
+
 	const spinner = ora(
 		updating_from
-			? `Updating primo ${updating_from} → ${VERSION}...`
+			? `Updating primo ${updating_from} → ${target_version}...`
 			: 'Setting up Primo...'
 	).start()
 
@@ -178,7 +206,7 @@ export async function ensure_binary(): Promise<string> {
 		await fs.chmod(tmp_path, 0o755)
 		await fs.rename(tmp_path, binary_path)
 
-		spinner.succeed(updating_from ? `Primo updated to ${VERSION}` : 'Primo setup complete')
+		spinner.succeed(updating_from ? `Primo updated to ${target_version}` : 'Primo setup complete')
 		return binary_path
 
 	} catch (error) {
@@ -217,5 +245,10 @@ export async function get_binary_version(): Promise<string | null> {
 // developer-chosen and must not be clobbered by a download.
 async function is_binary_current(): Promise<boolean> {
 	const installed = await get_binary_version()
-	return installed === VERSION
+	if (!installed) return false
+	const latest = await get_latest_version()
+	// If we can't resolve the latest release (offline / API down), don't force a
+	// re-download of a binary that's already installed — keep what's on disk.
+	if (!latest) return true
+	return installed === latest
 }
