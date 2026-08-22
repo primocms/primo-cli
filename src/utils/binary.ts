@@ -12,23 +12,59 @@ const PRIMO_HOME = path.join(os.homedir(), '.primo')
 const BIN_DIR = path.join(PRIMO_HOME, 'bin')
 const REPO = 'primocms/primo'
 
+// Outcome of a latest-release lookup. We distinguish three cases so callers can
+// react correctly rather than collapsing everything to "unknown":
+//   - resolved: got a semver
+//   - unavailable: reached a verdict that there's nothing usable (unreleased
+//     repo, unparseable tag) — a real "no version" answer
+//   - throttled: GitHub rate-limited us (403/429) or the request timed out /
+//     failed to connect. This is NOT the same as "up to date" — we just can't
+//     confirm right now, so callers must avoid claiming currency off the back
+//     of it.
+type VersionLookup =
+	| { status: 'resolved'; version: string }
+	| { status: 'unavailable' }
+	| { status: 'throttled'; reason: string }
+
 // Resolve the latest primo release tag at runtime rather than pinning a version
 // here — a pinned constant silently goes stale (it sat on 3.2.3 through two
 // releases). Cached for the process so repeated calls in one CLI run don't
-// re-hit the API. Returns a bare semver (e.g. "3.2.6") or null if the API is
-// unreachable, which callers treat as "can't confirm currency".
-let latest_version_cache: string | null | undefined
-async function get_latest_version(): Promise<string | null> {
+// re-hit the API. Bounded by a 10s timeout so an already-installed binary can
+// still be reused promptly when GitHub is slow or unreachable.
+let latest_version_cache: VersionLookup | undefined
+async function get_latest_version(): Promise<VersionLookup> {
 	if (latest_version_cache !== undefined) return latest_version_cache
 	try {
 		const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
-			headers: { Accept: 'application/vnd.github+json' }
+			headers: { Accept: 'application/vnd.github+json' },
+			// Node 18+ ships AbortSignal.timeout; keeps the version check from
+			// hanging CLI startup when GitHub stalls.
+			signal: AbortSignal.timeout(10_000)
 		})
+		// Rate limits (60 req/hr unauthenticated) come back as 403 with a zero
+		// remaining count, or 429. Treat those as "can't tell", never as a
+		// definitive version — otherwise a throttled run would mask an outdated
+		// binary as current.
+		if (res.status === 403 || res.status === 429) {
+			const remaining = res.headers.get('x-ratelimit-remaining')
+			latest_version_cache =
+				remaining === '0' || res.status === 429
+					? { status: 'throttled', reason: `GitHub rate limit (${res.status})` }
+					: { status: 'unavailable' }
+			return latest_version_cache
+		}
 		if (!res.ok) throw new Error(`GitHub API ${res.status}`)
 		const data = (await res.json()) as { tag_name?: string }
-		latest_version_cache = parse_semver(data.tag_name ?? null)
-	} catch {
-		latest_version_cache = null
+		const version = parse_semver(data.tag_name ?? null)
+		latest_version_cache = version ? { status: 'resolved', version } : { status: 'unavailable' }
+	} catch (err) {
+		// Timeout / DNS / connection reset — indistinguishable from being
+		// offline. Treat as throttled (can't confirm) so we don't force a
+		// needless re-download of a working binary.
+		latest_version_cache = {
+			status: 'throttled',
+			reason: err instanceof Error ? err.message : 'network error'
+		}
 	}
 	return latest_version_cache
 }
@@ -172,8 +208,14 @@ export async function ensure_binary(): Promise<string> {
 	const binary_path = path.join(BIN_DIR, `primo${platform.ext}`)
 
 	// Resolve the target version for display only (the download URL follows the
-	// /latest redirect regardless). Falls back to "latest" if the API is down.
-	const target_version = (await get_latest_version()) ?? 'latest'
+	// /latest redirect regardless). Falls back to "latest" when we couldn't
+	// confirm the tag; surface a throttle notice so a rate-limited check isn't
+	// silent.
+	const lookup = await get_latest_version()
+	const target_version = lookup.status === 'resolved' ? lookup.version : 'latest'
+	if (lookup.status === 'throttled') {
+		console.log(chalk.dim(`  (couldn't confirm latest version: ${lookup.reason}; downloading current release)`))
+	}
 
 	const spinner = ora(
 		updating_from
@@ -247,8 +289,11 @@ async function is_binary_current(): Promise<boolean> {
 	const installed = await get_binary_version()
 	if (!installed) return false
 	const latest = await get_latest_version()
-	// If we can't resolve the latest release (offline / API down), don't force a
-	// re-download of a binary that's already installed — keep what's on disk.
-	if (!latest) return true
-	return installed === latest
+	// resolved  → compare versions.
+	// throttled → can't confirm (rate-limited / offline); keep the installed
+	//             binary rather than thrashing a re-download, and it'll refresh
+	//             on the next unthrottled run.
+	// unavailable → no usable release to compare against; keep what's on disk.
+	if (latest.status !== 'resolved') return true
+	return installed === latest.version
 }
