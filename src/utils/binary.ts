@@ -41,16 +41,28 @@ async function get_latest_version(): Promise<VersionLookup> {
 			// hanging CLI startup when GitHub stalls.
 			signal: AbortSignal.timeout(10_000)
 		})
-		// Rate limits (60 req/hr unauthenticated) come back as 403 with a zero
-		// remaining count, or 429. Treat those as "can't tell", never as a
-		// definitive version — otherwise a throttled run would mask an outdated
-		// binary as current.
+		// Rate limits come back as 403 or 429. Detect them the way GitHub's docs
+		// prescribe, since no single signal covers every case:
+		//   - primary limit: 403 with x-ratelimit-remaining: 0
+		//   - secondary limit: 403/429 with a Retry-After header, or a body
+		//     message mentioning a secondary rate limit (remaining may be > 0)
+		//   - 429 is always a rate limit
+		// Treat all of these as "can't tell", never a definitive version —
+		// otherwise a throttled run would mask an outdated binary as current. A
+		// plain 403 with quota remaining (e.g. a genuine permission error) is a
+		// real "unavailable" verdict, not a throttle.
 		if (res.status === 403 || res.status === 429) {
 			const remaining = res.headers.get('x-ratelimit-remaining')
-			latest_version_cache =
-				remaining === '0' || res.status === 429
-					? { status: 'throttled', reason: `GitHub rate limit (${res.status})` }
-					: { status: 'unavailable' }
+			const retry_after = res.headers.get('retry-after')
+			let rate_limited = res.status === 429 || remaining === '0' || retry_after !== null
+			if (!rate_limited) {
+				// Last resort: peek at the body for the secondary-limit message.
+				const body = await res.text().catch(() => '')
+				rate_limited = /secondary rate limit|rate limit/i.test(body)
+			}
+			latest_version_cache = rate_limited
+				? { status: 'throttled', reason: `GitHub rate limit (${res.status})` }
+				: { status: 'unavailable' }
 			return latest_version_cache
 		}
 		if (!res.ok) throw new Error(`GitHub API ${res.status}`)
