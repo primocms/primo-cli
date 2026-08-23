@@ -271,6 +271,9 @@ async function pull_one_site(
 		await fs.cp(temp_dir, site_dir, { recursive: true })
 	} finally {
 		await fs.rm(temp_dir, { recursive: true, force: true })
+		// Also drop the archive: on a successful pull it was already unlinked
+		// above, but if extract() threw it's still sitting in site_dir.
+		await fs.rm(temp_zip, { force: true })
 	}
 
 	if (trashed.length > 0) {
@@ -301,14 +304,23 @@ async function reconcile_managed_dirs(site_dir: string, temp_dir: string): Promi
 		const local_root = path.join(site_dir, dir)
 		const temp_root = path.join(temp_dir, dir)
 		for (const relative of await list_files_recursive(local_root)) {
+			// Keep the local file only if the export still has a *file* at the
+			// same path. If the counterpart is now a directory (a file→dir
+			// transition, e.g. pages/foo.yaml became pages/foo/…), the local
+			// file is stale and must be trashed — otherwise the later fs.cp
+			// can't lay a directory over the surviving file and the pull fails.
 			try {
-				await fs.stat(path.join(temp_root, relative))
-				continue
+				const counterpart = await fs.stat(path.join(temp_root, relative))
+				if (counterpart.isFile()) continue
 			} catch {
 				// Missing from the export — stale.
 			}
 			const local_path = path.join(local_root, relative)
-			const trash_path = path.join(site_dir, '.primo', 'trash', `pull-${stamp}`, relative)
+			// Scope the trash path by the managed dir. Two managed dirs can hold
+			// the same relative name (pages/config.yaml, blocks/config.yaml);
+			// without the dir segment they'd collide at trash/pull-<ts>/config.yaml
+			// and the second move would clobber the first while both are reported.
+			const trash_path = path.join(site_dir, '.primo', 'trash', `pull-${stamp}`, dir, relative)
 			await fs.mkdir(path.dirname(trash_path), { recursive: true })
 			try {
 				await fs.rename(local_path, trash_path)
