@@ -10,7 +10,76 @@ import ora from 'ora'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PRIMO_HOME = path.join(os.homedir(), '.primo')
 const BIN_DIR = path.join(PRIMO_HOME, 'bin')
-const VERSION = '3.2.3' // matches primo releases
+const REPO = 'primocms/primo'
+
+// Outcome of a latest-release lookup. We distinguish three cases so callers can
+// react correctly rather than collapsing everything to "unknown":
+//   - resolved: got a semver
+//   - unavailable: reached a verdict that there's nothing usable (unreleased
+//     repo, unparseable tag) — a real "no version" answer
+//   - throttled: GitHub rate-limited us (403/429) or the request timed out /
+//     failed to connect. This is NOT the same as "up to date" — we just can't
+//     confirm right now, so callers must avoid claiming currency off the back
+//     of it.
+type VersionLookup =
+	| { status: 'resolved'; version: string }
+	| { status: 'unavailable' }
+	| { status: 'throttled'; reason: string }
+
+// Resolve the latest primo release tag at runtime rather than pinning a version
+// here — a pinned constant silently goes stale (it sat on 3.2.3 through two
+// releases). Cached for the process so repeated calls in one CLI run don't
+// re-hit the API. Bounded by a 10s timeout so an already-installed binary can
+// still be reused promptly when GitHub is slow or unreachable.
+let latest_version_cache: VersionLookup | undefined
+async function get_latest_version(): Promise<VersionLookup> {
+	if (latest_version_cache !== undefined) return latest_version_cache
+	try {
+		const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
+			headers: { Accept: 'application/vnd.github+json' },
+			// Node 18+ ships AbortSignal.timeout; keeps the version check from
+			// hanging CLI startup when GitHub stalls.
+			signal: AbortSignal.timeout(10_000)
+		})
+		// Rate limits come back as 403 or 429. Detect them the way GitHub's docs
+		// prescribe, since no single signal covers every case:
+		//   - primary limit: 403 with x-ratelimit-remaining: 0
+		//   - secondary limit: 403/429 with a Retry-After header, or a body
+		//     message mentioning a secondary rate limit (remaining may be > 0)
+		//   - 429 is always a rate limit
+		// Treat all of these as "can't tell", never a definitive version —
+		// otherwise a throttled run would mask an outdated binary as current. A
+		// plain 403 with quota remaining (e.g. a genuine permission error) is a
+		// real "unavailable" verdict, not a throttle.
+		if (res.status === 403 || res.status === 429) {
+			const remaining = res.headers.get('x-ratelimit-remaining')
+			const retry_after = res.headers.get('retry-after')
+			let rate_limited = res.status === 429 || remaining === '0' || retry_after !== null
+			if (!rate_limited) {
+				// Last resort: peek at the body for the secondary-limit message.
+				const body = await res.text().catch(() => '')
+				rate_limited = /secondary rate limit|rate limit/i.test(body)
+			}
+			latest_version_cache = rate_limited
+				? { status: 'throttled', reason: `GitHub rate limit (${res.status})` }
+				: { status: 'unavailable' }
+			return latest_version_cache
+		}
+		if (!res.ok) throw new Error(`GitHub API ${res.status}`)
+		const data = (await res.json()) as { tag_name?: string }
+		const version = parse_semver(data.tag_name ?? null)
+		latest_version_cache = version ? { status: 'resolved', version } : { status: 'unavailable' }
+	} catch (err) {
+		// Timeout / DNS / connection reset — indistinguishable from being
+		// offline. Treat as throttled (can't confirm) so we don't force a
+		// needless re-download of a working binary.
+		latest_version_cache = {
+			status: 'throttled',
+			reason: err instanceof Error ? err.message : 'network error'
+		}
+	}
+	return latest_version_cache
+}
 
 // Path to locally built binary (for development)
 // The binary is at primo/primo (inside the primo repo directory)
@@ -60,9 +129,12 @@ function get_platform(): PlatformInfo {
 }
 
 function get_download_url(platform: PlatformInfo): string {
-	const base = 'https://github.com/primocms/primo/releases/download'
+	// /releases/latest/download/<asset> 302-redirects to the newest release's
+	// asset, so we never name a version here — the binary always tracks the
+	// latest published release. fetch() follows the redirect automatically.
+	const base = `https://github.com/${REPO}/releases/latest/download`
 	const filename = `primo_${platform.os}_${platform.arch}${platform.ext}`
-	return `${base}/v${VERSION}/${filename}`
+	return `${base}/${filename}`
 }
 
 // Extract a bare semver (e.g. "3.2.1") from a binary's --version output.
@@ -131,8 +203,8 @@ export async function ensure_binary(): Promise<string> {
 		return LOCAL_BINARY
 	} catch {}
 
-	// A managed binary already on disk is reused only when it matches the pinned
-	// version. A stale binary (older release, or a pre-rename "palacms" build
+	// A managed binary already on disk is reused only when it matches the latest
+	// release. A stale binary (older release, or a pre-rename "palacms" build
 	// reporting a different version) is re-downloaded so fixes actually reach
 	// users who already have a binary installed.
 	let updating_from: string | null = null
@@ -147,9 +219,19 @@ export async function ensure_binary(): Promise<string> {
 	const platform = get_platform()
 	const binary_path = path.join(BIN_DIR, `primo${platform.ext}`)
 
+	// Resolve the target version for display only (the download URL follows the
+	// /latest redirect regardless). Falls back to "latest" when we couldn't
+	// confirm the tag; surface a throttle notice so a rate-limited check isn't
+	// silent.
+	const lookup = await get_latest_version()
+	const target_version = lookup.status === 'resolved' ? lookup.version : 'latest'
+	if (lookup.status === 'throttled') {
+		console.log(chalk.dim(`  (couldn't confirm latest version: ${lookup.reason}; downloading current release)`))
+	}
+
 	const spinner = ora(
 		updating_from
-			? `Updating primo ${updating_from} → ${VERSION}...`
+			? `Updating primo ${updating_from} → ${target_version}...`
 			: 'Setting up Primo...'
 	).start()
 
@@ -178,7 +260,7 @@ export async function ensure_binary(): Promise<string> {
 		await fs.chmod(tmp_path, 0o755)
 		await fs.rename(tmp_path, binary_path)
 
-		spinner.succeed(updating_from ? `Primo updated to ${VERSION}` : 'Primo setup complete')
+		spinner.succeed(updating_from ? `Primo updated to ${target_version}` : 'Primo setup complete')
 		return binary_path
 
 	} catch (error) {
@@ -217,5 +299,13 @@ export async function get_binary_version(): Promise<string | null> {
 // developer-chosen and must not be clobbered by a download.
 async function is_binary_current(): Promise<boolean> {
 	const installed = await get_binary_version()
-	return installed === VERSION
+	if (!installed) return false
+	const latest = await get_latest_version()
+	// resolved  → compare versions.
+	// throttled → can't confirm (rate-limited / offline); keep the installed
+	//             binary rather than thrashing a re-download, and it'll refresh
+	//             on the next unthrottled run.
+	// unavailable → no usable release to compare against; keep what's on disk.
+	if (latest.status !== 'resolved') return true
+	return installed === latest.version
 }
