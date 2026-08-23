@@ -49,6 +49,12 @@ let last_import_time = 0  // Timestamp of last import completion
 let last_local_change_time = 0  // Timestamp of most recent local watcher event
 const importing_site_keys = new Set<string>()
 const pending_local_site_keys = new Set<string>()
+// Sites whose last import returned null (duplicate _ids across files — nothing
+// was pushed). They stay quarantined until a later import succeeds: no CMS→file
+// polling into them (a quarantined site is out of sync with the CMS, so copying
+// remote-only paths in could clobber the local files the user must edit to fix
+// the conflict). Cleared on the next successful import.
+const blocked_site_keys = new Set<string>()
 let is_importing_library = false
 let has_pending_library_local_changes = false
 let site_sync_baselines = new Map<string, ContentSnapshot>()
@@ -786,13 +792,17 @@ export async function dev_server(options: DevOptions) {
 				}
 
 				await normalize_site(site.dir)
+				const site_key = get_site_sync_key(site.dir, site.config)
 				const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap, base_dir))
 				if (import_timings === null) {
 					// Duplicate _ids — nothing was pushed; the watcher retries
-					// once the user removes a conflicting file.
+					// once the user removes a conflicting file. Quarantine it so
+					// CMS→file polling doesn't sync into an out-of-sync site.
 					blocked_sites.add(site.dir)
+					blocked_site_keys.add(site_key)
 					continue
 				}
+				blocked_site_keys.delete(site_key)
 				if (update_site_sync_state_after_import(site, import_timings, sync_policy)) {
 					await update_site_sync_baseline(site, api_url, server_config, base_dir)
 				}
@@ -990,9 +1000,13 @@ export async function dev_server(options: DevOptions) {
 							const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, false, base_dir))
 							if (import_timings === null) {
 								// Duplicate _ids — import_site_files already printed the
-								// error and wrote sync_status; nothing was pushed.
+								// error and wrote sync_status; nothing was pushed. Keep
+								// the site quarantined from CMS→file polling.
+								blocked_site_keys.add(get_site_sync_key(site.dir, site.config))
 								return
 							}
+							// Import succeeded — lift any prior quarantine.
+							blocked_site_keys.delete(get_site_sync_key(site.dir, site.config))
 							let reload_ms = 0
 							if (pending_reload) {
 								try {
@@ -1148,7 +1162,11 @@ export async function dev_server(options: DevOptions) {
 					} else {
 						await normalize_site(site.dir)
 						const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap, base_dir))
-						if (import_timings !== null && update_site_sync_state_after_import(site, import_timings, sync_policy)) {
+						if (import_timings === null) {
+							// Duplicate _ids on a freshly discovered site — quarantine
+							// it from CMS→file polling until a later import succeeds.
+							blocked_site_keys.add(get_site_sync_key(site.dir, site.config))
+						} else if (update_site_sync_state_after_import(site, import_timings, sync_policy)) {
 							await update_site_sync_baseline(site, api_url, server_config, base_dir)
 						}
 					}
@@ -1188,7 +1206,11 @@ export async function dev_server(options: DevOptions) {
 					for (const site of sites) {
 						try {
 							const site_key = get_site_sync_key(site.dir, site.config)
-							if (importing_site_keys.has(site_key) || pending_local_site_keys.has(site_key)) {
+							if (
+								importing_site_keys.has(site_key) ||
+								pending_local_site_keys.has(site_key) ||
+								blocked_site_keys.has(site_key)
+							) {
 								continue
 							}
 							await sync_from_cms(site.dir, api_url, site.config, server_config, base_dir, sync_policy)
