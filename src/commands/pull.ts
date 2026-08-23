@@ -15,6 +15,11 @@ interface PullOptions {
 	token?: string
 }
 
+// Directories owned by the server export. Local files under these that no
+// longer exist in the export are stale (e.g. a page that gained children
+// moved from pages/foo.yaml to pages/foo/index.yaml) and get trashed.
+const MANAGED_DIRS = ['pages', 'blocks', 'page-types', 'site']
+
 async function detect_server(): Promise<string | null> {
 	const ports = [3000, 8080, 5173]
 
@@ -255,8 +260,28 @@ async function pull_one_site(
 	await fs.writeFile(temp_zip, Buffer.from(zip_data))
 
 	spinner.text = `Extracting ${site.name}...`
-	await extract(temp_zip, { dir: site_dir })
-	await fs.unlink(temp_zip)
+	const temp_dir = path.join(site_dir, '.primo', `pull-temp-${Date.now()}`)
+	let trashed: string[] = []
+	try {
+		await fs.mkdir(temp_dir, { recursive: true })
+		await extract(temp_zip, { dir: temp_dir })
+		await fs.unlink(temp_zip)
+
+		trashed = await reconcile_managed_dirs(site_dir, temp_dir)
+		await fs.cp(temp_dir, site_dir, { recursive: true })
+	} finally {
+		await fs.rm(temp_dir, { recursive: true, force: true })
+		// Also drop the archive: on a successful pull it was already unlinked
+		// above, but if extract() threw it's still sitting in site_dir.
+		await fs.rm(temp_zip, { force: true })
+	}
+
+	if (trashed.length > 0) {
+		console.log(chalk.dim('  Removed stale files (moved to .primo/trash):'))
+		for (const trashed_path of trashed) {
+			console.log(chalk.dim(`    ${trashed_path}`))
+		}
+	}
 
 	await write_site_config(site_dir, {
 		name: site.name || 'Imported Site',
@@ -267,6 +292,87 @@ async function pull_one_site(
 
 	await copy_schemas(site_dir)
 	await add_schema_references(site_dir)
+}
+
+// Move local files under MANAGED_DIRS that have no counterpart in the fresh
+// export into .primo/trash/pull-<ts>/, then remove newly-empty directories
+// (best-effort). Returns the trashed paths relative to the site dir.
+async function reconcile_managed_dirs(site_dir: string, temp_dir: string): Promise<string[]> {
+	const trashed: string[] = []
+	const stamp = Date.now()
+	for (const dir of MANAGED_DIRS) {
+		const local_root = path.join(site_dir, dir)
+		const temp_root = path.join(temp_dir, dir)
+		for (const relative of await list_files_recursive(local_root)) {
+			// Keep the local file only if the export still has a *file* at the
+			// same path. If the counterpart is now a directory (a file→dir
+			// transition, e.g. pages/foo.yaml became pages/foo/…), the local
+			// file is stale and must be trashed — otherwise the later fs.cp
+			// can't lay a directory over the surviving file and the pull fails.
+			try {
+				const counterpart = await fs.stat(path.join(temp_root, relative))
+				if (counterpart.isFile()) continue
+			} catch {
+				// Missing from the export — stale.
+			}
+			const local_path = path.join(local_root, relative)
+			// Scope the trash path by the managed dir. Two managed dirs can hold
+			// the same relative name (pages/config.yaml, blocks/config.yaml);
+			// without the dir segment they'd collide at trash/pull-<ts>/config.yaml
+			// and the second move would clobber the first while both are reported.
+			const trash_path = path.join(site_dir, '.primo', 'trash', `pull-${stamp}`, dir, relative)
+			await fs.mkdir(path.dirname(trash_path), { recursive: true })
+			try {
+				await fs.rename(local_path, trash_path)
+			} catch {
+				// Cross-device move — fall back to copy + delete.
+				await fs.copyFile(local_path, trash_path)
+				await fs.unlink(local_path)
+			}
+			trashed.push(`${dir}/${relative}`)
+		}
+		await remove_empty_dirs(local_root)
+	}
+	return trashed
+}
+
+async function list_files_recursive(root: string, prefix = ''): Promise<string[]> {
+	let entries
+	try {
+		entries = await fs.readdir(root, { withFileTypes: true })
+	} catch {
+		return []
+	}
+	const files: string[] = []
+	for (const entry of entries) {
+		if (entry.name.startsWith('.')) continue
+		const relative = prefix ? `${prefix}/${entry.name}` : entry.name
+		if (entry.isDirectory()) {
+			files.push(...await list_files_recursive(path.join(root, entry.name), relative))
+		} else if (entry.isFile()) {
+			files.push(relative)
+		}
+	}
+	return files
+}
+
+// Remove empty directories bottom-up. rmdir on a non-empty dir fails, which
+// we ignore — only newly-emptied dirs go away.
+async function remove_empty_dirs(root: string): Promise<void> {
+	let entries
+	try {
+		entries = await fs.readdir(root, { withFileTypes: true })
+	} catch {
+		return
+	}
+	for (const entry of entries) {
+		if (entry.isDirectory()) {
+			await remove_empty_dirs(path.join(root, entry.name))
+		}
+	}
+	try {
+		await fs.rmdir(root)
+	} catch {}
 }
 
 async function pull_library_into(

@@ -367,13 +367,12 @@ async function try_bootstrap_site(
 	if (config?.name) form.append('name', config.name)
 	if (config?.group) form.append('group', config.group)
 	if (group_name) form.append('group_name', group_name)
-	// Register the site against the deploy URL's host so the first visit to
-	// that domain finds a matching site instead of dropping into CreateSite.
-	try {
-		form.append('host', new URL(server).host)
-	} catch {
-		// Malformed server URL — let the server fall back to its own default.
-	}
+	// Host is intentionally not sent. A pushed site is created unassigned —
+	// the server seeds `host` with a placeholder (the site's own id) so the
+	// site is editable in the dashboard but not publicly served until an
+	// operator assigns a real domain. The lone exception is bootstrap of the
+	// very first site on a fresh instance, where the server falls back to the
+	// deploy URL's host so that instance's front door resolves immediately.
 	form.append('file', new Blob([zip_buffer]), 'site.zip')
 
 	const headers: Record<string, string> = {}

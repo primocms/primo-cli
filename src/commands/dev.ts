@@ -49,6 +49,12 @@ let last_import_time = 0  // Timestamp of last import completion
 let last_local_change_time = 0  // Timestamp of most recent local watcher event
 const importing_site_keys = new Set<string>()
 const pending_local_site_keys = new Set<string>()
+// Sites whose last import returned null (duplicate _ids across files — nothing
+// was pushed). They stay quarantined until a later import succeeds: no CMS→file
+// polling into them (a quarantined site is out of sync with the CMS, so copying
+// remote-only paths in could clobber the local files the user must edit to fix
+// the conflict). Cleared on the next successful import.
+const blocked_site_keys = new Set<string>()
 let is_importing_library = false
 let has_pending_library_local_changes = false
 let site_sync_baselines = new Map<string, ContentSnapshot>()
@@ -777,6 +783,7 @@ export async function dev_server(options: DevOptions) {
 			// Normalize and load all sites
 			spinner.text = `Loading ${sites.length} site${sites.length > 1 ? 's' : ''}...`
 
+			const blocked_sites = new Set<string>()
 			for (const site of sites) {
 				const use_bootstrap = !await site_exists(api_url, site.config.site_id)
 				if (sync_policy.mode === 'cms' && !use_bootstrap) {
@@ -785,7 +792,17 @@ export async function dev_server(options: DevOptions) {
 				}
 
 				await normalize_site(site.dir)
+				const site_key = get_site_sync_key(site.dir, site.config)
 				const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap, base_dir))
+				if (import_timings === null) {
+					// Duplicate _ids — nothing was pushed; the watcher retries
+					// once the user removes a conflicting file. Quarantine it so
+					// CMS→file polling doesn't sync into an out-of-sync site.
+					blocked_sites.add(site.dir)
+					blocked_site_keys.add(site_key)
+					continue
+				}
+				blocked_site_keys.delete(site_key)
 				if (update_site_sync_state_after_import(site, import_timings, sync_policy)) {
 					await update_site_sync_baseline(site, api_url, server_config, base_dir)
 				}
@@ -794,6 +811,7 @@ export async function dev_server(options: DevOptions) {
 		// Verify all sites are accessible before proceeding
 		spinner.text = 'Verifying sites...'
 		for (const site of sites) {
+			if (blocked_sites.has(site.dir)) continue
 			await verify_site_ready(api_url, site.config.site_id)
 		}
 
@@ -980,6 +998,15 @@ export async function dev_server(options: DevOptions) {
 								}
 							}
 							const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, false, base_dir))
+							if (import_timings === null) {
+								// Duplicate _ids — import_site_files already printed the
+								// error and wrote sync_status; nothing was pushed. Keep
+								// the site quarantined from CMS→file polling.
+								blocked_site_keys.add(get_site_sync_key(site.dir, site.config))
+								return
+							}
+							// Import succeeded — lift any prior quarantine.
+							blocked_site_keys.delete(get_site_sync_key(site.dir, site.config))
 							let reload_ms = 0
 							if (pending_reload) {
 								try {
@@ -1135,7 +1162,11 @@ export async function dev_server(options: DevOptions) {
 					} else {
 						await normalize_site(site.dir)
 						const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap, base_dir))
-						if (update_site_sync_state_after_import(site, import_timings, sync_policy)) {
+						if (import_timings === null) {
+							// Duplicate _ids on a freshly discovered site — quarantine
+							// it from CMS→file polling until a later import succeeds.
+							blocked_site_keys.add(get_site_sync_key(site.dir, site.config))
+						} else if (update_site_sync_state_after_import(site, import_timings, sync_policy)) {
 							await update_site_sync_baseline(site, api_url, server_config, base_dir)
 						}
 					}
@@ -1175,7 +1206,11 @@ export async function dev_server(options: DevOptions) {
 					for (const site of sites) {
 						try {
 							const site_key = get_site_sync_key(site.dir, site.config)
-							if (importing_site_keys.has(site_key) || pending_local_site_keys.has(site_key)) {
+							if (
+								importing_site_keys.has(site_key) ||
+								pending_local_site_keys.has(site_key) ||
+								blocked_site_keys.has(site_key)
+							) {
 								continue
 							}
 							await sync_from_cms(site.dir, api_url, site.config, server_config, base_dir, sync_policy)
@@ -1916,19 +1951,19 @@ function describe_duplicate(category: IDCategory, id: string, occurrences: Dupli
 
 	switch (category) {
 		case 'pages':
-			return `duplicate page _id "${id}" in ${files.join(' and ')}; skipping those pages`
+			return `duplicate page _id "${id}" in ${files.join(' and ')}`
 		case 'page_sections':
-			return `duplicate section _id "${id}" in ${files.join(' and ')}; skipping those pages`
+			return `duplicate section _id "${id}" in ${files.join(' and ')}`
 		case 'blocks':
-			return `duplicate block _id "${id}" in ${files.join(' and ')}; skipping those blocks`
+			return `duplicate block _id "${id}" in ${files.join(' and ')}`
 		case 'page_types':
-			return `duplicate page type _id "${id}" in ${files.join(' and ')}; skipping those page types`
+			return `duplicate page type _id "${id}" in ${files.join(' and ')}`
 		case 'site_fields':
-			return `duplicate site field _id "${id}" in ${files.join(' and ')}; skipping site/fields.yaml`
+			return `duplicate site field _id "${id}" in ${files.join(' and ')}`
 		case 'block_fields':
-			return `duplicate block field _id "${id}" in ${files.join(' and ')}; skipping those blocks`
+			return `duplicate block field _id "${id}" in ${files.join(' and ')}`
 		case 'page_type_fields':
-			return `duplicate page type field _id "${id}" in ${files.join(' and ')}; skipping those page types`
+			return `duplicate page type field _id "${id}" in ${files.join(' and ')}`
 	}
 }
 
@@ -2102,14 +2137,36 @@ function print_import_warnings(site_name: string, warnings: unknown): number {
 	return list.length
 }
 
-async function import_site_files(site_dir: string, api_url: string, config: SiteConfig, port: number, server_config: ServerConfig, use_bootstrap = true, workspace_dir: string = path.dirname(path.dirname(site_dir))): Promise<ImportTimings> {
+async function import_site_files(site_dir: string, api_url: string, config: SiteConfig, port: number, server_config: ServerConfig, use_bootstrap = true, workspace_dir: string = path.dirname(path.dirname(site_dir))): Promise<ImportTimings | null> {
 	const site_name = config.name || 'My Site'
 	const site_id = config.site_id
 	const site_group = resolve_site_group(config, server_config)
 
 	const preparation = await prepare_site_for_local_dev(site_dir)
-	for (const warning of preparation.warnings) {
-		console.log(chalk.yellow(`  ⚠ ${config.name}: ${warning}`))
+	if (preparation.warnings.length > 0) {
+		// Duplicate _ids (the only warning source in prepare_site_for_local_dev)
+		// would leave the server with stale/dangling state if we pushed anyway,
+		// so fail loudly instead of silently excluding the conflicting files.
+		for (const warning of preparation.warnings) {
+			console.log(chalk.red(`  ✖ ${config.name}: ${warning}`))
+		}
+		console.log(chalk.dim('    Remove one of the conflicting files and save to retry.'))
+		const message = preparation.warnings[0]
+		await write_sync_status(site_dir, {
+			ok: false,
+			error: message,
+			failed_at: new Date().toISOString()
+		})
+		try {
+			// Best-effort — older servers don't have this endpoint.
+			await fetch(`${api_url}/api/primo/dev/status`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ status: 'error', message }),
+				signal: AbortSignal.timeout(2000)
+			})
+		} catch {}
+		return null
 	}
 
 	// Create ZIP of site files
