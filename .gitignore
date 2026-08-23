@@ -34,6 +34,9 @@ console-*.txt
 # Docs
 docs/
 
+# Local bug tracker (not part of the repo)
+BUGS.md
+
 # OS
 .DS_Store
 Thumbs.db
