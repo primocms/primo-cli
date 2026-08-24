@@ -131,8 +131,19 @@ type ImportTimings = {
 	zip_ms: number
 	request_ms: number
 	mode: 'bootstrap' | 'import' | 'bootstrap+import'
+	// Whether an import actually landed. The bootstrap+import fallback path
+	// returns timings even when both the bootstrap and the fallback import
+	// fail (it only logs), so a returned ImportTimings does not imply success.
+	// Callers persist ok:false to sync_status.json in that case rather than a
+	// phantom ok:true.
+	ok: boolean
 	warning_count: number
 	dropped_field_count: number
+	// Full per-field warning records from the import response. Carried up so
+	// write_sync_status can persist the actual dropped-field details (file,
+	// path, block, field, message) to sync_status.json for agents to read,
+	// not just the aggregate count. Empty on a clean import.
+	warning_details: ImportWarning[]
 }
 
 const LOCAL_PUSH_DEBOUNCE_MS = 150
@@ -223,27 +234,96 @@ function compute_shrink_delta(prior: string, next: string): number | null {
 	return delta < 0 ? delta : null
 }
 
-// Write the most recent push outcome to a file the MCP build_preview tool
-// reads, so the agent learns when its file changes failed to land in the CMS.
-// Without this, build_preview compiles whatever stale DB state existed before
-// the failed push and reports ok:true, leaving the agent to chase phantom
-// rendering bugs instead of fixing the source error.
+// Where the running dev server can be reached, stamped into every
+// sync_status.json write so an agent reading the file also learns where the
+// server is — and never needs to spawn its own to find out.
+type DevLocation = {
+	port?: number
+	url?: string
+}
+
+// The most recent import/push outcome, as persisted to sync_status.json.
+// `warning_details` carries the full per-field records (file, path, block,
+// field, message) — not just the count — so an agent can read exactly what
+// was dropped without re-running dev and scraping stdout. The top-level
+// `ok`/`warnings`/`warned_at`/`error`/`failed_at` fields are preserved for
+// the existing MCP build_preview reader.
+type SyncStatusOutcome =
+	| { ok: true }
+	| { ok: true; warnings: number; warned_at: string; warning_details?: ImportWarning[] }
+	| { ok: false; error: string; failed_at: string }
+
+// Write the most recent push outcome to a file the MCP build_preview and
+// get_dev_status tools read, so the agent learns when its file changes failed
+// to land in the CMS and exactly which fields were dropped. Without this,
+// build_preview compiles whatever stale DB state existed before the failed
+// push and reports ok:true, leaving the agent to chase phantom rendering bugs
+// instead of fixing the source error.
 async function write_sync_status(
 	site_dir: string,
-	status:
-		| { ok: true }
-		| { ok: true; warnings: number; warned_at: string }
-		| { ok: false; error: string; failed_at: string }
+	status: SyncStatusOutcome,
+	location: DevLocation = {}
 ): Promise<void> {
 	const status_dir = path.join(site_dir, '.primo')
 	try {
 		await fs.mkdir(status_dir, { recursive: true })
-		await fs.writeFile(
-			path.join(status_dir, 'sync_status.json'),
-			JSON.stringify(status, null, 2)
-		)
+		// last_import_at stamps every write so a reader can tell a fresh status
+		// from a stale one; port/url tell the agent where the server is.
+		const payload = {
+			...status,
+			...(location.port !== undefined ? { port: location.port } : {}),
+			...(location.url !== undefined ? { url: location.url } : {}),
+			last_import_at: new Date().toISOString()
+		}
+		// Write atomically: a plain fs.writeFile truncates-then-writes, so the
+		// MCP get_dev_status reader can catch a half-written file and briefly
+		// report "not running" mid-write. Write to a temp file in the same dir
+		// (same filesystem → rename is atomic on POSIX) and rename over the
+		// target, so readers always see a complete old or new file.
+		const target = path.join(status_dir, 'sync_status.json')
+		const tmp = path.join(status_dir, `sync_status.${process.pid}.${randomInt(1e9)}.tmp`)
+		try {
+			await fs.writeFile(tmp, JSON.stringify(payload, null, 2))
+			await fs.rename(tmp, target)
+		} catch (err) {
+			await fs.unlink(tmp).catch(() => {})
+			throw err
+		}
 	} catch {
 		// Status reporting must not break the push.
+	}
+}
+
+// Persist a successful import's outcome to sync_status.json — with the full
+// per-field warning details when content was dropped, so an agent can read
+// exactly what was lost without re-running dev. Shared by the boot loop and
+// the file watcher so both readers of the file see the same shape.
+async function write_import_sync_status(
+	site_dir: string,
+	import_timings: ImportTimings,
+	location: DevLocation
+): Promise<void> {
+	// The bootstrap+import fallback can return timings even when nothing
+	// imported (both attempts failed and were only logged). Never record a
+	// phantom success for that — write ok:false so the agent doesn't build a
+	// preview from unchanged CMS state.
+	if (!import_timings.ok) {
+		await write_sync_status(site_dir, {
+			ok: false,
+			error: 'Import failed — see the primo dev logs for details.',
+			failed_at: new Date().toISOString()
+		}, location)
+		return
+	}
+	if (import_timings.warning_count > 0) {
+		await write_sync_status(site_dir, {
+			ok: true,
+			warnings: import_timings.warning_count,
+			warned_at: new Date().toISOString(),
+			warning_details: import_timings.warning_details
+		}, location)
+	} else {
+		await write_sync_status(site_dir, { ok: true }, location)
 	}
 }
 
@@ -766,6 +846,9 @@ export async function dev_server(options: DevOptions) {
 		}
 
 			const api_url = `http://127.0.0.1:${port}`
+			// Stamped into every sync_status.json write so an agent reading the
+			// file also learns where the running server is.
+			const dev_location: DevLocation = { port, url: api_url }
 
 			if (is_server_mode) {
 				spinner.text = sync_policy.mode === 'cms' ? 'Pulling shared library...' : 'Loading shared library...'
@@ -806,6 +889,11 @@ export async function dev_server(options: DevOptions) {
 				}
 				blocked_site_keys.delete(site_key)
 				dropped_field_count += import_timings.dropped_field_count
+				// Write sync_status.json on boot too — otherwise an agent reading
+				// right after `primo dev` starts sees stale/absent state, and any
+				// dropped fields from the initial import stay invisible until the
+				// next file save. Failure path already wrote its own status above.
+				await write_import_sync_status(site.dir, import_timings, dev_location)
 				if (update_site_sync_state_after_import(site, import_timings, sync_policy)) {
 					await update_site_sync_baseline(site, api_url, server_config, base_dir)
 				}
@@ -1043,15 +1131,7 @@ export async function dev_server(options: DevOptions) {
 							}
 							console.log(chalk.dim(`  ${site.config.name}: normalize ${normalize_ms}ms, zip ${import_timings.zip_ms}ms, ${import_timings.mode} ${import_timings.request_ms}ms${reload_ms ? `, reload ${reload_ms}ms` : ''}`))
 							console.log(chalk.green(`  ✓ ${site.config.name} pushed`))
-							if (import_timings.warning_count > 0) {
-								await write_sync_status(site.dir, {
-									ok: true,
-									warnings: import_timings.warning_count,
-									warned_at: new Date().toISOString()
-								})
-							} else {
-								await write_sync_status(site.dir, { ok: true })
-							}
+							await write_import_sync_status(site.dir, import_timings, dev_location)
 						} catch (err) {
 							const message = err instanceof Error ? err.message : String(err)
 							console.log(chalk.red(`  ✗ ${site.config.name} push failed: ${message}`))
@@ -1059,7 +1139,7 @@ export async function dev_server(options: DevOptions) {
 								ok: false,
 								error: message,
 								failed_at: new Date().toISOString()
-							})
+							}, dev_location)
 						} finally {
 							is_importing = false
 							last_import_time = Date.now()  // Track when import finished
@@ -2147,6 +2227,25 @@ function count_dropped_fields(warnings: unknown): number {
 	return (warnings as ImportWarning[]).filter(w => DROPPED_FIELD_KINDS.has(w.kind)).length
 }
 
+// Coerce a raw import-response `warnings` value into a clean ImportWarning[]
+// for persistence in sync_status.json. Defensive against partial/unknown
+// server shapes: drops non-object entries and fills missing string fields so
+// the agent-facing file always has a predictable schema. Returns [] for
+// non-arrays / missing warnings.
+function normalize_warning_details(warnings: unknown): ImportWarning[] {
+	if (!Array.isArray(warnings)) return []
+	return warnings
+		.filter((w): w is Record<string, unknown> => typeof w === 'object' && w !== null)
+		.map(w => ({
+			kind: typeof w.kind === 'string' ? w.kind : '',
+			file: typeof w.file === 'string' ? w.file : '',
+			path: typeof w.path === 'string' ? w.path : '',
+			field: typeof w.field === 'string' ? w.field : '',
+			block: typeof w.block === 'string' ? w.block : '',
+			message: typeof w.message === 'string' ? w.message : ''
+		}))
+}
+
 // Loudly surface non-fatal import problems (e.g. orphaned fields whose
 // content would otherwise be silently dropped). Printed in yellow with the
 // full details so agents and humans both see exactly what was lost and where.
@@ -2182,7 +2281,7 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 			ok: false,
 			error: message,
 			failed_at: new Date().toISOString()
-		})
+		}, { port, url: api_url })
 		try {
 			// Best-effort — older servers don't have this endpoint.
 			await fetch(`${api_url}/api/primo/dev/status`, {
@@ -2225,6 +2324,7 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 		// Write created IDs back to files
 		let warning_count = 0
 		let dropped_field_count = 0
+		let warning_details: ImportWarning[] = []
 		try {
 			const result = await import_response.json() as { created_ids?: Record<string, Record<string, unknown>>, warnings?: ImportWarning[] }
 			if (result.created_ids) {
@@ -2232,6 +2332,7 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 			}
 			warning_count = print_import_warnings(config.name, result.warnings)
 			dropped_field_count = count_dropped_fields(result.warnings)
+			warning_details = normalize_warning_details(result.warnings)
 		} catch {
 			// ignore JSON parse errors
 		}
@@ -2240,8 +2341,10 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 			zip_ms,
 			request_ms,
 			mode: 'import',
+			ok: true,
 			warning_count,
-			dropped_field_count
+			dropped_field_count,
+			warning_details
 		}
 	}
 
@@ -2268,6 +2371,7 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 
 			let warning_count = 0
 			let dropped_field_count = 0
+			let warning_details: ImportWarning[] = []
 			if (bootstrap_response.ok) {
 				try {
 					const result = await bootstrap_response.json() as { created_ids?: Record<string, Record<string, unknown>>, warnings?: ImportWarning[] }
@@ -2281,6 +2385,7 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 					}
 					warning_count = print_import_warnings(config.name, result.warnings)
 					dropped_field_count = count_dropped_fields(result.warnings)
+					warning_details = normalize_warning_details(result.warnings)
 				} catch {
 					// ignore JSON parse errors
 				}
@@ -2288,8 +2393,10 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 					zip_ms,
 					request_ms: bootstrap_ms,
 					mode: 'bootstrap',
+					ok: true,
 					warning_count,
-					dropped_field_count
+					dropped_field_count,
+					warning_details
 				}
 			}
 
@@ -2326,6 +2433,7 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 					}
 					warning_count = print_import_warnings(config.name, result.warnings)
 					dropped_field_count = count_dropped_fields(result.warnings)
+					warning_details = normalize_warning_details(result.warnings)
 				} catch {
 					// ignore JSON parse errors
 				}
@@ -2334,8 +2442,14 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 				zip_ms,
 				request_ms: bootstrap_ms + import_ms,
 				mode: 'bootstrap+import',
+				// Bootstrap failed and we fell back to a regular import; ok
+				// reflects whether that fallback actually landed. When both
+				// failed we still return timings (only logged above), so this
+				// guards against recording a phantom success.
+				ok: import_response.ok,
 				warning_count,
-				dropped_field_count
+				dropped_field_count,
+				warning_details
 			}
 		} catch (err) {
 			if (attempt < max_retries) {
