@@ -131,6 +131,12 @@ type ImportTimings = {
 	zip_ms: number
 	request_ms: number
 	mode: 'bootstrap' | 'import' | 'bootstrap+import'
+	// Whether an import actually landed. The bootstrap+import fallback path
+	// returns timings even when both the bootstrap and the fallback import
+	// fail (it only logs), so a returned ImportTimings does not imply success.
+	// Callers persist ok:false to sync_status.json in that case rather than a
+	// phantom ok:true.
+	ok: boolean
 	warning_count: number
 	dropped_field_count: number
 	// Full per-field warning records from the import response. Carried up so
@@ -269,10 +275,20 @@ async function write_sync_status(
 			...(location.url !== undefined ? { url: location.url } : {}),
 			last_import_at: new Date().toISOString()
 		}
-		await fs.writeFile(
-			path.join(status_dir, 'sync_status.json'),
-			JSON.stringify(payload, null, 2)
-		)
+		// Write atomically: a plain fs.writeFile truncates-then-writes, so the
+		// MCP get_dev_status reader can catch a half-written file and briefly
+		// report "not running" mid-write. Write to a temp file in the same dir
+		// (same filesystem → rename is atomic on POSIX) and rename over the
+		// target, so readers always see a complete old or new file.
+		const target = path.join(status_dir, 'sync_status.json')
+		const tmp = path.join(status_dir, `sync_status.${process.pid}.${randomInt(1e9)}.tmp`)
+		try {
+			await fs.writeFile(tmp, JSON.stringify(payload, null, 2))
+			await fs.rename(tmp, target)
+		} catch (err) {
+			await fs.unlink(tmp).catch(() => {})
+			throw err
+		}
 	} catch {
 		// Status reporting must not break the push.
 	}
@@ -287,6 +303,18 @@ async function write_import_sync_status(
 	import_timings: ImportTimings,
 	location: DevLocation
 ): Promise<void> {
+	// The bootstrap+import fallback can return timings even when nothing
+	// imported (both attempts failed and were only logged). Never record a
+	// phantom success for that — write ok:false so the agent doesn't build a
+	// preview from unchanged CMS state.
+	if (!import_timings.ok) {
+		await write_sync_status(site_dir, {
+			ok: false,
+			error: 'Import failed — see the primo dev logs for details.',
+			failed_at: new Date().toISOString()
+		}, location)
+		return
+	}
 	if (import_timings.warning_count > 0) {
 		await write_sync_status(site_dir, {
 			ok: true,
@@ -2313,6 +2341,7 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 			zip_ms,
 			request_ms,
 			mode: 'import',
+			ok: true,
 			warning_count,
 			dropped_field_count,
 			warning_details
@@ -2364,6 +2393,7 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 					zip_ms,
 					request_ms: bootstrap_ms,
 					mode: 'bootstrap',
+					ok: true,
 					warning_count,
 					dropped_field_count,
 					warning_details
@@ -2412,6 +2442,11 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 				zip_ms,
 				request_ms: bootstrap_ms + import_ms,
 				mode: 'bootstrap+import',
+				// Bootstrap failed and we fell back to a regular import; ok
+				// reflects whether that fallback actually landed. When both
+				// failed we still return timings (only logged above), so this
+				// guards against recording a phantom success.
+				ok: import_response.ok,
 				warning_count,
 				dropped_field_count,
 				warning_details
