@@ -132,6 +132,7 @@ type ImportTimings = {
 	request_ms: number
 	mode: 'bootstrap' | 'import' | 'bootstrap+import'
 	warning_count: number
+	dropped_field_count: number
 }
 
 const LOCAL_PUSH_DEBOUNCE_MS = 150
@@ -784,6 +785,7 @@ export async function dev_server(options: DevOptions) {
 			spinner.text = `Loading ${sites.length} site${sites.length > 1 ? 's' : ''}...`
 
 			const blocked_sites = new Set<string>()
+			let dropped_field_count = 0
 			for (const site of sites) {
 				const use_bootstrap = !await site_exists(api_url, site.config.site_id)
 				if (sync_policy.mode === 'cms' && !use_bootstrap) {
@@ -803,6 +805,7 @@ export async function dev_server(options: DevOptions) {
 					continue
 				}
 				blocked_site_keys.delete(site_key)
+				dropped_field_count += import_timings.dropped_field_count
 				if (update_site_sync_state_after_import(site, import_timings, sync_policy)) {
 					await update_site_sync_baseline(site, api_url, server_config, base_dir)
 				}
@@ -816,6 +819,16 @@ export async function dev_server(options: DevOptions) {
 		}
 
 		spinner.succeed('Primo running')
+
+		// Restate any dropped-field warnings next to the banner. The per-field
+		// detail already printed above during import, but on a multi-site or
+		// long boot it scrolls out of view and the green banner reads as
+		// "all good" — so surface the aggregate here as the last thing on
+		// screen. See print_import_warnings for the full per-field output.
+		if (dropped_field_count > 0) {
+			console.log('')
+			console.log(chalk.yellow(`  ⚠ ${dropped_field_count} field${dropped_field_count === 1 ? '' : 's'} dropped — content not imported (see warnings above)`))
+		}
 
 		console.log('')
 		if (mcp_registration_path) {
@@ -2121,6 +2134,19 @@ type ImportWarning = {
 	message: string
 }
 
+// Warning kinds where page content was matched to no field and therefore
+// dropped from the render model. Counted separately from other import
+// warnings (unknown blocks, orphan uploads, duplicate ids) so the
+// end-of-boot summary can report "N fields dropped" accurately.
+const DROPPED_FIELD_KINDS = new Set(['orphaned_field', 'orphaned_page_field'])
+
+// Number of dropped-field warnings in an import response. Safe on any input
+// shape (returns 0 for non-arrays / missing warnings).
+function count_dropped_fields(warnings: unknown): number {
+	if (!Array.isArray(warnings)) return 0
+	return (warnings as ImportWarning[]).filter(w => DROPPED_FIELD_KINDS.has(w.kind)).length
+}
+
 // Loudly surface non-fatal import problems (e.g. orphaned fields whose
 // content would otherwise be silently dropped). Printed in yellow with the
 // full details so agents and humans both see exactly what was lost and where.
@@ -2198,12 +2224,14 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 
 		// Write created IDs back to files
 		let warning_count = 0
+		let dropped_field_count = 0
 		try {
 			const result = await import_response.json() as { created_ids?: Record<string, Record<string, unknown>>, warnings?: ImportWarning[] }
 			if (result.created_ids) {
 				await write_created_ids(site_dir, result.created_ids, server_config, workspace_dir)
 			}
 			warning_count = print_import_warnings(config.name, result.warnings)
+			dropped_field_count = count_dropped_fields(result.warnings)
 		} catch {
 			// ignore JSON parse errors
 		}
@@ -2212,7 +2240,8 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 			zip_ms,
 			request_ms,
 			mode: 'import',
-			warning_count
+			warning_count,
+			dropped_field_count
 		}
 	}
 
@@ -2238,6 +2267,7 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 			const bootstrap_ms = Date.now() - bootstrap_started
 
 			let warning_count = 0
+			let dropped_field_count = 0
 			if (bootstrap_response.ok) {
 				try {
 					const result = await bootstrap_response.json() as { created_ids?: Record<string, Record<string, unknown>>, warnings?: ImportWarning[] }
@@ -2250,6 +2280,7 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 						await write_created_ids(site_dir, result.created_ids, server_config, workspace_dir)
 					}
 					warning_count = print_import_warnings(config.name, result.warnings)
+					dropped_field_count = count_dropped_fields(result.warnings)
 				} catch {
 					// ignore JSON parse errors
 				}
@@ -2257,7 +2288,8 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 					zip_ms,
 					request_ms: bootstrap_ms,
 					mode: 'bootstrap',
-					warning_count
+					warning_count,
+					dropped_field_count
 				}
 			}
 
@@ -2293,6 +2325,7 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 						await write_created_ids(site_dir, result.created_ids, server_config, workspace_dir)
 					}
 					warning_count = print_import_warnings(config.name, result.warnings)
+					dropped_field_count = count_dropped_fields(result.warnings)
 				} catch {
 					// ignore JSON parse errors
 				}
@@ -2301,7 +2334,8 @@ async function import_site_files(site_dir: string, api_url: string, config: Site
 				zip_ms,
 				request_ms: bootstrap_ms + import_ms,
 				mode: 'bootstrap+import',
-				warning_count
+				warning_count,
+				dropped_field_count
 			}
 		} catch (err) {
 			if (attempt < max_retries) {
