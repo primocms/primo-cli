@@ -313,15 +313,33 @@ sections:
 		const server_running = await is_server_running(port)
 
 		if (server_running) {
-			// Tell the server to reload and pick up the new site
+			// A `primo dev` is already running. Ask it to reload and pick up the
+			// new site. The dev server prints its own "New site loaded" + links,
+			// but in *its* terminal — so print the same links here too, otherwise
+			// this terminal looks like nothing happened.
+			// Host is derived from the display name (what becomes config.name),
+			// matching how dev_server builds the host — not the raw folder name.
+			const host = local_dev_host(display_name, port)
+			let reloaded = false
 			try {
-				await fetch(`http://127.0.0.1:${port + 1}/reload`, { method: 'POST' })
+				const res = await fetch(`http://127.0.0.1:${port + 1}/reload`, { method: 'POST' })
+				reloaded = res.ok
 			} catch {
-				// Reload server might not be running (older version)
+				// Reload server not running (older `primo dev`, or hot reload
+				// disabled because port was in use). Site files are on disk; a
+				// restart of `primo dev` will pick them up.
 			}
+
 			console.log('')
-			console.log(chalk.dim(`  http://${site_name}.localhost:${port}/`))
+			console.log(`  ${chalk.cyan(display_name)}`)
+			console.log(`    ${chalk.dim('Edit:')}    http://${host}/admin/site`)
+			console.log(`    ${chalk.dim('Preview:')} http://${host}/`)
 			console.log('')
+			if (!reloaded) {
+				console.log(chalk.yellow('  Couldn\'t reach the running dev server to reload it.'))
+				console.log(chalk.dim('  Restart `primo dev` to pick up the new site.'))
+				console.log('')
+			}
 		} else if (!options.skipDev) {
 			// No server running, start one
 			console.log('')
@@ -337,6 +355,14 @@ sections:
 		spinner.fail(`Failed to create site: ${error instanceof Error ? error.message : error}`)
 		process.exit(1)
 	}
+}
+
+// Mirror of dev.ts's local_dev_host: slug the display name into a
+// `<slug>.localhost:<port>` host so the links printed here match the ones
+// `primo dev` prints for the same site.
+function local_dev_host(name: string, port: number): string {
+	const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'site'
+	return `${slug}.localhost:${port}`
 }
 
 function generate_id(): string {
