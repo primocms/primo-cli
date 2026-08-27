@@ -1106,7 +1106,18 @@ export async function dev_server(options: DevOptions) {
 									// Conflict detection must not block the local push.
 								}
 							}
-							const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, false, base_dir))
+							// Steady-state pushes go through the additive import
+							// endpoint (use_bootstrap=false). But a site whose initial
+							// bootstrap+fallback both failed is quarantined and was
+							// never created on the server — retrying import against a
+							// nonexistent site would fail forever. For those, re-check
+							// existence so the retry can bootstrap out of quarantine.
+							// Healthy sites are never quarantined, so they skip the
+							// extra request and keep the fast path.
+							const retry_needs_bootstrap = blocked_site_keys.has(get_site_sync_key(site.dir, site.config))
+								? !await site_exists(api_url, site.config.site_id)
+								: false
+							const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, retry_needs_bootstrap, base_dir))
 							if (import_timings === null) {
 								// Duplicate _ids — import_site_files already printed the
 								// error and wrote sync_status; nothing was pushed. Keep
