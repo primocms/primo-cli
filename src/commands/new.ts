@@ -61,13 +61,18 @@ export async function new_site(options: NewOptions) {
 			name: 'name',
 			message: 'Site name:',
 			default: 'my-site',
-			validate: (input: string) => {
-				if (!input.trim()) return 'Name is required'
-				if (!/^[a-z0-9.-]+$/i.test(input)) return 'Use only letters, numbers, dots, and hyphens'
-				return true
-			}
+			validate: validate_site_name
 		}])
 		site_name = name
+	} else {
+		// A name passed as a CLI arg skips the prompt — validate it too, or a
+		// name like `.foo` slips through: it makes a hidden sites/.foo dir that
+		// discover_sites ignores, and an empty display_name downstream.
+		const error = validate_site_name(site_name)
+		if (error !== true) {
+			console.log(chalk.red(error))
+			process.exit(1)
+		}
 	}
 
 	// Always create site in sites/<name>
@@ -308,8 +313,11 @@ sections:
 
 		spinner.succeed(`Site created: ${chalk.cyan(site_dir)}`)
 
-		// Check if server is already running
-		const port = 3000
+		// Check if server is already running. Read the workspace's configured
+		// port (mirroring `primo dev`, which uses server_config.port) rather than
+		// assuming 3000 — otherwise on a custom-port workspace we'd probe the
+		// wrong port, miss the running server, and print links to a dead port.
+		const port = server_config.port ?? 3000
 		const server_running = await is_server_running(port)
 
 		if (server_running) {
@@ -320,14 +328,37 @@ sections:
 			// Host is derived from the display name (what becomes config.name),
 			// matching how dev_server builds the host — not the raw folder name.
 			const host = local_dev_host(display_name, port)
-			let reloaded = false
+			let outcome: 'reloaded' | 'quarantined' | 'unreachable' = 'unreachable'
 			try {
-				const res = await fetch(`http://127.0.0.1:${port + 1}/reload`, { method: 'POST' })
-				reloaded = res.ok
+				// Bound the request: the reload handler runs discovery + import
+				// synchronously before responding, so an unbounded fetch could
+				// hang here forever and never reach the warning below.
+				const controller = new AbortController()
+				const timeout = setTimeout(() => controller.abort(), 30000)
+				let res: Response
+				try {
+					res = await fetch(`http://127.0.0.1:${port + 1}/reload`, {
+						method: 'POST',
+						signal: controller.signal
+					})
+				} finally {
+					clearTimeout(timeout)
+				}
+				if (res.ok) {
+					// A 2xx no longer implies the site imported — the handler
+					// returns { quarantined: [...] } for sites it couldn't load
+					// (duplicate _ids). Parse the body to tell the difference.
+					const result = await res.json().catch(() => null) as
+						| { quarantined?: string[] }
+						| null
+					outcome = result?.quarantined?.includes(display_name)
+						? 'quarantined'
+						: 'reloaded'
+				}
 			} catch {
-				// Reload server not running (older `primo dev`, or hot reload
-				// disabled because port was in use). Site files are on disk; a
-				// restart of `primo dev` will pick them up.
+				// Reload server not running (older `primo dev`, hot reload disabled
+				// because the port was in use) or the request timed out. Site files
+				// are on disk; restarting `primo dev` will pick them up.
 			}
 
 			console.log('')
@@ -335,7 +366,11 @@ sections:
 			console.log(`    ${chalk.dim('Edit:')}    http://${host}/admin/site`)
 			console.log(`    ${chalk.dim('Preview:')} http://${host}/`)
 			console.log('')
-			if (!reloaded) {
+			if (outcome === 'quarantined') {
+				console.log(chalk.yellow('  Site created, but the dev server couldn\'t import it (duplicate IDs).'))
+				console.log(chalk.dim('  Check the `primo dev` logs and fix the conflict.'))
+				console.log('')
+			} else if (outcome === 'unreachable') {
 				console.log(chalk.yellow('  Couldn\'t reach the running dev server to reload it.'))
 				console.log(chalk.dim('  Restart `primo dev` to pick up the new site.'))
 				console.log('')
@@ -355,6 +390,17 @@ sections:
 		spinner.fail(`Failed to create site: ${error instanceof Error ? error.message : error}`)
 		process.exit(1)
 	}
+}
+
+// Shared name validation for both the interactive prompt and the CLI arg.
+// Returns `true` when valid, or an error string (inquirer's contract).
+// Leading dots/hyphens are rejected: a leading dot makes a hidden sites/.<name>
+// directory that discover_sites skips, and strips display_name to empty.
+function validate_site_name(input: string): true | string {
+	if (!input.trim()) return 'Name is required'
+	if (!/^[a-z0-9.-]+$/i.test(input)) return 'Use only letters, numbers, dots, and hyphens'
+	if (/^[.-]/.test(input)) return 'Name can\'t start with a dot or hyphen'
+	return true
 }
 
 // Mirror of dev.ts's local_dev_host: slug the display name into a
