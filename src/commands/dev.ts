@@ -887,13 +887,21 @@ export async function dev_server(options: DevOptions) {
 					blocked_site_keys.add(site_key)
 					continue
 				}
-				blocked_site_keys.delete(site_key)
-				dropped_field_count += import_timings.dropped_field_count
 				// Write sync_status.json on boot too — otherwise an agent reading
 				// right after `primo dev` starts sees stale/absent state, and any
 				// dropped fields from the initial import stay invisible until the
-				// next file save. Failure path already wrote its own status above.
+				// next file save. Writes ok:false when the import didn't land.
 				await write_import_sync_status(site.dir, import_timings, dev_location)
+				if (!import_timings.ok) {
+					// Bootstrap and its regular-import fallback both failed (only
+					// logged, not thrown). Keep the site quarantined and skip the
+					// baseline/success path so we don't record a phantom import.
+					blocked_sites.add(site.dir)
+					blocked_site_keys.add(site_key)
+					continue
+				}
+				blocked_site_keys.delete(site_key)
+				dropped_field_count += import_timings.dropped_field_count
 				if (update_site_sync_state_after_import(site, import_timings, sync_policy)) {
 					await update_site_sync_baseline(site, api_url, server_config, base_dir)
 				}
@@ -1250,6 +1258,7 @@ export async function dev_server(options: DevOptions) {
 					known_sites.add(site.dir)
 					sites.push(site)
 					const use_bootstrap = !await site_exists(api_url, site.config.site_id)
+					let import_ok = true
 					if (sync_policy.mode === 'cms' && !use_bootstrap) {
 						await sync_from_cms(site.dir, api_url, site.config, server_config, base_dir, sync_policy)
 					} else {
@@ -1259,11 +1268,26 @@ export async function dev_server(options: DevOptions) {
 							// Duplicate _ids on a freshly discovered site — quarantine
 							// it from CMS→file polling until a later import succeeds.
 							blocked_site_keys.add(get_site_sync_key(site.dir, site.config))
-						} else if (update_site_sync_state_after_import(site, import_timings, sync_policy)) {
-							await update_site_sync_baseline(site, api_url, server_config, base_dir)
+							import_ok = false
+						} else {
+							await write_import_sync_status(site.dir, import_timings, dev_location)
+							if (!import_timings.ok) {
+								// Bootstrap + fallback both failed (only logged). Quarantine
+								// and skip the success path so we don't announce a site that
+								// didn't actually load.
+								blocked_site_keys.add(get_site_sync_key(site.dir, site.config))
+								import_ok = false
+							} else if (update_site_sync_state_after_import(site, import_timings, sync_policy)) {
+								await update_site_sync_baseline(site, api_url, server_config, base_dir)
+							}
 						}
 					}
 					setup_site_watchers(site)
+
+					if (!import_ok) {
+						console.log(chalk.yellow(`  ⚠ ${site.config.name}: import failed — see logs; will retry on the next file change.`))
+						continue
+					}
 
 					const host = local_dev_host(site.config.name || path.basename(site.dir), port)
 					console.log(chalk.green(`  ✓ New site loaded: ${site.config.name}`))
