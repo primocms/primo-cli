@@ -1263,6 +1263,8 @@ export async function dev_server(options: DevOptions) {
 				}
 
 				const new_sites = await discover_sites(base_dir)
+				let loaded_count = 0
+				const quarantined: string[] = []
 				for (const site of new_sites) {
 					if (known_sites.has(site.dir)) continue
 
@@ -1279,14 +1281,17 @@ export async function dev_server(options: DevOptions) {
 							// Duplicate _ids on a freshly discovered site — quarantine
 							// it from CMS→file polling until a later import succeeds.
 							blocked_site_keys.add(get_site_sync_key(site.dir, site.config))
+							quarantined.push(site.config.name)
 							import_ok = false
 						} else {
 							await write_import_sync_status(site.dir, import_timings, dev_location)
 							if (!import_timings.ok) {
 								// Bootstrap + fallback both failed (only logged). Quarantine
 								// and skip the success path so we don't announce a site that
-								// didn't actually load.
+								// didn't actually load — and so `primo new` sees it in the
+								// /reload body's `quarantined` list.
 								blocked_site_keys.add(get_site_sync_key(site.dir, site.config))
+								quarantined.push(site.config.name)
 								import_ok = false
 							} else if (update_site_sync_state_after_import(site, import_timings, sync_policy)) {
 								await update_site_sync_baseline(site, api_url, server_config, base_dir)
@@ -1294,6 +1299,7 @@ export async function dev_server(options: DevOptions) {
 						}
 					}
 					setup_site_watchers(site)
+					loaded_count++
 
 					if (!import_ok) {
 						console.log(chalk.yellow(`  ⚠ ${site.config.name}: import failed — see logs; will retry on the next file change.`))
@@ -1306,8 +1312,16 @@ export async function dev_server(options: DevOptions) {
 					console.log(`    ${chalk.dim('Preview:')} http://${host}/`)
 				}
 
-				res.writeHead(200)
-				res.end('ok')
+				// Report the outcome so `primo new` can tell whether the site it
+				// just scaffolded actually imported. A quarantined site (duplicate
+				// _ids) returns 200 with loaded:false so a 2xx no longer implies
+				// success — the caller checks the body, not just the status.
+				const body = JSON.stringify({
+					loaded: loaded_count,
+					quarantined
+				})
+				res.writeHead(200, { 'Content-Type': 'application/json' })
+				res.end(body)
 			})
 			reload_server.on('error', (err: NodeJS.ErrnoException) => {
 				if (err.code === 'EADDRINUSE') {
