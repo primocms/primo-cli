@@ -239,6 +239,7 @@ interface BuildPageOptions {
 // can't be a `let` binding (or would collide with the page component's own
 // props) is skipped — the field just isn't available in head scope.
 const RESERVED_HEAD_KEYS = new Set([
+	'arguments', 'eval', 'implements', 'interface', 'package', 'private', 'protected', 'public',
 	'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default',
 	'delete', 'do', 'else', 'enum', 'export', 'extends', 'false', 'finally', 'for',
 	'function', 'if', 'import', 'in', 'instanceof', 'let', 'new', 'null', 'return',
