@@ -54,7 +54,9 @@ interface PushDiff {
 	site: { added: string[]; modified: string[]; deleted: string[] }
 }
 
-export async function push_site(options: PushOptions) {
+// Returns the labels (site slugs / 'library') that failed to push so callers
+// like `primo deploy` can tell a clean run from a partial one. Empty = success.
+export async function push_site(options: PushOptions): Promise<string[]> {
 	const root_dir = path.resolve(options.dir)
 	const has_site_yaml = await path_exists(get_site_config_path(root_dir))
 	const has_server_yaml = await path_exists(get_server_config_path(root_dir))
@@ -77,19 +79,29 @@ export async function push_site(options: PushOptions) {
 
 	if (options.dryRun) {
 		await print_push_dry_run(root_dir, has_site_yaml, has_server_yaml, effective_options)
-		return
+		return []
 	}
 
 	// Server-folder mode: walk site subfolders + push library
 	if (!has_site_yaml && has_server_yaml) {
-		await push_server(root_dir, effective_options)
-		return
+		const failed = await push_server(root_dir, effective_options)
+		if (failed.length > 0) {
+			console.log('')
+			console.log(chalk.red(`Push incomplete — failed: ${failed.join(', ')}`))
+			console.log(chalk.dim('  Fix the errors above and rerun `primo push` (completed pushes are safe to repeat).'))
+			console.log('')
+			// exitCode (not process.exit) so an in-process caller like `primo
+			// deploy` can still finish its own reporting before the process ends.
+			process.exitCode = 1
+		}
+		return failed
 	}
 
 	// Single-site mode (cwd is a site folder, or --dir points at one)
 	const spinner = ora('Reading local files...').start()
 	try {
 		await push_single_site(root_dir, effective_options, spinner)
+		return []
 	} catch (error) {
 		spinner.fail(`Push failed: ${error instanceof Error ? error.message : error}`)
 		if (is_auth_error(error)) print_auth_hint()
@@ -186,7 +198,10 @@ async function print_push_dry_run(root_dir: string, has_site_yaml: boolean, has_
 	console.log('')
 }
 
-async function push_server(root_dir: string, options: PushOptions) {
+// Pushes every site folder plus the library, continuing past individual
+// failures. Returns the labels that failed — the caller decides how loudly a
+// partial push should fail.
+async function push_server(root_dir: string, options: PushOptions): Promise<string[]> {
 	// Sites live under sites/<slug>/
 	const sites_root = path.join(root_dir, 'sites')
 	const site_dirs: string[] = []
@@ -223,10 +238,11 @@ async function push_server(root_dir: string, options: PushOptions) {
 			if (is_auth_error(error)) print_auth_hint()
 			process.exit(1)
 		}
-		return
+		return []
 	}
 
 	let saw_auth_error = false
+	const failed: string[] = []
 
 	// Push each site
 	for (const site_dir of site_dirs) {
@@ -236,6 +252,7 @@ async function push_server(root_dir: string, options: PushOptions) {
 		} catch (error) {
 			spinner.fail(`${path.basename(site_dir)}: ${error instanceof Error ? error.message : error}`)
 			if (is_auth_error(error)) saw_auth_error = true
+			failed.push(path.basename(site_dir))
 			// Continue to remaining sites rather than abort the whole push
 		}
 	}
@@ -249,10 +266,12 @@ async function push_server(root_dir: string, options: PushOptions) {
 		} catch (error) {
 			spinner.fail(`library: ${error instanceof Error ? error.message : error}`)
 			if (is_auth_error(error)) saw_auth_error = true
+			failed.push('library')
 		}
 	}
 
 	if (saw_auth_error) print_auth_hint()
+	return failed
 }
 
 async function push_single_site(site_dir: string, options: PushOptions, spinner: Ora) {

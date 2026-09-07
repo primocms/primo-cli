@@ -523,17 +523,25 @@ async function wait_for_ready(url: string): Promise<boolean> {
 // Run the equivalent of `primo push` against the local workspace. push_site
 // resolves the server URL from server.yaml (which we just wrote), so no extra
 // flags are needed. We surface failures but don't re-throw — the deploy already
-// succeeded and the user can rerun push manually.
+// succeeded and the user can rerun push manually. Only a fully clean push
+// counts as success: a partial upload must not be reported as "complete".
 async function run_auto_push(inventory: WorkspaceInventory): Promise<boolean> {
 	console.log('')
 	console.log(chalk.cyan('Uploading your workspace...'))
 	try {
-		await push_site({ dir: inventory.root_dir })
+		const failed = await push_site({ dir: inventory.root_dir })
+		if (failed.length > 0) {
+			// push_site already printed the per-item errors, the summary, and
+			// set the exit code. The server itself is fine, so finish the
+			// deploy flow — just not as "complete".
+			return false
+		}
 		return true
 	} catch (error) {
 		console.log('')
 		console.log(chalk.yellow(`Auto-push failed: ${error instanceof Error ? error.message : error}`))
 		console.log(chalk.dim('  Your server is live — rerun `primo push` once the issue is sorted.'))
+		process.exitCode = 1
 		return false
 	}
 }

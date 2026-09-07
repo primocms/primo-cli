@@ -105,7 +105,7 @@ ${chalk.bold('See also')}
   primo deploy  Stand up a new hosted Primo server
   primo login   Authenticate with a hosted Primo server
 `)
-	.action((server, options) => push_site({ ...options, server: server || options.server }))
+	.action(async (server, options) => { await push_site({ ...options, server: server || options.server }) })
 
 program
 	.command('pull [server] [dir]')
@@ -187,4 +187,13 @@ program.on('command:*', (operands: string[]) => {
 	process.exit(1)
 })
 
-program.parse()
+// parseAsync so async action handlers are awaited inside commander's
+// lifecycle — with plain parse() a rejected handler becomes an unhandled
+// rejection (ugly stack, engine-dependent exit) instead of the clean
+// message + exit(1) below.
+program.parseAsync().catch((error) => {
+	console.error('')
+	console.error(chalk.red(error instanceof Error ? error.message : String(error)))
+	console.error('')
+	process.exit(1)
+})
