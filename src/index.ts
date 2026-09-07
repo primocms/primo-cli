@@ -105,7 +105,7 @@ ${chalk.bold('See also')}
   primo deploy  Stand up a new hosted Primo server
   primo login   Authenticate with a hosted Primo server
 `)
-	.action((server, options) => push_site({ ...options, server: server || options.server }))
+	.action(async (server, options) => { await push_site({ ...options, server: server || options.server }) })
 
 program
 	.command('pull [server] [dir]')
