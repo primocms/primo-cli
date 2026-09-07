@@ -114,6 +114,18 @@ export async function build_site(options: BuildOptions) {
 			// No head.svelte, that's fine
 		}
 
+		// site/foot.html is verbatim HTML appended before </body> on every page —
+		// no templating, matching server publish. page-types/*/foot.html is
+		// intentionally not included (it isn't in server publish either).
+		let foot_content = ''
+		try {
+			foot_content = await fs.readFile(path.join(site_dir, 'site', 'foot.html'), 'utf-8')
+		} catch (error: any) {
+			if (error?.code !== 'ENOENT') {
+				throw error
+			}
+		}
+
 		// Find all pages
 		const pages_dir = path.join(site_dir, 'pages')
 		const page_files = await find_pages(pages_dir)
@@ -153,6 +165,7 @@ export async function build_site(options: BuildOptions) {
 				site_dir,
 				temp_dir,
 				head_content,
+				foot_content,
 				site_name: config.name,
 				block_cache,
 				layout_cache,
@@ -213,12 +226,33 @@ interface BuildPageOptions {
 	site_dir: string
 	temp_dir: string
 	head_content: string
+	foot_content: string
 	site_name: string
 	block_cache: Map<string, { js: string; css: string }>
 	layout_cache: Map<string, Layout>
 	page_type_head_cache: Map<string, string>
 	site_data: SiteData
 	page_url_map: Map<string, string>
+}
+
+// Field keys exposed to head fragments as bare identifiers. Anything that
+// can't be a `let` binding (or would collide with the page component's own
+// props) is skipped — the field just isn't available in head scope.
+const RESERVED_HEAD_KEYS = new Set([
+	'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default',
+	'delete', 'do', 'else', 'enum', 'export', 'extends', 'false', 'finally', 'for',
+	'function', 'if', 'import', 'in', 'instanceof', 'let', 'new', 'null', 'return',
+	'static', 'super', 'switch', 'this', 'throw', 'true', 'try', 'typeof', 'var',
+	'void', 'while', 'with', 'yield', 'await', 'head_props'
+])
+
+function head_identifier_keys(keys: Iterable<string>): string[] {
+	return [...new Set(keys)].filter((key) =>
+		/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) &&
+		!RESERVED_HEAD_KEYS.has(key) &&
+		!/^section_\d+_props$/.test(key) &&
+		!/^Section_\d+/.test(key)
+	)
 }
 
 // Lazily load and validate a page type's head.svelte. Cached value is the raw
@@ -244,7 +278,7 @@ async function load_page_type_head(
 }
 
 async function build_page(options: BuildPageOptions): Promise<{ html: string; error?: string }> {
-	const { page, page_path, site_dir, temp_dir, head_content, site_name, block_cache, layout_cache, page_type_head_cache, site_data, page_url_map } = options
+	const { page, page_path, site_dir, temp_dir, head_content, foot_content, site_name, block_cache, layout_cache, page_type_head_cache, site_data, page_url_map } = options
 
 	try {
 		const page_build_id = safe_temp_id(page._id || page.id || page_path || page.name || 'page')
@@ -266,13 +300,20 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 		const header_sections = await resolve_layout_sections(layout.header || [], site_dir, site_data, page_url_map)
 		const footer_sections = await resolve_layout_sections(layout.footer || [], site_dir, site_data, page_url_map)
 		const page_sections = await resolve_page_sections(page.sections || [], site_dir, site_data, page_url_map)
-		const all_sections = [...header_sections, ...page_sections, ...footer_sections]
+		const sections = [...header_sections, ...page_sections, ...footer_sections]
 
-		if (all_sections.length === 0) {
-			return { html: generate_empty_page(site_name, page.name, combined_head_content) }
-		}
-
-		const sections = all_sections
+		// Head fragments see site fields merged with the page's own fields (page
+		// wins), each pre-declared as a bare identifier — same scope as server
+		// publish. Every DEFINED field key is declared even when no value is set
+		// (binding to undefined), so `{seo_title || fallback}` works on pages
+		// that leave the field empty instead of throwing ReferenceError.
+		const head_data: Record<string, unknown> = { ...site_data.content, ...(page.fields || {}) }
+		const page_type_fields = await load_page_type_fields(site_dir, page_type)
+		const head_keys = head_identifier_keys([
+			...site_data.fields.map((field) => field.name),
+			...page_type_fields.map((field) => field.name),
+			...Object.keys(head_data)
+		])
 
 		// Compile each block and collect CSS
 		const all_css: string[] = []
@@ -302,8 +343,11 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 			} as any)
 		}
 
-		// Create a page component that renders all sections
-		const page_component = generate_page_component(section_components as any, sections)
+		// Create a page component that renders all sections and the head. The
+		// head rides through <svelte:head> so its Svelte syntax ({expression},
+		// {@html}, {#if}) is actually evaluated — pasting the fragment into the
+		// output verbatim leaked raw template syntax into deployed pages.
+		const page_component = generate_page_component(section_components as any, sections, combined_head_content, head_keys)
 		const page_component_path = path.join(temp_dir, `page_${page_build_id}.svelte`)
 		await fs.writeFile(page_component_path, page_component)
 
@@ -364,47 +408,39 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 		// Import render from svelte/server
 		const { render } = await import('svelte/server')
 
-		// Build props for all sections
+		// Build props for all sections + the head fragment's field data
 		const props: Record<string, unknown> = {}
 		sections.forEach((section, i) => {
 			props[`section_${i}_props`] = section.content || {}
 		})
+		props.head_props = head_data
 
 		const rendered = render(PageComponent, { props })
 
-		// Extract CSS from combined head fragments (site + page-type).
-		let head_css = ''
-		let head_html = combined_head_content
-		const style_matches = combined_head_content.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)
-		const head_css_parts: string[] = []
-		for (const m of style_matches) {
-			head_css_parts.push(m[1])
-		}
-		if (head_css_parts.length > 0) {
-			head_css = head_css_parts.join('\n')
-			head_html = combined_head_content.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+		// No automatic <title> — server publish emits none, and an injected
+		// title would suppress any title a page-type head renders (Svelte keeps
+		// the first <title> it encounters). Warn so the omission is visible.
+		if (!/<title[\s>]/i.test(rendered.head || '')) {
+			console.log(chalk.yellow(`  Warning: ${page.name || page_path || 'home'}: no <title> — render one from a head fragment (see the head-and-seo doc)`))
 		}
 
-		// Combine all CSS (reset first, then head, then blocks)
-		const combined_css = [CSS_RESET, head_css, ...all_css].filter(Boolean).join('\n')
-
-		// Generate final HTML
-		const title = page.name === 'Home' ? site_name : `${page.name} | ${site_name}`
+		// Head <style> tags flow through rendered.head as real global style
+		// elements (matching server publish). Reset first so head styles can
+		// override it; block CSS last, as component styles land during render.
+		const block_css = all_css.filter(Boolean).join('\n')
 		const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>${escape_html(title)}</title>
-${head_html}
 	<style>
-${combined_css}
+${CSS_RESET}
 	</style>
 	${rendered.head || ''}
-</head>
+${block_css ? `	<style>\n${block_css}\n	</style>\n` : ''}</head>
 <body>
 ${rendered.body || ''}
-</body>
+${foot_content}</body>
 </html>`
 
 		return { html }
@@ -446,15 +482,20 @@ async function compile_block(site_dir: string, block_name: string, temp_dir: str
 	}
 }
 
-function generate_page_component(components: Array<{ name: string; block_name: string; props: Record<string, unknown> }>, sections: PageSection[]): string {
+function generate_page_component(components: Array<{ name: string; block_name: string; props: Record<string, unknown> }>, sections: PageSection[], head_content: string, head_keys: string[]): string {
 	const imports = sections.map((section, i) => {
 		const safe_name = section.block.replace(/-/g, '_')
 		return `import Section_${i} from './${section.block}.compiled.js'`
 	}).join('\n')
 
-	const props_declarations = sections.map((_, i) => {
-		return `section_${i}_props = {}`
-	}).join(',\n\t')
+	const props_declarations = [
+		...sections.map((_, i) => `section_${i}_props = {}`),
+		'head_props = {}'
+	].join(',\n\t')
+
+	// Bare identifiers for head scope; keys are pre-filtered to valid, safe
+	// binding names by head_identifier_keys.
+	const head_declarations = head_keys.map((key) => `let ${key} = head_props['${key}']`).join('\n')
 
 	const section_renders = sections.map((_, i) => {
 		return `<Section_${i} {...section_${i}_props} />`
@@ -468,27 +509,16 @@ ${imports}
 let {
 	${props_declarations}
 } = $props()
+${head_declarations}
 </script>
+
+<svelte:head>
+${head_content}
+</svelte:head>
 
 <main>
 	${section_renders}
 </main>`
-}
-
-function generate_empty_page(site_name: string, page_name: string, head_content: string): string {
-	const title = page_name === 'Home' ? site_name : `${page_name} | ${site_name}`
-	return `<!DOCTYPE html>
-<html lang="en">
-<head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>${escape_html(title)}</title>
-	<style>${CSS_RESET}</style>
-${head_content}
-</head>
-<body>
-</body>
-</html>`
 }
 
 function generate_error_page(site_name: string, page_name: string, error: string, head_content: string): string {
@@ -747,6 +777,23 @@ async function load_block_fields(site_dir: string, block_name: string): Promise<
 	} catch {
 		return []
 	}
+}
+
+const page_type_fields_cache = new Map<string, BlockField[]>()
+
+async function load_page_type_fields(site_dir: string, page_type: string): Promise<BlockField[]> {
+	const cache_key = `${site_dir}:${page_type}`
+	const cached = page_type_fields_cache.get(cache_key)
+	if (cached !== undefined) return cached
+
+	let fields: BlockField[] = []
+	try {
+		fields = extract_fields_array(await load_fields_file(path.join(site_dir, 'page-types', page_type, 'fields.yaml')))
+	} catch {
+		// No fields file for this page type
+	}
+	page_type_fields_cache.set(cache_key, fields)
+	return fields
 }
 
 async function resolve_site_fields(
