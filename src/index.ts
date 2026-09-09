@@ -7,6 +7,7 @@ import { Command } from 'commander'
 import chalk from 'chalk'
 import { init_workspace } from './commands/init.js'
 import { new_site } from './commands/new.js'
+import { add_site } from './commands/add.js'
 import { pull_site } from './commands/pull.js'
 import { push_site } from './commands/push.js'
 import { pull_library } from './commands/pull-library.js'
@@ -33,6 +34,7 @@ program
 program.addHelpText('before', `
 ${chalk.bold('Local development')}
   ${chalk.cyan('primo dev')}      Run the local CMS on this workspace
+  ${chalk.cyan('primo add')}      Register a hand-authored sites/ folder with the CMS
 
 ${chalk.bold('Going live — pick one')}
   Want others to edit content? .................. ${chalk.cyan('primo deploy')}
@@ -51,6 +53,23 @@ program
 	.option('-t, --template <template>', 'Starter template')
 	.option('--skip-dev', 'Create files only, don\'t start CMS')
 	.action((name, options) => new_site({ name, ...options }))
+
+program
+	.command('add <site>')
+	.description('Register an existing sites/ folder with the workspace CMS, then exit')
+	.option('-d, --dir <dir>', 'Workspace directory', '.')
+	.option('-p, --port <port>', 'Port', '3000')
+	.addHelpText('after', `
+Creating a folder under ${chalk.cyan('sites/')} isn't enough to make it appear in the
+dashboard — its records must be imported into the workspace database. This
+command does that one-time import (minting a site_id into site.yaml if needed)
+and exits. If ${chalk.cyan('primo dev')} is already running, it picks the site up live.
+
+${chalk.bold('Examples')}
+  primo add maison-verde
+  primo add sites/maison-verde
+`)
+	.action((site, options) => add_site(site, options))
 
 program
 	.command('dev')
@@ -180,6 +199,13 @@ program.on('command:*', (operands: string[]) => {
 		console.error(`  ${chalk.dim('It now deploys your whole workspace (all sites + library) as one unit.')}`)
 		console.error('')
 		console.error(`  Run: ${chalk.cyan('primo deploy --help')}`)
+	} else if (cmd === 'register' || cmd === 'import') {
+		// Likely guesses for site registration. Deliberately not aliases:
+		// one canonical name keeps docs/transcripts consistent, and leaves
+		// `register` free for a future account/signup meaning.
+		console.error(`  To register an existing sites/ folder with the CMS, run ${chalk.cyan('primo add <site>')}.`)
+		console.error('')
+		console.error(`  Run: ${chalk.cyan('primo add --help')}`)
 	} else {
 		console.error(`  Run ${chalk.cyan('primo --help')} to see available commands.`)
 	}
