@@ -9,7 +9,7 @@ import extract from 'extract-zip'
 import { dump as dump_yaml, load as load_yaml } from 'js-yaml'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { ensure_binary, ensure_data_dir } from '../utils/binary.js'
-import { read_site_config, type SiteConfig, SITE_CONFIG_FILE } from '../utils/site-config.js'
+import { read_site_config, write_site_config, type SiteConfig, SITE_CONFIG_FILE } from '../utils/site-config.js'
 import { read_server_config, type ServerConfig, type SiteGroupConfig, format_group_name, SERVER_CONFIG_FILE, resolve_format_options } from '../utils/server-config.js'
 import { format_file_contents, should_format, type FormatOptions } from '../utils/format.js'
 import { normalize_site } from './validate.js'
@@ -802,7 +802,7 @@ export async function dev_server(options: DevOptions) {
 		} else {
 			// Single site mode
 			try {
-				const config = await read_site_config(base_dir)
+				const config = await ensure_site_id(base_dir, await read_site_config(base_dir))
 				sites = [{ dir: base_dir, config }]
 			} catch {
 				spinner.fail(`No ${SERVER_CONFIG_FILE} or ${SITE_CONFIG_FILE} found. Run \`primo new\` first.`)
@@ -1252,8 +1252,72 @@ export async function dev_server(options: DevOptions) {
 			setup_site_watchers(site)
 		}
 
-		// Simple HTTP server for reload requests (only in server mode)
+		// Discover and load site folders that appeared after startup. Shared by
+		// the /reload endpoint (`primo new` posts to it) and the sites-root
+		// watcher below (folders authored directly, without `primo new`).
+		// Serialized through a promise chain so concurrent triggers can't race
+		// past the known_sites check and double-import the same site.
 		if (is_server_mode) {
+			let new_site_load_chain: Promise<unknown> = Promise.resolve()
+			const load_new_sites = (): Promise<{ loaded: number; quarantined: string[] }> => {
+				const run = new_site_load_chain.then(async () => {
+					const new_sites = await discover_sites(base_dir)
+					let loaded_count = 0
+					const quarantined: string[] = []
+					for (const site of new_sites) {
+						if (known_sites.has(site.dir)) continue
+
+						known_sites.add(site.dir)
+						sites.push(site)
+						const use_bootstrap = !await site_exists(api_url, site.config.site_id)
+						let import_ok = true
+						if (sync_policy.mode === 'cms' && !use_bootstrap) {
+							await sync_from_cms(site.dir, api_url, site.config, server_config, base_dir, sync_policy)
+						} else {
+							await normalize_site(site.dir)
+							const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap, base_dir))
+							if (import_timings === null) {
+								// Duplicate _ids on a freshly discovered site — quarantine
+								// it from CMS→file polling until a later import succeeds.
+								blocked_site_keys.add(get_site_sync_key(site.dir, site.config))
+								quarantined.push(site.config.name)
+								import_ok = false
+							} else {
+								await write_import_sync_status(site.dir, import_timings, dev_location)
+								if (!import_timings.ok) {
+									// Bootstrap + fallback both failed (only logged). Quarantine
+									// and skip the success path so we don't announce a site that
+									// didn't actually load — and so `primo new` sees it in the
+									// /reload body's `quarantined` list.
+									blocked_site_keys.add(get_site_sync_key(site.dir, site.config))
+									quarantined.push(site.config.name)
+									import_ok = false
+								} else if (update_site_sync_state_after_import(site, import_timings, sync_policy)) {
+									await update_site_sync_baseline(site, api_url, server_config, base_dir)
+								}
+							}
+						}
+						setup_site_watchers(site)
+						loaded_count++
+
+						if (!import_ok) {
+							console.log(chalk.yellow(`  ⚠ ${site.config.name}: import failed — see logs; will retry on the next file change.`))
+							continue
+						}
+
+						const host = local_dev_host(site.config.name || path.basename(site.dir), port)
+						console.log(chalk.green(`  ✓ New site loaded: ${site.config.name}`))
+						console.log(`    ${chalk.dim('Edit:')}    http://${host}/admin/site`)
+						console.log(`    ${chalk.dim('Preview:')} http://${host}/`)
+					}
+
+					return { loaded: loaded_count, quarantined }
+				})
+				new_site_load_chain = run.catch(() => {})
+				return run
+			}
+
+			// Simple HTTP server for reload requests
 			const http = await import('http')
 			const reload_server = http.createServer(async (req, res) => {
 				if (req.method !== 'POST' || req.url !== '/reload') {
@@ -1262,66 +1326,13 @@ export async function dev_server(options: DevOptions) {
 					return
 				}
 
-				const new_sites = await discover_sites(base_dir)
-				let loaded_count = 0
-				const quarantined: string[] = []
-				for (const site of new_sites) {
-					if (known_sites.has(site.dir)) continue
-
-					known_sites.add(site.dir)
-					sites.push(site)
-					const use_bootstrap = !await site_exists(api_url, site.config.site_id)
-					let import_ok = true
-					if (sync_policy.mode === 'cms' && !use_bootstrap) {
-						await sync_from_cms(site.dir, api_url, site.config, server_config, base_dir, sync_policy)
-					} else {
-						await normalize_site(site.dir)
-						const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap, base_dir))
-						if (import_timings === null) {
-							// Duplicate _ids on a freshly discovered site — quarantine
-							// it from CMS→file polling until a later import succeeds.
-							blocked_site_keys.add(get_site_sync_key(site.dir, site.config))
-							quarantined.push(site.config.name)
-							import_ok = false
-						} else {
-							await write_import_sync_status(site.dir, import_timings, dev_location)
-							if (!import_timings.ok) {
-								// Bootstrap + fallback both failed (only logged). Quarantine
-								// and skip the success path so we don't announce a site that
-								// didn't actually load — and so `primo new` sees it in the
-								// /reload body's `quarantined` list.
-								blocked_site_keys.add(get_site_sync_key(site.dir, site.config))
-								quarantined.push(site.config.name)
-								import_ok = false
-							} else if (update_site_sync_state_after_import(site, import_timings, sync_policy)) {
-								await update_site_sync_baseline(site, api_url, server_config, base_dir)
-							}
-						}
-					}
-					setup_site_watchers(site)
-					loaded_count++
-
-					if (!import_ok) {
-						console.log(chalk.yellow(`  ⚠ ${site.config.name}: import failed — see logs; will retry on the next file change.`))
-						continue
-					}
-
-					const host = local_dev_host(site.config.name || path.basename(site.dir), port)
-					console.log(chalk.green(`  ✓ New site loaded: ${site.config.name}`))
-					console.log(`    ${chalk.dim('Edit:')}    http://${host}/admin/site`)
-					console.log(`    ${chalk.dim('Preview:')} http://${host}/`)
-				}
-
 				// Report the outcome so `primo new` can tell whether the site it
 				// just scaffolded actually imported. A quarantined site (duplicate
 				// _ids) returns 200 with loaded:false so a 2xx no longer implies
 				// success — the caller checks the body, not just the status.
-				const body = JSON.stringify({
-					loaded: loaded_count,
-					quarantined
-				})
+				const outcome = await load_new_sites()
 				res.writeHead(200, { 'Content-Type': 'application/json' })
-				res.end(body)
+				res.end(JSON.stringify(outcome))
 			})
 			reload_server.on('error', (err: NodeJS.ErrnoException) => {
 				if (err.code === 'EADDRINUSE') {
@@ -1329,6 +1340,42 @@ export async function dev_server(options: DevOptions) {
 				}
 			})
 			reload_server.listen(port + 1, '127.0.0.1')
+
+			// Watch the sites root so a folder authored directly under sites/
+			// while dev is running (agent writes, cp -r, git checkout) gets
+			// imported without `primo new`'s /reload call. Previously such
+			// folders sat inert with no signal until the next dev restart.
+			// The timer re-arms on every event, so discovery only fires after
+			// the new folder has been quiet for a second — letting a bulk
+			// write of blocks/pages settle before the first import.
+			try {
+				const sites_root = await get_sites_root(base_dir)
+				let discover_timeout: NodeJS.Timeout | null = null
+				const schedule_new_site_discovery = (full_path: string) => {
+					const first_dir = path.relative(sites_root, full_path).split(path.sep)[0]
+					if (!first_dir || first_dir.startsWith('.')) return
+					if (known_sites.has(path.join(sites_root, first_dir))) return
+					if (discover_timeout) clearTimeout(discover_timeout)
+					discover_timeout = setTimeout(() => {
+						discover_timeout = null
+						load_new_sites().catch(() => {})
+					}, 1000)
+				}
+				const new_site_watcher = chokidar.watch(sites_root, {
+					depth: 1,
+					ignored: (p: string) => path.basename(p).startsWith('.'),
+					ignoreInitial: true,
+					awaitWriteFinish: {
+						stabilityThreshold: 60,
+						pollInterval: 30
+					}
+				})
+				new_site_watcher.on('addDir', schedule_new_site_discovery)
+				new_site_watcher.on('add', schedule_new_site_discovery)
+				watchers.push(new_site_watcher)
+			} catch {
+				// sites/ is missing — discover_sites already failed loudly on boot
+			}
 		}
 
 		// Start polling for CMS changes (sync back to local files)
@@ -1484,6 +1531,22 @@ function is_plain_record(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
+// A hand-authored site folder (written directly by an agent or human, as
+// opposed to scaffolded by `primo new`) has no site_id — `primo new` is the
+// only thing that ever minted one. Without an id the boot import can't land
+// (bootstrap posts site_id=undefined, the fallback hits
+// /api/primo/import/undefined) and the site sits unregistered with nothing
+// but a buried log line. Mint the id at discovery time and write it back so
+// adopted folders register exactly like scaffolded ones.
+async function ensure_site_id(site_dir: string, config: SiteConfig): Promise<SiteConfig> {
+	if (typeof config.site_id === 'string' && config.site_id.trim()) return config
+	const { name, site_id: _missing, ...rest } = config
+	const updated: SiteConfig = { name, site_id: generate_id(), ...rest }
+	await write_site_config(site_dir, updated)
+	console.log(chalk.dim(`  ${updated.name || path.basename(site_dir)}: no site_id in ${SITE_CONFIG_FILE} — generated ${updated.site_id} and saved it`))
+	return updated
+}
+
 async function discover_sites(base_dir: string): Promise<SiteInfo[]> {
 	const sites: SiteInfo[] = []
 	const sites_root = await get_sites_root(base_dir)
@@ -1493,7 +1556,7 @@ async function discover_sites(base_dir: string): Promise<SiteInfo[]> {
 		if (entry.isDirectory() && !entry.name.startsWith('.')) {
 			const site_dir = path.join(sites_root, entry.name)
 			try {
-				const config = await read_site_config(site_dir)
+				const config = await ensure_site_id(site_dir, await read_site_config(site_dir))
 				sites.push({ dir: site_dir, config })
 			} catch {
 				// Not a site directory
