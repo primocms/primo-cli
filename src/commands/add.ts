@@ -105,7 +105,15 @@ export async function add_site(target: string, options: AddOptions) {
 			// Older dev server or hot reload disabled (port+1 in use). Import
 			// directly against the running CMS — records land, but the dev
 			// server won't watch this site until it's restarted.
-			const timings = await register_site(site_dir, api_url, config, port, server_config, base_dir)
+			let timings: ImportTimings | null = null
+			try {
+				timings = await register_site(site_dir, api_url, config, port, server_config, base_dir)
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err)
+				console.log(chalk.red(`  ✗ ${config.name} could not be imported: ${message}`))
+				console.log(chalk.dim(`  Fix the problem, then re-run \`primo add ${target}\`.`))
+				process.exit(1)
+			}
 			report_import(config.name, timings)
 			console.log(chalk.yellow('  The running dev server couldn\'t be reloaded — restart `primo dev` to watch this site.'))
 			console.log('')
@@ -160,13 +168,23 @@ export async function add_site(target: string, options: AddOptions) {
 
 	let timings: ImportTimings | null = null
 	let boot_failed = false
+	let import_error: string | null = null
 	try {
 		const ready = await wait_for_ready(api_url, 30000)
-		if (!ready) {
+		// A ready health check only proves *something* answered on the port.
+		// If our child lost the bind race to another CMS and exited, that
+		// other server is answering — importing would land this site's
+		// records in a different workspace's database. Require our own
+		// process to still be alive before trusting the port.
+		if (!ready || cms_process.exitCode !== null || cms_process.killed) {
 			boot_failed = true
 		} else {
 			spinner.text = `Importing ${config.name}...`
-			timings = await register_site(site_dir, api_url, config, port, server_config, base_dir)
+			try {
+				timings = await register_site(site_dir, api_url, config, port, server_config, base_dir)
+			} catch (err) {
+				import_error = err instanceof Error ? err.message : String(err)
+			}
 		}
 	} finally {
 		// Always tear the CMS down before exiting — process.exit skips
@@ -177,6 +195,12 @@ export async function add_site(target: string, options: AddOptions) {
 	if (boot_failed) {
 		spinner.fail('CMS failed to start')
 		if (stderr_output) console.log(chalk.red(stderr_output))
+		process.exit(1)
+	}
+
+	if (import_error !== null) {
+		spinner.fail(`${config.name} could not be imported: ${import_error}`)
+		console.log(chalk.dim(`  Fix the problem, then re-run \`primo add ${target}\`.`))
 		process.exit(1)
 	}
 
@@ -227,10 +251,9 @@ function resolve_site_dir(base_dir: string, sites_root: string, target: string):
 	// the only directory site discovery and the dashboard scan, so registering
 	// a folder anywhere else would import records no later `primo dev` run
 	// can match back to files.
-	if (!target.includes('/') && !target.includes(path.sep)) {
-		return path.join(sites_root, target)
-	}
-	const resolved = path.resolve(base_dir, target)
+	const resolved = !target.includes('/') && !target.includes(path.sep)
+		? path.resolve(sites_root, target)
+		: path.resolve(base_dir, target)
 	if (path.dirname(resolved) !== sites_root) {
 		console.log(chalk.red(`Sites must live directly under sites/ — got "${target}".`))
 		process.exit(1)
@@ -260,9 +283,25 @@ async function ensure_site_config(site_dir: string, folder_name: string): Promis
 		const parsed = await read_site_config(site_dir)
 		if (parsed && typeof parsed === 'object') {
 			existing = parsed
+		} else if (parsed !== null && parsed !== undefined) {
+			// site.yaml exists but isn't a mapping (e.g. a bare string).
+			// Overwriting it would silently discard whatever the user meant
+			// to keep — an empty file is the only non-mapping we fill in.
+			console.log(chalk.red(`sites/${folder_name}/site.yaml is malformed (expected key: value mappings).`))
+			console.log(chalk.dim('Fix or delete it, then re-run `primo add`.'))
+			process.exit(1)
 		}
-	} catch {
-		// No site.yaml yet.
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+			// Unreadable or unparseable site.yaml — never overwrite it with a
+			// fresh config; that would mint a new site_id and drop the user's
+			// server/group for a site that may already be registered.
+			const message = error instanceof Error ? error.message : String(error)
+			console.log(chalk.red(`sites/${folder_name}/site.yaml could not be read: ${message}`))
+			console.log(chalk.dim('Fix or delete it, then re-run `primo add`.'))
+			process.exit(1)
+		}
+		// ENOENT — no site.yaml yet; create one below.
 	}
 
 	const created = existing === null
