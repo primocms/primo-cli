@@ -803,6 +803,13 @@ export async function dev_server(options: DevOptions) {
 			// Single site mode
 			try {
 				const config = await read_site_config(base_dir)
+				if (typeof config.site_id !== 'string' || !config.site_id.trim()) {
+					// Without a site_id the import posts site_id=undefined and
+					// fails cryptically — stop with the actual fix instead.
+					spinner.fail(`${SITE_CONFIG_FILE} has no site_id — this site was never registered.`)
+					console.log(chalk.dim(`  Run \`primo add ${path.basename(base_dir)}\` from the workspace root to register it.`))
+					process.exit(1)
+				}
 				sites = [{ dir: base_dir, config }]
 			} catch {
 				spinner.fail(`No ${SERVER_CONFIG_FILE} or ${SITE_CONFIG_FILE} found. Run \`primo new\` first.`)
@@ -1507,6 +1514,31 @@ function is_plain_record(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
+// Folders that already got their unregistered/unreadable warning, so
+// rediscovery (which runs on every /reload) doesn't repeat it.
+const warned_unregistered_dirs = new Set<string>()
+
+// Site-shaped = has any of the content dirs a real site carries. Used to
+// tell an authored-but-unregistered site (warn) from a random folder that
+// happens to live under sites/ (ignore silently, as before).
+async function is_site_shaped(site_dir: string): Promise<boolean> {
+	for (const marker of ['pages', 'blocks', 'page-types', 'site']) {
+		try {
+			await fs.stat(path.join(site_dir, marker))
+			return true
+		} catch {
+			// keep looking
+		}
+	}
+	return false
+}
+
+function warn_once(site_dir: string, message: string): void {
+	if (warned_unregistered_dirs.has(site_dir)) return
+	warned_unregistered_dirs.add(site_dir)
+	console.log(chalk.yellow(message))
+}
+
 async function discover_sites(base_dir: string): Promise<SiteInfo[]> {
 	const sites: SiteInfo[] = []
 	const sites_root = await get_sites_root(base_dir)
@@ -1517,9 +1549,24 @@ async function discover_sites(base_dir: string): Promise<SiteInfo[]> {
 			const site_dir = path.join(sites_root, entry.name)
 			try {
 				const config = await read_site_config(site_dir)
+				if (typeof config.site_id !== 'string' || !config.site_id.trim()) {
+					// An authored site with no registration key. Importing it
+					// would post site_id=undefined and die with a buried
+					// error, so skip it and say what to run instead.
+					warn_once(site_dir, `  ⚠ sites/${entry.name} isn't registered — run \`primo add ${entry.name}\` to import it.`)
+					continue
+				}
 				sites.push({ dir: site_dir, config })
-			} catch {
-				// Not a site directory
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+					// No site.yaml. Only warn when the folder actually looks
+					// like a site — anything else is not our business.
+					if (await is_site_shaped(site_dir)) {
+						warn_once(site_dir, `  ⚠ sites/${entry.name} isn't registered — run \`primo add ${entry.name}\` to import it.`)
+					}
+				} else {
+					warn_once(site_dir, `  ⚠ sites/${entry.name}/site.yaml could not be read — fix it, then run \`primo add ${entry.name}\`.`)
+				}
 			}
 		}
 	}
