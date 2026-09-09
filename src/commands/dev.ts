@@ -988,8 +988,8 @@ export async function dev_server(options: DevOptions) {
 						}
 						schedule_library_push()
 					}
-					const on_event = (full_path: string) => {
-						if (should_skip_synced_delete(full_path)) return
+					const on_event = (event: WatchEvent, full_path: string) => {
+						if (should_skip_synced_delete(full_path, event)) return
 
 						if (synced_files.has(full_path)) {
 							// We last wrote this file from a CMS pull. If the
@@ -1069,11 +1069,11 @@ export async function dev_server(options: DevOptions) {
 						}, LOCAL_PUSH_DEBOUNCE_MS)
 					}
 
-					watcher.on('add', on_event)
-					watcher.on('change', on_event)
-					watcher.on('unlink', on_event)
-					watcher.on('addDir', on_event)
-					watcher.on('unlinkDir', on_event)
+					watcher.on('add', p => on_event('add', p))
+					watcher.on('change', p => on_event('change', p))
+					watcher.on('unlink', p => on_event('unlink', p))
+					watcher.on('addDir', p => on_event('addDir', p))
+					watcher.on('unlinkDir', p => on_event('unlinkDir', p))
 					watchers.push(watcher)
 				} catch {
 					// Library directory might not exist
@@ -1209,8 +1209,8 @@ export async function dev_server(options: DevOptions) {
 							mark_pending_local_change()
 							continue_event(full_path)
 						}
-						const on_event = (full_path: string) => {
-							if (should_skip_synced_delete(full_path)) return
+						const on_event = (event: WatchEvent, full_path: string) => {
+							if (should_skip_synced_delete(full_path, event)) return
 
 							if (synced_files.has(full_path)) {
 								// We last wrote this file from a CMS pull. Compare
@@ -1235,11 +1235,11 @@ export async function dev_server(options: DevOptions) {
 							}
 							push_or_ignore_file_change(full_path)
 						}
-						watcher.on('add', on_event)
-						watcher.on('change', on_event)
-						watcher.on('unlink', on_event)
-						watcher.on('addDir', on_event)
-						watcher.on('unlinkDir', on_event)
+						watcher.on('add', p => on_event('add', p))
+						watcher.on('change', p => on_event('change', p))
+						watcher.on('unlink', p => on_event('unlink', p))
+						watcher.on('addDir', p => on_event('addDir', p))
+						watcher.on('unlinkDir', p => on_event('unlinkDir', p))
 						watchers.push(watcher)
 					} catch {
 						// Directory might not exist
@@ -1694,9 +1694,30 @@ function mark_deleted_path(file_path: string) {
 	synced_deleted_paths.set(file_path, Date.now())
 }
 
-function should_skip_synced_delete(file_path: string): boolean {
+// Only a delete event can be the echo of a sync-initiated delete. An `add`
+// (or `change`) for a path we recently deleted is a genuine re-creation — the
+// user (or an agent) put the file back — and MUST NOT be skipped, or the new
+// file silently never imports. This is exactly the bug where a re-created
+// page-types/default/head.svelte sat outside the CMS while sibling sites
+// imported: the create landed inside the 10s synced-delete window and was
+// swallowed. So we gate the skip on the event being a delete.
+type WatchEvent = 'add' | 'change' | 'unlink' | 'addDir' | 'unlinkDir'
+
+function is_delete_event(event: WatchEvent): boolean {
+	return event === 'unlink' || event === 'unlinkDir'
+}
+
+function should_skip_synced_delete(file_path: string, event: WatchEvent): boolean {
 	const deleted_at = synced_deleted_paths.get(file_path)
 	if (!deleted_at) {
+		return false
+	}
+
+	// A re-creation cancels the pending delete-echo suppression and must be
+	// allowed through to import. Clear the marker so a later real delete of the
+	// same path isn't mistaken for our echo.
+	if (!is_delete_event(event)) {
+		synced_deleted_paths.delete(file_path)
 		return false
 	}
 
