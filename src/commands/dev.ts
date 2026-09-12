@@ -1524,8 +1524,10 @@ const warned_unregistered_dirs = new Set<string>()
 async function is_site_shaped(site_dir: string): Promise<boolean> {
 	for (const marker of ['pages', 'blocks', 'page-types', 'site']) {
 		try {
-			await fs.stat(path.join(site_dir, marker))
-			return true
+			// Must be a directory — a plain file named e.g. `pages` in a
+			// non-site folder shouldn't earn the unregistered warning.
+			const stat = await fs.stat(path.join(site_dir, marker))
+			if (stat.isDirectory()) return true
 		} catch {
 			// keep looking
 		}
