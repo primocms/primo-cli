@@ -434,7 +434,7 @@ async function is_server_running(port: number): Promise<boolean> {
 	}
 }
 
-function generate_agent_md(): string {
+export function generate_agent_md(): string {
 	return `# Primo workspace
 
 Primo workspace for local development. Each subdirectory under \`sites/\` is an independent Primo site.
@@ -453,6 +453,7 @@ Without the MCP server, read \`sites/*/blocks/*/fields.yaml\` and \`sites/*/page
 
 - \`primo dev\` — start the local CMS and dev server. Run from the workspace root.
 - \`primo new [name]\` — scaffold a new site under \`sites/\`.
+- \`primo add <name>\` — register an existing \`sites/<name>\` folder with the CMS (mints its site_id and imports its records). Creating the folder alone doesn't register it.
 - File edits sync automatically while \`primo dev\` is running. Structural changes (block schema, component) may trigger a browser reload.
 
 ## Source of truth
