@@ -127,7 +127,7 @@ type SnapshotOptions = {
 
 type ContentSnapshot = Map<string, string>
 
-type ImportTimings = {
+export type ImportTimings = {
 	zip_ms: number
 	request_ms: number
 	mode: 'bootstrap' | 'import' | 'bootstrap+import'
@@ -730,7 +730,7 @@ async function fetch_with_timeout(url: string, options: RequestInit = {}, timeou
 }
 
 // Kill process with escalation to SIGKILL
-async function kill_process(proc: ChildProcess): Promise<void> {
+export async function kill_process(proc: ChildProcess): Promise<void> {
 	if (!proc || proc.killed) return
 
 	proc.kill('SIGTERM')
@@ -803,6 +803,13 @@ export async function dev_server(options: DevOptions) {
 			// Single site mode
 			try {
 				const config = await read_site_config(base_dir)
+				if (typeof config.site_id !== 'string' || !config.site_id.trim()) {
+					// Without a site_id the import posts site_id=undefined and
+					// fails cryptically — stop with the actual fix instead.
+					spinner.fail(`${SITE_CONFIG_FILE} has no site_id — this site was never registered.`)
+					console.log(chalk.dim(`  Run \`primo add ${path.basename(base_dir)}\` from the workspace root to register it.`))
+					process.exit(1)
+				}
 				sites = [{ dir: base_dir, config }]
 			} catch {
 				spinner.fail(`No ${SERVER_CONFIG_FILE} or ${SITE_CONFIG_FILE} found. Run \`primo new\` first.`)
@@ -1270,33 +1277,47 @@ export async function dev_server(options: DevOptions) {
 
 					known_sites.add(site.dir)
 					sites.push(site)
-					const use_bootstrap = !await site_exists(api_url, site.config.site_id)
 					let import_ok = true
-					if (sync_policy.mode === 'cms' && !use_bootstrap) {
-						await sync_from_cms(site.dir, api_url, site.config, server_config, base_dir, sync_policy)
-					} else {
-						await normalize_site(site.dir)
-						const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap, base_dir))
-						if (import_timings === null) {
-							// Duplicate _ids on a freshly discovered site — quarantine
-							// it from CMS→file polling until a later import succeeds.
-							blocked_site_keys.add(get_site_sync_key(site.dir, site.config))
-							quarantined.push(site.config.name)
-							import_ok = false
+					try {
+						const use_bootstrap = !await site_exists(api_url, site.config.site_id)
+						if (sync_policy.mode === 'cms' && !use_bootstrap) {
+							await sync_from_cms(site.dir, api_url, site.config, server_config, base_dir, sync_policy)
 						} else {
-							await write_import_sync_status(site.dir, import_timings, dev_location)
-							if (!import_timings.ok) {
-								// Bootstrap + fallback both failed (only logged). Quarantine
-								// and skip the success path so we don't announce a site that
-								// didn't actually load — and so `primo new` sees it in the
-								// /reload body's `quarantined` list.
+							await normalize_site(site.dir)
+							const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap, base_dir))
+							if (import_timings === null) {
+								// Duplicate _ids on a freshly discovered site — quarantine
+								// it from CMS→file polling until a later import succeeds.
 								blocked_site_keys.add(get_site_sync_key(site.dir, site.config))
 								quarantined.push(site.config.name)
 								import_ok = false
-							} else if (update_site_sync_state_after_import(site, import_timings, sync_policy)) {
-								await update_site_sync_baseline(site, api_url, server_config, base_dir)
+							} else {
+								await write_import_sync_status(site.dir, import_timings, dev_location)
+								if (!import_timings.ok) {
+									// Bootstrap + fallback both failed (only logged). Quarantine
+									// and skip the success path so we don't announce a site that
+									// didn't actually load — and so `primo new` sees it in the
+									// /reload body's `quarantined` list.
+									blocked_site_keys.add(get_site_sync_key(site.dir, site.config))
+									quarantined.push(site.config.name)
+									import_ok = false
+								} else if (update_site_sync_state_after_import(site, import_timings, sync_policy)) {
+									await update_site_sync_baseline(site, api_url, server_config, base_dir)
+								}
 							}
 						}
+					} catch (err) {
+						// A malformed site (e.g. missing pages/index.yaml, which makes
+						// normalize_site throw) must not take the whole dev server down:
+						// before this guard, the throw escaped the handler as an
+						// unhandledRejection and tripped process-level cleanup().
+						// Quarantine the site and keep serving; the watcher retries it
+						// on the next file change.
+						blocked_site_keys.add(get_site_sync_key(site.dir, site.config))
+						quarantined.push(site.config.name)
+						import_ok = false
+						const message = err instanceof Error ? err.message : String(err)
+						console.log(chalk.red(`  ✗ ${site.config.name}: ${message}`))
 					}
 					setup_site_watchers(site)
 					loaded_count++
@@ -1316,9 +1337,18 @@ export async function dev_server(options: DevOptions) {
 				// just scaffolded actually imported. A quarantined site (duplicate
 				// _ids) returns 200 with loaded:false so a 2xx no longer implies
 				// success — the caller checks the body, not just the status.
+				// `known` lists every site this server tracks so `primo add` can
+				// tell "already registered here" from "this server is serving a
+				// different workspace" — record-level reads can't make that call
+				// (PocketBase 404s them pre-setup even when the record exists).
 				const body = JSON.stringify({
 					loaded: loaded_count,
-					quarantined
+					quarantined,
+					known: sites.map(site => ({
+						name: site.config.name,
+						site_id: site.config.site_id,
+						blocked: blocked_site_keys.has(get_site_sync_key(site.dir, site.config))
+					}))
 				})
 				res.writeHead(200, { 'Content-Type': 'application/json' })
 				res.end(body)
@@ -1484,6 +1514,33 @@ function is_plain_record(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
+// Folders that already got their unregistered/unreadable warning, so
+// rediscovery (which runs on every /reload) doesn't repeat it.
+const warned_unregistered_dirs = new Set<string>()
+
+// Site-shaped = has any of the content dirs a real site carries. Used to
+// tell an authored-but-unregistered site (warn) from a random folder that
+// happens to live under sites/ (ignore silently, as before).
+async function is_site_shaped(site_dir: string): Promise<boolean> {
+	for (const marker of ['pages', 'blocks', 'page-types', 'site']) {
+		try {
+			// Must be a directory — a plain file named e.g. `pages` in a
+			// non-site folder shouldn't earn the unregistered warning.
+			const stat = await fs.stat(path.join(site_dir, marker))
+			if (stat.isDirectory()) return true
+		} catch {
+			// keep looking
+		}
+	}
+	return false
+}
+
+function warn_once(site_dir: string, message: string): void {
+	if (warned_unregistered_dirs.has(site_dir)) return
+	warned_unregistered_dirs.add(site_dir)
+	console.log(chalk.yellow(message))
+}
+
 async function discover_sites(base_dir: string): Promise<SiteInfo[]> {
 	const sites: SiteInfo[] = []
 	const sites_root = await get_sites_root(base_dir)
@@ -1494,9 +1551,24 @@ async function discover_sites(base_dir: string): Promise<SiteInfo[]> {
 			const site_dir = path.join(sites_root, entry.name)
 			try {
 				const config = await read_site_config(site_dir)
+				if (typeof config.site_id !== 'string' || !config.site_id.trim()) {
+					// An authored site with no registration key. Importing it
+					// would post site_id=undefined and die with a buried
+					// error, so skip it and say what to run instead.
+					warn_once(site_dir, `  ⚠ sites/${entry.name} isn't registered — run \`primo add ${entry.name}\` to import it.`)
+					continue
+				}
 				sites.push({ dir: site_dir, config })
-			} catch {
-				// Not a site directory
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+					// No site.yaml. Only warn when the folder actually looks
+					// like a site — anything else is not our business.
+					if (await is_site_shaped(site_dir)) {
+						warn_once(site_dir, `  ⚠ sites/${entry.name} isn't registered — run \`primo add ${entry.name}\` to import it.`)
+					}
+				} else {
+					warn_once(site_dir, `  ⚠ sites/${entry.name}/site.yaml could not be read — fix it, then run \`primo add ${entry.name}\`.`)
+				}
 			}
 		}
 	}
@@ -1550,7 +1622,7 @@ function resolve_site_group(config: SiteConfig, server_config: ServerConfig): Si
 	})
 }
 
-async function wait_for_ready(url: string, timeout_ms: number): Promise<boolean> {
+export async function wait_for_ready(url: string, timeout_ms: number): Promise<boolean> {
 	const start = Date.now()
 	const health_url = `${url}/api/health`
 
@@ -1591,7 +1663,7 @@ async function verify_site_ready(api_url: string, site_id: string): Promise<bool
 	return false
 }
 
-async function site_exists(api_url: string, site_id: string): Promise<boolean> {
+export async function site_exists(api_url: string, site_id: string): Promise<boolean> {
 	// Only 404 means the site genuinely doesn't exist. Any other non-ok status
 	// (401/403 from auth, 5xx, rate limits) leaves us uncertain — default to
 	// "exists" so we take the additive `import` path instead of the destructive
@@ -2275,7 +2347,7 @@ async function prepare_site_for_local_dev(site_dir: string): Promise<LocalDevPre
 	}
 }
 
-type ImportWarning = {
+export type ImportWarning = {
 	kind: string
 	file: string
 	path: string
@@ -2332,7 +2404,7 @@ function print_import_warnings(site_name: string, warnings: unknown): number {
 	return list.length
 }
 
-async function import_site_files(site_dir: string, api_url: string, config: SiteConfig, port: number, server_config: ServerConfig, use_bootstrap = true, workspace_dir: string = path.dirname(path.dirname(site_dir))): Promise<ImportTimings | null> {
+export async function import_site_files(site_dir: string, api_url: string, config: SiteConfig, port: number, server_config: ServerConfig, use_bootstrap = true, workspace_dir: string = path.dirname(path.dirname(site_dir))): Promise<ImportTimings | null> {
 	const site_name = config.name || 'My Site'
 	const site_id = config.site_id
 	const site_group = resolve_site_group(config, server_config)

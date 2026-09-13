@@ -8,6 +8,7 @@ import { get_auth_token } from '../utils/auth.js'
 import { authenticate_interactively } from './login.js'
 import { write_site_config } from '../utils/site-config.js'
 import { read_server_config, write_server_config, normalize_server_url, type ServerConfig, type SiteGroupConfig } from '../utils/server-config.js'
+import { generate_agent_md } from './new.js'
 
 interface PullOptions {
 	server?: string
@@ -218,6 +219,18 @@ export async function pull_site(options: PullOptions) {
 			site_groups: site_groups.length > 0 ? site_groups : existing?.site_groups,
 			server: existing?.server ?? (is_remote_server(server) ? server : undefined)
 		})
+
+		// Give pulled workspaces the same root AGENTS.md that `primo new`
+		// writes — a pulled export is exactly where agents author new site
+		// folders and need to know registration is `primo add`, not a side
+		// effect of `primo dev`. Never clobber an existing (possibly edited)
+		// one.
+		const agents_path = path.join(root_dir, 'AGENTS.md')
+		try {
+			await fs.access(agents_path)
+		} catch {
+			await fs.writeFile(agents_path, generate_agent_md())
+		}
 
 		spinner.succeed(`Server pulled to ${chalk.cyan(root_dir)}`)
 		console.log('')
