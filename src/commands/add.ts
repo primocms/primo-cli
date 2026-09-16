@@ -72,6 +72,23 @@ export async function add_site(target: string, options: AddOptions) {
 	}
 
 	let server_config = await read_server_config(base_dir)
+	const port = server_config.port ?? parseInt(options.port, 10)
+
+	// `primo add` and `primo dev`'s sites-root watcher both mint a site_id for a
+	// newly-appeared folder. If dev is up when we add, the two race: the watcher
+	// adopts the folder under its own id while add writes a different id to
+	// site.yaml, leaving disk pointing at an id the CMS doesn't have. Refuse
+	// while a server holds the port so there is exactly one minter — the
+	// headless import below. This check runs BEFORE ensure_site_config so we
+	// never stamp a site_id we'd then strand. `primo dev` picks the folder up on
+	// its next start (or its watcher, if it's already been given an id).
+	if (await is_server_running(port)) {
+		console.log(chalk.red(`A Primo server is running on port ${port}.`))
+		console.log(chalk.dim(`  Stop it (Ctrl+C in its terminal), then re-run \`primo add ${target}\`.`))
+		console.log(chalk.dim('  `primo dev` imports the folder itself once it\'s restarted.'))
+		process.exit(1)
+	}
+
 	const { config, created, minted } = await ensure_site_config(site_dir, folder_name)
 	if (created) {
 		console.log(chalk.dim(`  created site.yaml (site_id ${config.site_id})`))
@@ -93,66 +110,12 @@ export async function add_site(target: string, options: AddOptions) {
 		}
 	}
 
-	const port = server_config.port ?? parseInt(options.port, 10)
 	const api_url = `http://127.0.0.1:${port}`
 
-	if (await is_server_running(port)) {
-		// A dev server is up — ask it to discover and import the site, exactly
-		// like `primo new` does, so its watchers attach too.
-		const reload = await request_dev_reload(port)
-
-		if (reload.status === 'unreachable') {
-			// Older dev server or hot reload disabled (port+1 in use). Import
-			// directly against the running CMS — records land, but the dev
-			// server won't watch this site until it's restarted.
-			let timings: ImportTimings | null = null
-			try {
-				timings = await register_site(site_dir, api_url, config, port, server_config, base_dir)
-			} catch (err) {
-				const message = err instanceof Error ? err.message : String(err)
-				console.log(chalk.red(`  ✗ ${config.name} could not be imported: ${message}`))
-				console.log(chalk.dim(`  Fix the problem, then re-run \`primo add ${target}\`.`))
-				process.exit(1)
-			}
-			report_import(config.name, timings)
-			console.log(chalk.yellow('  The running dev server couldn\'t be reloaded — restart `primo dev` to watch this site.'))
-			console.log('')
-			return
-		}
-
-		// The health check only proves *a* Primo server is on this port — it
-		// could belong to a different workspace. The reload response's `known`
-		// list is the only reliable way to tell: PocketBase 404s record reads
-		// pre-setup even when the record exists, so we can't just probe the
-		// site_id. (Older dev servers don't send `known` — trust the reload.)
-		const known = reload.known?.find(site => site.site_id === config.site_id)
-		if (reload.known && !known) {
-			console.log(chalk.red(`  A Primo server is running on port ${port}, but it isn't serving this workspace.`))
-			console.log(chalk.dim('  Stop it (or start `primo dev` in this workspace) and re-run `primo add`.'))
-			process.exit(1)
-		}
-
-		if (known?.blocked || reload.quarantined.includes(config.name)) {
-			console.log(chalk.yellow(`  ${config.name} was found, but the dev server couldn't import it (e.g. duplicate IDs or a missing pages/index.yaml).`))
-			console.log(chalk.dim('  Check the `primo dev` logs, fix the problem, then re-run `primo add`.'))
-			process.exit(1)
-		}
-
-		console.log('')
-		if (reload.loaded === 0 && reload.known) {
-			console.log(`  ${chalk.cyan(config.name)} is already registered with the running dev server.`)
-		} else {
-			console.log(chalk.green(`  ✓ ${config.name} registered`))
-		}
-		const host = local_dev_host(config.name, port)
-		console.log(`    ${chalk.dim('Edit:')}    http://${host}/admin/site`)
-		console.log(`    ${chalk.dim('Preview:')} http://${host}/`)
-		console.log('')
-		return
-	}
-
-	// No dev server running: boot the CMS binary headlessly against the
-	// workspace database, import, and shut it back down.
+	// No server is running (guaranteed — we refused above if one held the port),
+	// so boot the CMS binary headlessly against the workspace database, import,
+	// and shut it back down. This is the single minter/import path, which is why
+	// `primo add` and the dev watcher can't double-mint the same folder.
 	const spinner = ora('Starting CMS for one-time import...').start()
 	const binary_path = await ensure_binary()
 	const data_dir = await ensure_data_dir(base_dir)
@@ -228,15 +191,6 @@ async function register_site(
 	await normalize_site(site_dir)
 	const use_bootstrap = !await site_exists(api_url, config.site_id)
 	return await import_site_files(site_dir, api_url, config, port, server_config, use_bootstrap, base_dir)
-}
-
-function report_import(site_name: string, timings: ImportTimings | null): void {
-	if (timings === null || !timings.ok) {
-		console.log(chalk.red(`  ✗ ${site_name} could not be imported — see the errors above.`))
-		process.exit(1)
-	}
-	console.log(chalk.green(`  ✓ ${site_name} registered (${timings.mode})`))
-	report_warnings(timings)
 }
 
 function report_warnings(timings: ImportTimings): void {
@@ -322,53 +276,6 @@ async function ensure_site_config(site_dir: string, folder_name: string): Promis
 		await write_site_config(site_dir, config)
 	}
 	return { config, created, minted }
-}
-
-type ReloadResult =
-	| { status: 'unreachable' }
-	| {
-		status: 'ok'
-		loaded: number
-		quarantined: string[]
-		known?: { name: string; site_id: string; blocked: boolean }[]
-	}
-
-async function request_dev_reload(port: number): Promise<ReloadResult> {
-	try {
-		// Bound the request: the reload handler runs discovery + import
-		// synchronously before responding.
-		const controller = new AbortController()
-		const timeout = setTimeout(() => controller.abort(), 30000)
-		let res: Response
-		try {
-			res = await fetch(`http://127.0.0.1:${port + 1}/reload`, {
-				method: 'POST',
-				signal: controller.signal
-			})
-		} finally {
-			clearTimeout(timeout)
-		}
-		if (!res.ok) return { status: 'unreachable' }
-		const result = await res.json().catch(() => null) as
-			| { loaded?: number; quarantined?: string[]; known?: { name: string; site_id: string; blocked: boolean }[] }
-			| null
-		if (!result) return { status: 'unreachable' }
-		return {
-			status: 'ok',
-			loaded: result.loaded ?? 0,
-			quarantined: result.quarantined ?? [],
-			known: Array.isArray(result.known) ? result.known : undefined
-		}
-	} catch {
-		return { status: 'unreachable' }
-	}
-}
-
-// Mirror of dev.ts's local_dev_host so the links printed here match the ones
-// `primo dev` prints for the same site.
-function local_dev_host(name: string, port: number): string {
-	const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'site'
-	return `${slug}.localhost:${port}`
 }
 
 async function is_server_running(port: number): Promise<boolean> {
