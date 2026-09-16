@@ -1,4 +1,5 @@
 import fs from 'fs/promises'
+import net from 'net'
 import path from 'path'
 import { randomInt } from 'crypto'
 import chalk from 'chalk'
@@ -78,14 +79,26 @@ export async function add_site(target: string, options: AddOptions) {
 	// newly-appeared folder. If dev is up when we add, the two race: the watcher
 	// adopts the folder under its own id while add writes a different id to
 	// site.yaml, leaving disk pointing at an id the CMS doesn't have. Refuse
-	// while a server holds the port so there is exactly one minter — the
-	// headless import below. This check runs BEFORE ensure_site_config so we
-	// never stamp a site_id we'd then strand. `primo dev` picks the folder up on
-	// its next start (or its watcher, if it's already been given an id).
-	if (await is_server_running(port)) {
-		console.log(chalk.red(`A Primo server is running on port ${port}.`))
-		console.log(chalk.dim(`  Stop it (Ctrl+C in its terminal), then re-run \`primo add ${target}\`.`))
-		console.log(chalk.dim('  `primo dev` imports the folder itself once it\'s restarted.'))
+	// while ANYTHING holds the port so there is exactly one minter — the headless
+	// import below. This check runs BEFORE ensure_site_config so we never stamp a
+	// site_id we'd then strand. `primo dev` picks the folder up on its next start
+	// (or its watcher, if it's already been given an id).
+	//
+	// The guard is TCP occupancy, not a healthy-Primo response: a server that's
+	// still starting, an unhealthy Primo, or any other listener all own the port
+	// and would make the headless CMS below fail to bind — after we'd already
+	// minted. So we only proceed on a confirmed connection refusal (port free);
+	// an accepted connection OR an inconclusive probe both count as occupied. A
+	// healthy Primo just gets a more specific hint.
+	if (await is_port_occupied(port)) {
+		if (await is_server_running(port)) {
+			console.log(chalk.red(`A Primo server is running on port ${port}.`))
+			console.log(chalk.dim(`  Stop it (Ctrl+C in its terminal), then re-run \`primo add ${target}\`.`))
+			console.log(chalk.dim('  `primo dev` imports the folder itself once it\'s restarted.'))
+		} else {
+			console.log(chalk.red(`Port ${port} is in use, so \`primo add\` can't start a CMS to import into.`))
+			console.log(chalk.dim(`  Free the port (stop whatever is on it), then re-run \`primo add ${target}\`.`))
+		}
 		process.exit(1)
 	}
 
@@ -276,6 +289,31 @@ async function ensure_site_config(site_dir: string, folder_name: string): Promis
 		await write_site_config(site_dir, config)
 	}
 	return { config, created, minted }
+}
+
+// True when something is listening on the port — the guard the headless import
+// actually depends on (the CMS below can't bind an occupied port). Distinct from
+// is_server_running, which only reports whether a *healthy Primo* answered: a
+// starting/unhealthy server or a foreign listener returns false there but still
+// owns the port. Fail safe — an accepted connection means occupied, and any
+// inconclusive result (timeout, unexpected error) is treated as occupied too, so
+// we never mint a site_id ahead of a bind we can't actually make. Only an
+// explicit connection refusal (ECONNREFUSED) counts as free.
+async function is_port_occupied(port: number): Promise<boolean> {
+	return new Promise(resolve => {
+		const socket = new net.Socket()
+		const done = (occupied: boolean) => {
+			socket.destroy()
+			resolve(occupied)
+		}
+		socket.setTimeout(1000)
+		socket.once('connect', () => done(true))
+		socket.once('timeout', () => done(true))
+		socket.once('error', (err: NodeJS.ErrnoException) => {
+			done(err.code !== 'ECONNREFUSED')
+		})
+		socket.connect(port, '127.0.0.1')
+	})
 }
 
 async function is_server_running(port: number): Promise<boolean> {
