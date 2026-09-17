@@ -3,9 +3,11 @@ import path from 'path'
 import chalk from 'chalk'
 import ora, { type Ora } from 'ora'
 import archiver from 'archiver'
+import { dump as dump_yaml, load as load_yaml } from 'js-yaml'
 import { get_auth_token } from '../utils/auth.js'
 import { read_site_config, get_site_config_path, type SiteConfig, SITE_CONFIG_FILE } from '../utils/site-config.js'
-import { get_server_config_path, read_server_config, normalize_server_url, type SiteGroupConfig } from '../utils/server-config.js'
+import { get_server_config_path, read_server_config, resolve_format_options, normalize_server_url, type ServerConfig, type SiteGroupConfig } from '../utils/server-config.js'
+import { format_file_contents } from '../utils/format.js'
 
 interface PushOptions {
 	server?: string
@@ -47,12 +49,168 @@ async function resolve_group_name(site_dir: string, group_id: string | undefined
 	return undefined
 }
 
+// Best-effort workspace root for a site dir, used to resolve the workspace
+// prettier install when formatting rewritten yaml. Walks up looking for a
+// server.yaml; falls back to the site dir if none is found (single-site checkout).
+async function root_dir_for(site_dir: string): Promise<string> {
+	const candidates = [path.dirname(path.dirname(site_dir)), path.dirname(site_dir), site_dir]
+	for (const dir of candidates) {
+		if (await path_exists(get_server_config_path(dir))) return dir
+	}
+	return site_dir
+}
+
+// Converge the local site with the upload ids the server minted on push. The
+// server creates its own site_uploads record per file (it can't honor a foreign
+// CMS's id), renames files to a canonical suffixed name, and returns the
+// symbolic->{id,canonical} map. `primo dev` applies this writeback via its
+// watcher; `primo push` previously dropped it, so local refs stayed symbolic (or
+// worse, kept a stale id from another CMS) and drifted from the server forever.
+//
+// This mirrors write_upload_writeback in dev.ts but without the chokidar
+// bookkeeping (nothing is watching during a push). Best-effort throughout: a
+// push has already succeeded by the time we get here, so a writeback hiccup
+// should never fail the command.
+async function apply_upload_writeback(site_dir: string, workspace_dir: string, created_ids: CreatedIDs | undefined): Promise<void> {
+	const manifest = created_ids?.['uploads/.manifest.json']
+	const uploads_map = manifest && typeof manifest._uploads === 'object' && manifest._uploads !== null
+		? manifest._uploads as Record<string, unknown>
+		: null
+	if (!uploads_map) return
+
+	// Build symbolic-filename -> record-id map and the rename list.
+	const symbolic_to_id = new Map<string, string>()
+	const renames: Array<{ symbolic: string; canonical: string }> = []
+	for (const [symbolic, raw] of Object.entries(uploads_map)) {
+		if (!raw || typeof raw !== 'object') continue
+		const entry = raw as Partial<UploadWritebackEntry>
+		if (typeof entry.id !== 'string' || !entry.id) continue
+		symbolic_to_id.set(symbolic, entry.id)
+		const canonical = typeof entry.canonical === 'string' ? entry.canonical : ''
+		if (canonical && canonical !== symbolic) renames.push({ symbolic, canonical })
+	}
+	if (symbolic_to_id.size === 0) return
+
+	// Rename on-disk upload files to their canonical (server-suffixed) names so
+	// future pushes round-trip without churn. Missing source = already renamed
+	// or user-removed; skip it, the yaml rewrite still keeps refs consistent.
+	const uploads_dir = path.join(site_dir, 'uploads')
+	for (const { symbolic, canonical } of renames) {
+		try {
+			await fs.rename(path.join(uploads_dir, symbolic), path.join(uploads_dir, canonical))
+		} catch {
+			// missing source or permission issue — skip
+		}
+	}
+
+	// Rewrite `upload: uploads/<symbolic>` refs to the server record id across
+	// the site's content yaml. Only files that literally mention `uploads/` are
+	// re-marshaled, keeping the cost small.
+	let format_options
+	try {
+		format_options = resolve_format_options(await read_server_config(workspace_dir))
+	} catch {
+		format_options = resolve_format_options({} as ServerConfig)
+	}
+	for (const subdir of UPLOAD_REF_DIRS) {
+		const files = await walk_yaml_files(path.join(site_dir, subdir))
+		for (const file_path of files) {
+			try {
+				const content = await fs.readFile(file_path, 'utf-8')
+				if (!content.includes('uploads/')) continue
+				const parsed = load_yaml(content)
+				if (!parsed || typeof parsed !== 'object') continue
+				const { value: rewritten, changed } = rewrite_symbolic_upload_refs(parsed, symbolic_to_id)
+				if (!changed) continue
+				const raw = dump_yaml(rewritten, { lineWidth: -1 })
+				const formatted = await format_file_contents(file_path, raw, workspace_dir, format_options)
+				await fs.writeFile(file_path, formatted, 'utf-8')
+			} catch {
+				// skip unreadable / unparseable file
+			}
+		}
+	}
+}
+
+// Recursively collect .yaml files under a directory (dotfiles/dirs skipped).
+async function walk_yaml_files(root: string): Promise<string[]> {
+	const out: string[] = []
+	const stack: string[] = [root]
+	while (stack.length > 0) {
+		const dir = stack.pop() as string
+		let entries
+		try {
+			entries = await fs.readdir(dir, { withFileTypes: true })
+		} catch {
+			continue
+		}
+		for (const entry of entries) {
+			if (entry.name.startsWith('.')) continue
+			const full = path.join(dir, entry.name)
+			if (entry.isDirectory()) stack.push(full)
+			else if (entry.isFile() && entry.name.endsWith('.yaml')) out.push(full)
+		}
+	}
+	return out
+}
+
+// Rewrite `upload: "uploads/<file>"` values to the server record id. Mirrors the
+// server's rewriteUploadRefs (and dev.ts's copy). Note this only remaps symbolic
+// paths — a bare id that matches no entry is left as-is (see PR notes on the
+// separate stale-cross-CMS-id repair still needed for already-broken refs).
+function rewrite_symbolic_upload_refs(value: unknown, map: Map<string, string>): { value: unknown; changed: boolean } {
+	if (value && typeof value === 'object' && !Array.isArray(value)) {
+		const obj = value as Record<string, unknown>
+		let changed = false
+		const result: Record<string, unknown> = {}
+		for (const [k, v] of Object.entries(obj)) {
+			if (k === 'upload' && typeof v === 'string' && v.startsWith('uploads/')) {
+				const id = map.get(v.substring('uploads/'.length))
+				if (id) {
+					result[k] = id
+					changed = true
+					continue
+				}
+			}
+			const child = rewrite_symbolic_upload_refs(v, map)
+			result[k] = child.value
+			if (child.changed) changed = true
+		}
+		return { value: result, changed }
+	}
+	if (Array.isArray(value)) {
+		let changed = false
+		const result = value.map(item => {
+			const child = rewrite_symbolic_upload_refs(item, map)
+			if (child.changed) changed = true
+			return child.value
+		})
+		return { value: result, changed }
+	}
+	return { value, changed: false }
+}
+
 interface PushDiff {
 	blocks: { added: string[]; modified: string[]; deleted: string[] }
 	page_types: { added: string[]; modified: string[]; deleted: string[] }
 	pages: { added: string[]; modified: string[]; deleted: string[] }
 	site: { added: string[]; modified: string[]; deleted: string[] }
 }
+
+// The server returns created_ids to let the CLI write back canonical state.
+// Upload reconciliation is surfaced under created_ids["uploads/.manifest.json"]
+// ._uploads as a symbolic-filename -> { id, canonical } map (id is the server's
+// record id; canonical is the PocketBase-suffixed on-disk filename).
+type CreatedIDs = Record<string, Record<string, unknown>>
+
+interface UploadWritebackEntry {
+	id: string
+	canonical: string
+}
+
+// Subdirs whose yaml may carry `upload: uploads/...` refs. Mirrors the server's
+// import scope (uploads/ itself holds binaries, not refs, so it's excluded).
+const UPLOAD_REF_DIRS = ['blocks', 'page-types', 'pages', 'site']
 
 // Returns the labels (site slugs / 'library') that failed to push so callers
 // like `primo deploy` can tell a clean run from a partial one. Empty = success.
@@ -348,6 +506,13 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 			console.log('')
 			console.log(chalk.dim('  Site created on server and content uploaded.'))
 			console.log(chalk.dim('  Subsequent pushes will use the import endpoint.'))
+			// Converge local upload refs/filenames with the ids the server minted
+			// (see the import path below for why).
+			await apply_upload_writeback(site_dir, await root_dir_for(site_dir), bootstrap_result.created_ids)
+			// Import only ingests records; the published static files (html +
+			// _uploads assets) are stale until GenerateSite runs. Regenerate so
+			// the pushed content is actually served, not just stored.
+			await regenerate_site(server, token, site_id)
 			return
 		}
 		throw new Error(bootstrap_result.error)
@@ -357,7 +522,7 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 		throw new Error(await response.text())
 	}
 
-	const result = await response.json() as { preview?: boolean; success?: boolean; diff: PushDiff }
+	const result = await response.json() as { preview?: boolean; success?: boolean; diff: PushDiff; created_ids?: CreatedIDs }
 	const label = config?.name || path.basename(site_dir)
 
 	if (options.preview) {
@@ -370,6 +535,44 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 		spinner.succeed(`Pushed ${label}`)
 		console.log('')
 		print_diff(result.diff)
+		// The server mints its own record id for each uploaded file and returns
+		// the symbolic->id map in created_ids. Converge the local copy so refs
+		// point at the server's id and files carry their canonical names — the
+		// same writeback `primo dev` does. Without this, local and server drift,
+		// and a symbolic ref baked to a *different* CMS's id dangles forever.
+		await apply_upload_writeback(site_dir, await root_dir_for(site_dir), result.created_ids)
+		// Import only ingests records into the CMS; the served static site
+		// (html + _uploads assets) is not rebuilt until GenerateSite runs.
+		// Without this, a push lands in the CMS but the live URL keeps serving
+		// the previously-published files, so pushed changes never appear.
+		await regenerate_site(server, token, site_id)
+	}
+}
+
+// Trigger a republish of the site's static output on the server. Import
+// endpoints only write CMS records; POST /api/primo/generate runs GenerateSite,
+// which re-renders the published html and stages upload assets under
+// sites/<host>/_uploads. Best-effort: a generate failure shouldn't fail the
+// push (records already landed), so warn rather than throw.
+async function regenerate_site(server: string, token: string | undefined, site_id: string): Promise<void> {
+	try {
+		const response = await fetch(`${server}/api/primo/generate`, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				...(token ? { 'Authorization': `Bearer ${token}` } : {})
+			},
+			body: JSON.stringify({ site_id })
+		})
+		if (!response.ok) {
+			const detail = await response.text().catch(() => '')
+			console.log(chalk.yellow(`  Warning: republish failed (${response.status}); pushed content may not be live yet.`))
+			if (detail) console.log(chalk.dim(`  ${detail.slice(0, 200)}`))
+			console.log(chalk.dim('  Publish from the editor, or re-run push, to regenerate the site.'))
+		}
+	} catch (err) {
+		console.log(chalk.yellow('  Warning: republish request failed; pushed content may not be live yet.'))
+		console.log(chalk.dim(`  ${err instanceof Error ? err.message : String(err)}`))
 	}
 }
 
@@ -380,7 +583,7 @@ async function try_bootstrap_site(
 	config: SiteConfig | null,
 	site_id: string,
 	group_name?: string
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; created_ids?: CreatedIDs } | { ok: false; error: string }> {
 	const form = new FormData()
 	form.append('site_id', site_id)
 	if (config?.name) form.append('name', config.name)
@@ -403,7 +606,10 @@ async function try_bootstrap_site(
 		body: form
 	})
 
-	if (response.ok) return { ok: true }
+	if (response.ok) {
+		const body = await response.json().catch(() => ({})) as { created_ids?: CreatedIDs }
+		return { ok: true, created_ids: body.created_ids }
+	}
 
 	if (response.status === 403) {
 		return {
