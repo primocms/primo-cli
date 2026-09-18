@@ -78,40 +78,39 @@ async function apply_upload_writeback(site_dir: string, workspace_dir: string, c
 		: null
 	if (!uploads_map) return
 
-	// Build symbolic-filename -> record-id map and the rename list.
+	// Build symbolic-filename -> record-id map and the rename list. Both
+	// symbolic and canonical are treated as untrusted (they come from the
+	// server response): reject anything that isn't a plain basename so a
+	// crafted `../` can't make a later path.join escape uploads/ (CWE-22).
 	const symbolic_to_id = new Map<string, string>()
-	const renames: Array<{ symbolic: string; canonical: string }> = []
+	const rename_for = new Map<string, string>()
 	for (const [symbolic, raw] of Object.entries(uploads_map)) {
 		if (!raw || typeof raw !== 'object') continue
+		if (!is_safe_basename(symbolic)) continue
 		const entry = raw as Partial<UploadWritebackEntry>
 		if (typeof entry.id !== 'string' || !entry.id) continue
 		symbolic_to_id.set(symbolic, entry.id)
 		const canonical = typeof entry.canonical === 'string' ? entry.canonical : ''
-		if (canonical && canonical !== symbolic) renames.push({ symbolic, canonical })
+		if (canonical && canonical !== symbolic && is_safe_basename(canonical)) {
+			rename_for.set(symbolic, canonical)
+		}
 	}
 	if (symbolic_to_id.size === 0) return
 
-	// Rename on-disk upload files to their canonical (server-suffixed) names so
-	// future pushes round-trip without churn. Missing source = already renamed
-	// or user-removed; skip it, the yaml rewrite still keeps refs consistent.
-	const uploads_dir = path.join(site_dir, 'uploads')
-	for (const { symbolic, canonical } of renames) {
-		try {
-			await fs.rename(path.join(uploads_dir, symbolic), path.join(uploads_dir, canonical))
-		} catch {
-			// missing source or permission issue — skip
-		}
-	}
-
-	// Rewrite `upload: uploads/<symbolic>` refs to the server record id across
-	// the site's content yaml. Only files that literally mention `uploads/` are
-	// re-marshaled, keeping the cost small.
+	// Rewrite refs FIRST, renames second — and only rename files whose ref
+	// rewrite actually succeeded. Renaming before rewriting risks leaving a file
+	// at its canonical name while the yaml still points at the old symbolic path
+	// (if the rewrite is skipped/unreadable/unwritable), which the next push
+	// would resend as a stale ref. So we rewrite yaml, track which symbolic keys
+	// were applied, and rename only those — keeping disk and yaml consistent even
+	// when some files can't be processed.
 	let format_options
 	try {
 		format_options = resolve_format_options(await read_server_config(workspace_dir))
 	} catch {
 		format_options = resolve_format_options({} as ServerConfig)
 	}
+	const applied = new Set<string>()
 	for (const subdir of UPLOAD_REF_DIRS) {
 		const files = await walk_yaml_files(path.join(site_dir, subdir))
 		for (const file_path of files) {
@@ -120,16 +119,42 @@ async function apply_upload_writeback(site_dir: string, workspace_dir: string, c
 				if (!content.includes('uploads/')) continue
 				const parsed = load_yaml(content)
 				if (!parsed || typeof parsed !== 'object') continue
-				const { value: rewritten, changed } = rewrite_symbolic_upload_refs(parsed, symbolic_to_id)
-				if (!changed) continue
+				const { value: rewritten, applied: file_applied } = rewrite_symbolic_upload_refs(parsed, symbolic_to_id)
+				if (file_applied.size === 0) continue
 				const raw = dump_yaml(rewritten, { lineWidth: -1 })
 				const formatted = await format_file_contents(file_path, raw, workspace_dir, format_options)
 				await fs.writeFile(file_path, formatted, 'utf-8')
+				// Only mark applied AFTER a successful write, so a failed write
+				// leaves both the yaml ref and the on-disk filename untouched.
+				for (const key of file_applied) applied.add(key)
 			} catch {
-				// skip unreadable / unparseable file
+				// skip unreadable / unparseable / unwritable file — its symbolic
+				// key stays out of `applied`, so its file won't be renamed either
 			}
 		}
 	}
+
+	// Rename on-disk upload files to their canonical (server-suffixed) names,
+	// but only for refs that were actually rewritten above. Missing source =
+	// already renamed or user-removed; skip it.
+	const uploads_dir = path.join(site_dir, 'uploads')
+	for (const [symbolic, canonical] of rename_for) {
+		if (!applied.has(symbolic)) continue
+		try {
+			await fs.rename(path.join(uploads_dir, symbolic), path.join(uploads_dir, canonical))
+		} catch {
+			// missing source or permission issue — skip
+		}
+	}
+}
+
+// Guard against path traversal / absolute paths in server-supplied upload
+// names. Only accept a plain filename (no separators, no `..`, no leading dot-dot).
+function is_safe_basename(name: string): boolean {
+	if (!name || name === '.' || name === '..') return false
+	if (name.includes('/') || name.includes('\\') || name.includes('\0')) return false
+	if (path.isAbsolute(name)) return false
+	return path.basename(name) === name
 }
 
 // Recursively collect .yaml files under a directory (dotfiles/dirs skipped).
@@ -155,39 +180,36 @@ async function walk_yaml_files(root: string): Promise<string[]> {
 }
 
 // Rewrite `upload: "uploads/<file>"` values to the server record id. Mirrors the
-// server's rewriteUploadRefs (and dev.ts's copy). Note this only remaps symbolic
+// server's rewriteUploadRefs (and dev.ts's copy). Returns the set of symbolic
+// filenames it actually remapped so the caller can rename exactly those files
+// (and only after the yaml write succeeds). Note this only remaps symbolic
 // paths — a bare id that matches no entry is left as-is (see PR notes on the
 // separate stale-cross-CMS-id repair still needed for already-broken refs).
-function rewrite_symbolic_upload_refs(value: unknown, map: Map<string, string>): { value: unknown; changed: boolean } {
-	if (value && typeof value === 'object' && !Array.isArray(value)) {
-		const obj = value as Record<string, unknown>
-		let changed = false
-		const result: Record<string, unknown> = {}
-		for (const [k, v] of Object.entries(obj)) {
-			if (k === 'upload' && typeof v === 'string' && v.startsWith('uploads/')) {
-				const id = map.get(v.substring('uploads/'.length))
-				if (id) {
-					result[k] = id
-					changed = true
-					continue
+function rewrite_symbolic_upload_refs(value: unknown, map: Map<string, string>): { value: unknown; applied: Set<string> } {
+	const applied = new Set<string>()
+	const walk = (v: unknown): unknown => {
+		if (v && typeof v === 'object' && !Array.isArray(v)) {
+			const obj = v as Record<string, unknown>
+			const result: Record<string, unknown> = {}
+			for (const [k, val] of Object.entries(obj)) {
+				if (k === 'upload' && typeof val === 'string' && val.startsWith('uploads/')) {
+					const symbolic = val.substring('uploads/'.length)
+					const id = map.get(symbolic)
+					if (id) {
+						result[k] = id
+						applied.add(symbolic)
+						continue
+					}
 				}
+				result[k] = walk(val)
 			}
-			const child = rewrite_symbolic_upload_refs(v, map)
-			result[k] = child.value
-			if (child.changed) changed = true
+			return result
 		}
-		return { value: result, changed }
+		if (Array.isArray(v)) return v.map(walk)
+		return v
 	}
-	if (Array.isArray(value)) {
-		let changed = false
-		const result = value.map(item => {
-			const child = rewrite_symbolic_upload_refs(item, map)
-			if (child.changed) changed = true
-			return child.value
-		})
-		return { value: result, changed }
-	}
-	return { value, changed: false }
+	const rewritten = walk(value)
+	return { value: rewritten, applied }
 }
 
 interface PushDiff {
@@ -472,6 +494,11 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 			console.log('')
 			console.log(chalk.dim('  Site created on server and content uploaded.'))
 			console.log(chalk.dim('  Run `primo login` and re-push to update content later.'))
+			// Same convergence + republish the authenticated paths do — a first
+			// push shouldn't leave local upload refs unsynced or the site
+			// unpublished just because it went through unauthenticated bootstrap.
+			await apply_upload_writeback(site_dir, await root_dir_for(site_dir), bootstrap_result.created_ids)
+			await regenerate_site(server, undefined, site_id)
 			return
 		}
 		throw new Error(bootstrap_result.error)
@@ -562,7 +589,10 @@ async function regenerate_site(server: string, token: string | undefined, site_i
 				'Content-Type': 'application/json',
 				...(token ? { 'Authorization': `Bearer ${token}` } : {})
 			},
-			body: JSON.stringify({ site_id })
+			body: JSON.stringify({ site_id }),
+			// Bound the request so a silent/hung server can't stall push for the
+			// ~5min Undici default; import+writeback already succeeded by here.
+			signal: AbortSignal.timeout(60_000)
 		})
 		if (!response.ok) {
 			const detail = await response.text().catch(() => '')
