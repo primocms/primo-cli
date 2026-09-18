@@ -494,11 +494,9 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 			console.log('')
 			console.log(chalk.dim('  Site created on server and content uploaded.'))
 			console.log(chalk.dim('  Run `primo login` and re-push to update content later.'))
-			// Same convergence + republish the authenticated paths do — a first
-			// push shouldn't leave local upload refs unsynced or the site
-			// unpublished just because it went through unauthenticated bootstrap.
+			// Converge local upload refs/filenames with the ids the server minted,
+			// same as the other push paths.
 			await apply_upload_writeback(site_dir, await root_dir_for(site_dir), bootstrap_result.created_ids)
-			await regenerate_site(server, undefined, site_id)
 			return
 		}
 		throw new Error(bootstrap_result.error)
@@ -536,10 +534,6 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 			// Converge local upload refs/filenames with the ids the server minted
 			// (see the import path below for why).
 			await apply_upload_writeback(site_dir, await root_dir_for(site_dir), bootstrap_result.created_ids)
-			// Import only ingests records; the published static files (html +
-			// _uploads assets) are stale until GenerateSite runs. Regenerate so
-			// the pushed content is actually served, not just stored.
-			await regenerate_site(server, token, site_id)
 			return
 		}
 		throw new Error(bootstrap_result.error)
@@ -568,41 +562,11 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 		// same writeback `primo dev` does. Without this, local and server drift,
 		// and a symbolic ref baked to a *different* CMS's id dangles forever.
 		await apply_upload_writeback(site_dir, await root_dir_for(site_dir), result.created_ids)
-		// Import only ingests records into the CMS; the served static site
-		// (html + _uploads assets) is not rebuilt until GenerateSite runs.
-		// Without this, a push lands in the CMS but the live URL keeps serving
-		// the previously-published files, so pushed changes never appear.
-		await regenerate_site(server, token, site_id)
-	}
-}
-
-// Trigger a republish of the site's static output on the server. Import
-// endpoints only write CMS records; POST /api/primo/generate runs GenerateSite,
-// which re-renders the published html and stages upload assets under
-// sites/<host>/_uploads. Best-effort: a generate failure shouldn't fail the
-// push (records already landed), so warn rather than throw.
-async function regenerate_site(server: string, token: string | undefined, site_id: string): Promise<void> {
-	try {
-		const response = await fetch(`${server}/api/primo/generate`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				...(token ? { 'Authorization': `Bearer ${token}` } : {})
-			},
-			body: JSON.stringify({ site_id }),
-			// Bound the request so a silent/hung server can't stall push for the
-			// ~5min Undici default; import+writeback already succeeded by here.
-			signal: AbortSignal.timeout(60_000)
-		})
-		if (!response.ok) {
-			const detail = await response.text().catch(() => '')
-			console.log(chalk.yellow(`  Warning: republish failed (${response.status}); pushed content may not be live yet.`))
-			if (detail) console.log(chalk.dim(`  ${detail.slice(0, 200)}`))
-			console.log(chalk.dim('  Publish from the editor, or re-run push, to regenerate the site.'))
-		}
-	} catch (err) {
-		console.log(chalk.yellow('  Warning: republish request failed; pushed content may not be live yet.'))
-		console.log(chalk.dim(`  ${err instanceof Error ? err.message : String(err)}`))
+		// NOTE: push intentionally does NOT republish the served site. It syncs
+		// content into the CMS; regenerating the published output stays a
+		// separate, deliberate step (the editor's Publish action / the
+		// /api/primo/generate endpoint), so pushing content and choosing when it
+		// goes live remain decoupled.
 	}
 }
 
