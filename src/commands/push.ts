@@ -110,36 +110,57 @@ async function apply_upload_writeback(site_dir: string, workspace_dir: string, c
 	} catch {
 		format_options = resolve_format_options({} as ServerConfig)
 	}
+	// Track, per symbolic name, whether it was successfully rewritten in at least
+	// one file (`applied`) and whether ANY file that references it could not be
+	// persisted (`failed`). The same `upload: uploads/<name>` ref can appear in
+	// multiple files, so a name is only safe to rename once EVERY file bearing it
+	// is written — otherwise a skipped/failed file keeps the old symbolic ref
+	// while the file has already moved to its canonical name.
 	const applied = new Set<string>()
+	const failed = new Set<string>()
+	// Note which symbolic names a raw file mentions, so a file that fails before
+	// (or during) parse still marks its refs failed rather than silently passing.
+	const referenced_names = (raw: string): string[] =>
+		[...symbolic_to_id.keys()].filter(name => raw.includes(`uploads/${name}`))
+
 	for (const subdir of UPLOAD_REF_DIRS) {
 		const files = await walk_yaml_files(path.join(site_dir, subdir))
 		for (const file_path of files) {
+			let content: string
 			try {
-				const content = await fs.readFile(file_path, 'utf-8')
-				if (!content.includes('uploads/')) continue
+				content = await fs.readFile(file_path, 'utf-8')
+			} catch {
+				continue // unreadable file references nothing we can see; skip
+			}
+			if (!content.includes('uploads/')) continue
+			const names_here = referenced_names(content)
+			if (names_here.length === 0) continue
+			try {
 				const parsed = load_yaml(content)
-				if (!parsed || typeof parsed !== 'object') continue
+				if (!parsed || typeof parsed !== 'object') {
+					names_here.forEach(n => failed.add(n))
+					continue
+				}
 				const { value: rewritten, applied: file_applied } = rewrite_symbolic_upload_refs(parsed, symbolic_to_id)
 				if (file_applied.size === 0) continue
 				const raw = dump_yaml(rewritten, { lineWidth: -1 })
 				const formatted = await format_file_contents(file_path, raw, workspace_dir, format_options)
 				await fs.writeFile(file_path, formatted, 'utf-8')
-				// Only mark applied AFTER a successful write, so a failed write
-				// leaves both the yaml ref and the on-disk filename untouched.
 				for (const key of file_applied) applied.add(key)
 			} catch {
-				// skip unreadable / unparseable / unwritable file — its symbolic
-				// key stays out of `applied`, so its file won't be renamed either
+				// parse/marshal/write failure — this file keeps its symbolic ref,
+				// so its name(s) must NOT be renamed even if another file succeeded.
+				names_here.forEach(n => failed.add(n))
 			}
 		}
 	}
 
 	// Rename on-disk upload files to their canonical (server-suffixed) names,
-	// but only for refs that were actually rewritten above. Missing source =
-	// already renamed or user-removed; skip it.
+	// but only for names that were rewritten somewhere AND had no unpersisted
+	// reference anywhere. Missing source = already renamed or user-removed; skip.
 	const uploads_dir = path.join(site_dir, 'uploads')
 	for (const [symbolic, canonical] of rename_for) {
-		if (!applied.has(symbolic)) continue
+		if (!applied.has(symbolic) || failed.has(symbolic)) continue
 		try {
 			await fs.rename(path.join(uploads_dir, symbolic), path.join(uploads_dir, canonical))
 		} catch {
