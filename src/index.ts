@@ -78,6 +78,7 @@ program
 	.option('-p, --port <port>', 'Port', '3000')
 	.option('-f, --force', 'Kill existing processes on the port')
 	.option('--author <mode>', 'Who is authoring this session: "files" (push only; CMS UI is read-only — default), "cms" (CMS edits write to files; file edits revert), "both" (bidirectional; CMS edits often lost on conflict — beta)', 'files')
+	.option('--no-banner', 'Hide the read-only "files mode" banner at the top of the local editor')
 	.action(dev_server)
 
 program

@@ -19,6 +19,8 @@ interface DevOptions {
 	port: string
 	force?: boolean
 	author?: string
+	// Commander sets this false when `--no-banner` is passed (default true).
+	banner?: boolean
 }
 
 interface SiteInfo {
@@ -830,10 +832,17 @@ export async function dev_server(options: DevOptions) {
 		// tells primo which sync mode the CLI is running in so the CMS
 		// UI can gate its editable surfaces accordingly (read-only when
 		// the CLI is in --author files, since CMS edits would be discarded
-		// before they ever round-trip to disk).
+		// before they ever round-trip to disk). PRIMO_HIDE_FILES_BANNER lets
+		// the user suppress the read-only banner (--no-banner) without
+		// changing sync behavior.
 		cms_process = spawn(binary_path, ['serve', '--http', `127.0.0.1:${port}`, '--dir', data_dir], {
 			stdio: ['pipe', 'pipe', 'pipe'],
-			env: { ...process.env, PRIMO_DEV_MODE: '1', PRIMO_AUTHOR_MODE: sync_policy.mode }
+			env: {
+				...process.env,
+				PRIMO_DEV_MODE: '1',
+				PRIMO_AUTHOR_MODE: sync_policy.mode,
+				...(options.banner === false ? { PRIMO_HIDE_FILES_BANNER: '1' } : {})
+			}
 		})
 
 		// Capture stderr for errors
