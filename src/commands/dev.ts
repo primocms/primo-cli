@@ -3062,7 +3062,7 @@ async function sync_library_from_cms(base_dir: string, api_url: string): Promise
 	const temp_library_path = path.join(temp_dir, LIBRARY_DIR)
 	const local_library_path = path.join(base_dir, LIBRARY_DIR)
 	let changed_files: string[] = []
-	if (await path_exists(temp_library_path)) {
+	if (await has_any_file(temp_library_path)) {
 		// workspace_dir/site_name are what gate trashing inside sync_directory.
 		// Without them every library overwrite and prune ran with no backup at
 		// all, unlike the per-site path. The matchers for the empty-writeback
@@ -3073,11 +3073,11 @@ async function sync_library_from_cms(base_dir: string, api_url: string): Promise
 			site_name: LIBRARY_DIR
 		})
 	} else if (await has_library_content(local_library_path)) {
-		// The CMS returned no library at all while the workspace has one. That
-		// is a CMS that was never seeded (in --author cms the startup path pulls
-		// instead of importing, so the first run hits this), not a user who
-		// deleted every shared block. Mirroring it wipes the whole library, so
-		// refuse and leave the files alone.
+		// The CMS returned no library (or an empty one) while the workspace
+		// has content. That is a CMS that was never seeded (in --author cms
+		// the startup path pulls instead of importing, so the first run hits
+		// this), not a user who deleted every shared block. Mirroring it
+		// wipes the whole library, so refuse and leave the files alone.
 		warn_thin_library_export()
 		await fs.rm(temp_dir, { recursive: true, force: true })
 		return
@@ -3138,6 +3138,21 @@ async function sync_directory(
 			// user's formatting and the file watcher fires another reimport.
 			if (options.format_options && options.workspace_dir && should_format(dest_path)) {
 				src_content = await format_file_contents(dest_path, src_content, options.workspace_dir, options.format_options)
+			}
+
+			// A symlink at the destination would route the read and the write
+			// through to its target — potentially outside the site, with no
+			// backup under the workspace. Keep the link; it is the user's and
+			// not something the CMS export can describe.
+			let dest_lstat
+			try {
+				dest_lstat = await fs.lstat(dest_path)
+			} catch {
+				// No local file at this path yet
+			}
+			if (dest_lstat?.isSymbolicLink()) {
+				console.log(chalk.dim(`  kept ${file_relative}: symlink, not followed`))
+				continue
 			}
 
 			let dest_content = ''
