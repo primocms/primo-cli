@@ -72,6 +72,10 @@ const last_logged_conflicts = new Map<string, string>()
 const synced_files = new Map<string, string>()
 const synced_deleted_paths = new Map<string, number>()
 const warned_empty_schema_writebacks = new Set<string>()
+// Sites whose CMS export currently looks too thin to mirror. Keyed by site so
+// the 1s poll prints the refusal once instead of every cycle, and cleared as
+// soon as the export recovers so a later occurrence is reported again.
+const warned_thin_exports = new Set<string>()
 
 // Snapshot of library folder paths known to be in the DB after the last
 // successful push, mapped to the underlying DB record ID (group id or
@@ -88,6 +92,10 @@ const SITES_DIR = 'sites'
 const LIBRARY_DIR = 'library'
 const MCP_CONFIG_FILE = '.mcp.json'
 const SITE_SYNC_DIRS = ['blocks', 'page-types', 'pages', 'site']
+// Every site needs this file to boot — `primo dev` refuses to start without
+// it (see validate.ts). Used as the liveness check on a CMS export before we
+// let it prune local files.
+const HOMEPAGE_FILE = 'pages/index.yaml'
 
 type IDCategory = 'pages' | 'page_sections' | 'blocks' | 'page_types' | 'site_fields' | 'block_fields' | 'page_type_fields'
 
@@ -190,37 +198,94 @@ async function trash_existing_file(
 	await fs.writeFile(trash_path, prior_content)
 }
 
-// Recursively trash every file under a path before it gets deleted, so
-// CMS->file deletes are recoverable the same way overwrites are.
-async function trash_path_recursive(
+// Remove a path the CMS export dropped, trashing each file first so the delete
+// stays recoverable the same way an overwrite does.
+//
+// Descendants listed in skip_paths are kept: the "files win on conflict"
+// policy is per-file, so removing a directory wholesale would delete a
+// conflicted file the caller had already decided to preserve. A directory is
+// only removed once every child under it is gone.
+//
+// A file or directory whose backup can't be taken — unreadable, trash write
+// failed, or no trash location configured — is kept, not deleted: unlike an
+// overwrite there is no incoming copy anywhere else, so deleting it anyway
+// would be unrecoverable.
+//
+// Returns true when nothing survived, so the caller can report a clean delete.
+async function prune_dropped_path(
 	target_path: string,
-	workspace_dir: string,
-	site_name: string,
-	file_relative: string
-): Promise<void> {
+	file_relative: string,
+	options: SyncDirectoryOptions
+): Promise<boolean> {
+	if (options.skip_paths?.has(file_relative)) return false
+
 	let stat
 	try {
-		stat = await fs.stat(target_path)
+		// lstat, not stat: a symlink has to be a leaf here. The tree delete
+		// this replaced (fs.rm recursive) never followed links, so walking
+		// into one would be a new way to delete files outside the site.
+		stat = await fs.lstat(target_path)
 	} catch {
-		return
+		return true
 	}
 
-	if (stat.isFile()) {
-		const content = await fs.readFile(target_path, 'utf-8').catch(() => null)
-		if (content !== null) {
-			await trash_existing_file(content, workspace_dir, site_name, file_relative)
+	if (stat.isSymbolicLink()) {
+		// A link is a leaf: unlink only the link itself. remove_tracked_path
+		// would also walk the target tree (mark_deleted_tree's readdir follows
+		// the link), bookkeeping paths outside the site for no benefit.
+		mark_deleted_path(target_path)
+		await fs.unlink(target_path).catch(() => {})
+		return true
+	}
+
+	if (!stat.isDirectory()) {
+		if (!options.workspace_dir || !options.site_name) {
+			console.log(chalk.dim(`  kept ${file_relative}: not deleted without a trash backup (no trash location)`))
+			return false
 		}
-		return
+		const content = await fs.readFile(target_path, 'utf-8').catch(() => null)
+		if (content === null) {
+			console.log(chalk.dim(`  kept ${file_relative}: not deleted without a trash backup (unreadable)`))
+			return false
+		}
+		try {
+			await trash_existing_file(content, options.workspace_dir, options.site_name, file_relative)
+		} catch {
+			console.log(chalk.dim(`  kept ${file_relative}: not deleted without a trash backup (trash write failed)`))
+			return false
+		}
+		await remove_tracked_path(target_path)
+		return true
 	}
 
-	if (!stat.isDirectory()) return
-
-	const entries = await fs.readdir(target_path, { withFileTypes: true }).catch(() => [])
+	let entries
+	try {
+		entries = await fs.readdir(target_path, { withFileTypes: true })
+	} catch {
+		// A tree that can't be enumerated can't be backed up either; removing
+		// it anyway would delete children no trash copy was made of.
+		console.log(chalk.dim(`  kept ${file_relative}: not deleted without a trash backup (unreadable)`))
+		return false
+	}
+	let emptied = true
 	for (const entry of entries) {
 		const child_path = path.join(target_path, entry.name)
 		const child_relative = `${file_relative}/${entry.name}`
-		await trash_path_recursive(child_path, workspace_dir, site_name, child_relative)
+		if (!await prune_dropped_path(child_path, child_relative, options)) {
+			emptied = false
+		}
 	}
+
+	if (emptied) {
+		await remove_tracked_path(target_path)
+	}
+	return emptied
+}
+
+function describe_pruned_path(file_relative: string, removed_all: boolean): string {
+	return removed_all
+		? `${file_relative} (deleted, prior in .primo/trash/)`
+		: `${file_relative} (partially deleted; conflicted local files kept)`
 }
 
 // Compare line counts between prior and incoming content to flag suspicious
@@ -2140,6 +2205,76 @@ async function blocked_empty_schema_writebacks(temp_dir: string, site_dir: strin
 	return blocked
 }
 
+// A CMS export is only a safe mirror target while it still describes a
+// bootable site. An export that dropped pages/index.yaml is a partial read of
+// the CMS — mid-import, partially seeded, or never imported — not a real
+// "the user deleted every page" state, because a site in that state can't
+// start. Mirroring one onto disk prunes the whole workspace, so the caller
+// skips the cycle instead.
+//
+// The local side is measured by whatever the sync actually manages, not by
+// the homepage alone: a site can be mid-build with blocks and site data but
+// no pages/index.yaml yet, and that content is just as prunable. Returns
+// false only when there is genuinely nothing left to lose, so an empty site
+// can still receive its first pull instead of wedging.
+async function is_implausibly_thin_export(temp_dir: string, site_dir: string): Promise<boolean> {
+	if (await path_exists(path.join(temp_dir, HOMEPAGE_FILE))) return false
+
+	for (const dir of SITE_SYNC_DIRS) {
+		if (await has_any_file(path.join(site_dir, dir))) return true
+	}
+	return false
+}
+
+// True when the tree holds at least one file. Dot-entries are ignored so a
+// stray .DS_Store doesn't read as content.
+async function has_any_file(target_path: string): Promise<boolean> {
+	let entries: import('fs').Dirent[]
+	try {
+		entries = await fs.readdir(target_path, { withFileTypes: true })
+	} catch {
+		return false
+	}
+
+	for (const entry of entries) {
+		if (entry.name.startsWith('.')) continue
+		if (entry.isDirectory()) {
+			if (await has_any_file(path.join(target_path, entry.name))) return true
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+let warned_thin_library_export = false
+
+function warn_thin_library_export(): void {
+	if (warned_thin_library_export) return
+	warned_thin_library_export = true
+
+	console.log('')
+	console.log(chalk.red('  ✗ library: refused CMS→file sync — the CMS returned no shared library'))
+	console.log(chalk.red('    Local files were left alone. Mirroring this would have deleted the'))
+	console.log(chalk.red('    whole library/ directory.'))
+	console.log(chalk.dim('    The CMS library is likely not seeded yet. Restart `primo dev` without'))
+	console.log(chalk.dim('    --author cms to push the local library up.'))
+	console.log('')
+}
+
+function warn_thin_export(site_name: string, site_key: string): void {
+	if (warned_thin_exports.has(site_key)) return
+	warned_thin_exports.add(site_key)
+
+	console.log('')
+	console.log(chalk.red(`  ✗ ${site_name}: refused CMS→file sync — the CMS export has no ${HOMEPAGE_FILE}`))
+	console.log(chalk.red('    Local files were left alone. Mirroring this export would have deleted'))
+	console.log(chalk.red("    this site's pages, blocks and page types on disk."))
+	console.log(chalk.dim('    The CMS is likely mid-import or only partially seeded. Restart `primo dev`'))
+	console.log(chalk.dim('    without --author cms to push the local files back up.'))
+	console.log('')
+}
+
 function is_excluded_path(relative_path: string, excluded_paths: Set<string>): boolean {
 	const normalized = to_posix_path(relative_path)
 
@@ -2791,6 +2926,14 @@ async function sync_from_cms(site_dir: string, api_url: string, config: SiteConf
 	await extract(temp_zip, { dir: temp_dir })
 	await fs.unlink(temp_zip)
 
+	const site_key = get_site_sync_key(site_dir, config)
+	if (await is_implausibly_thin_export(temp_dir, site_dir)) {
+		warn_thin_export(config.name, site_key)
+		await fs.rm(temp_dir, { recursive: true, force: true })
+		return
+	}
+	warned_thin_exports.delete(site_key)
+
 	const format_options = resolve_format_options(server_config)
 	const block_content_refs = await collect_block_content_references(site_dir)
 	const blocked_writebacks = await blocked_empty_schema_writebacks(temp_dir, site_dir, config.name, block_content_refs)
@@ -2830,8 +2973,12 @@ async function sync_from_cms(site_dir: string, api_url: string, config: SiteConf
 			const files = await sync_directory(temp_path, local_path, dir, sync_options)
 			changed_files.push(...files)
 		} else if (await path_exists(local_path)) {
-			await remove_tracked_path(local_path)
-			changed_files.push(dir)
+			// The CMS export dropped this whole directory. This branch used to
+			// rm the tree outright, which made the largest possible CMS→file
+			// delete both the only unrecoverable one and the only one that
+			// ignored files-win conflict resolution.
+			const removed_all = await prune_dropped_path(local_path, dir, sync_options)
+			changed_files.push(describe_pruned_path(dir, removed_all))
 		}
 	}
 
@@ -2850,10 +2997,9 @@ async function sync_from_cms(site_dir: string, api_url: string, config: SiteConf
 			post_baseline.set(skipped, local_value)
 		}
 	}
-	site_sync_baselines.set(get_site_sync_key(site_dir, config), post_baseline)
+	site_sync_baselines.set(site_key, post_baseline)
 
 	if (conflict_paths.length > 0) {
-		const site_key = get_site_sync_key(site_dir, config)
 		const conflict_signature = conflict_paths.join('|')
 		if (last_logged_conflicts.get(site_key) !== conflict_signature) {
 			last_logged_conflicts.set(site_key, conflict_signature)
@@ -2865,7 +3011,7 @@ async function sync_from_cms(site_dir: string, api_url: string, config: SiteConf
 		}
 	} else {
 		// Cleared up — clear the dedupe key so a fresh conflict re-prints.
-		last_logged_conflicts.delete(get_site_sync_key(site_dir, config))
+		last_logged_conflicts.delete(site_key)
 	}
 	if (changed_files.length > 0) {
 		for (const file of changed_files) {
@@ -2895,11 +3041,34 @@ async function sync_library_from_cms(base_dir: string, api_url: string): Promise
 	const local_library_path = path.join(base_dir, LIBRARY_DIR)
 	let changed_files: string[] = []
 	if (await path_exists(temp_library_path)) {
-		changed_files = await sync_directory(temp_library_path, local_library_path, LIBRARY_DIR)
+		// workspace_dir/site_name are what gate trashing inside sync_directory.
+		// Without them every library overwrite and prune ran with no backup at
+		// all, unlike the per-site path. The matchers for the empty-writeback
+		// guards anchor on blocks/ and site/, so a library/ path can't trip
+		// them — site_name here is only the trash label.
+		changed_files = await sync_directory(temp_library_path, local_library_path, LIBRARY_DIR, {
+			workspace_dir: base_dir,
+			site_name: LIBRARY_DIR
+		})
+	} else if (await has_library_content(local_library_path)) {
+		// The CMS returned no library at all while the workspace has one. That
+		// is a CMS that was never seeded (in --author cms the startup path pulls
+		// instead of importing, so the first run hits this), not a user who
+		// deleted every shared block. Mirroring it wipes the whole library, so
+		// refuse and leave the files alone.
+		warn_thin_library_export()
+		await fs.rm(temp_dir, { recursive: true, force: true })
+		return
 	} else if (await path_exists(local_library_path)) {
-		await remove_tracked_path(local_library_path)
-		changed_files = [LIBRARY_DIR]
+		// Local library is empty, so there is nothing to lose — but still trash
+		// whatever is there before removing it.
+		const removed_all = await prune_dropped_path(local_library_path, LIBRARY_DIR, {
+			workspace_dir: base_dir,
+			site_name: LIBRARY_DIR
+		})
+		changed_files = [describe_pruned_path(LIBRARY_DIR, removed_all)]
 	}
+	warned_thin_library_export = false
 
 	await fs.rm(temp_dir, { recursive: true, force: true })
 	library_snapshot = await scan_library_folders(local_library_path)
@@ -2952,8 +3121,16 @@ async function sync_directory(
 			let dest_content = ''
 			try {
 				dest_content = await fs.readFile(dest_path, 'utf-8')
-			} catch {
-				// File doesn't exist locally
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+					// File doesn't exist locally
+				} else {
+					// Unreadable: neither the comparison nor a backup of the
+					// prior content is possible, so leave the file alone this
+					// cycle and retry once the cause is gone.
+					console.log(chalk.dim(`  kept ${file_relative}: unreadable, not overwritten`))
+					continue
+				}
 			}
 
 			if (should_skip_empty_block_schema_writeback(file_relative, src_content, dest_content, options)) {
@@ -2968,12 +3145,19 @@ async function sync_directory(
 			if (src_content.trim() !== dest_content.trim()) {
 				// Trash the prior content so the user can recover if this
 				// overwrite was unwanted. Skipped when there was no prior file.
-				// Trashing must never block the sync — failures are logged and ignored.
-				if (dest_content && options.workspace_dir && options.site_name) {
+				// If a backup can't be taken, the overwrite is skipped too:
+				// the incoming value still exists on the CMS side, so a later
+				// cycle retries it — the local value has no copy anywhere else.
+				if (dest_content && (!options.workspace_dir || !options.site_name)) {
+					console.log(chalk.dim(`  kept ${file_relative}: not overwritten without a trash backup (no trash location)`))
+					continue
+				}
+				if (dest_content) {
 					try {
-						await trash_existing_file(dest_content, options.workspace_dir, options.site_name, file_relative)
+						await trash_existing_file(dest_content, options.workspace_dir!, options.site_name!, file_relative)
 					} catch {
-						console.log(chalk.dim(`  trash failed for ${file_relative}`))
+						console.log(chalk.dim(`  kept ${file_relative}: not overwritten without a trash backup (trash write failed)`))
+						continue
 					}
 				}
 
@@ -3015,17 +3199,10 @@ async function sync_directory(
 
 		// Trash the file/tree before removing so a CMS-side delete
 		// (often triggered by an upstream parse error dropping references)
-		// is recoverable from .primo/trash/.
-		if (options.workspace_dir && options.site_name) {
-			try {
-				await trash_path_recursive(dest_path, options.workspace_dir, options.site_name, file_relative)
-			} catch {
-				console.log(chalk.dim(`  trash failed for ${file_relative}`))
-			}
-		}
-
-		await remove_tracked_path(dest_path)
-		changed_files.push(`${file_relative} (deleted, prior in .primo/trash/)`)
+		// is recoverable from .primo/trash/. skip_paths is re-checked per
+		// descendant: this entry may be a directory holding a conflicted file.
+		const removed_all = await prune_dropped_path(dest_path, file_relative, options)
+		changed_files.push(describe_pruned_path(file_relative, removed_all))
 	}
 
 	return changed_files
