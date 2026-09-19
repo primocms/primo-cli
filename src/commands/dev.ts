@@ -225,16 +225,26 @@ async function prune_dropped_path(
 		// this replaced (fs.rm recursive) never followed links, so walking
 		// into one would be a new way to delete files outside the site.
 		stat = await fs.lstat(target_path)
-	} catch {
-		return true
+	} catch (error) {
+		// Only a vanished path counts as gone; an lstat that failed for
+		// another reason inspected nothing, so nothing may be removed.
+		if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true
+		console.log(chalk.dim(`  kept ${file_relative}: not deleted (could not inspect)`))
+		return false
 	}
 
 	if (stat.isSymbolicLink()) {
 		// A link is a leaf: unlink only the link itself. remove_tracked_path
 		// would also walk the target tree (mark_deleted_tree's readdir follows
 		// the link), bookkeeping paths outside the site for no benefit.
+		try {
+			await fs.unlink(target_path)
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true
+			console.log(chalk.dim(`  kept ${file_relative}: not deleted (could not remove link)`))
+			return false
+		}
 		mark_deleted_path(target_path)
-		await fs.unlink(target_path).catch(() => {})
 		return true
 	}
 
@@ -277,7 +287,19 @@ async function prune_dropped_path(
 	}
 
 	if (emptied) {
-		await remove_tracked_path(target_path)
+		// rmdir, not a recursive remove: everything enumerated above is gone,
+		// but a child may have been re-created since the readdir. A plain
+		// rmdir refuses (ENOTEMPTY) rather than delete content that arrived
+		// after enumeration and so was never trashed.
+		try {
+			await fs.rmdir(target_path)
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException).code
+			if (code === 'ENOENT') return true
+			return false
+		}
+		mark_deleted_path(target_path)
+		return true
 	}
 	return emptied
 }
