@@ -10,7 +10,7 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "npm run build && node --test tests/*.test.mjs",
-    "prepublishOnly": "npm run build",
+    "prepublishOnly": "npm test",
     "postinstall": "node scripts/postinstall.js"
   },
   "repository": {
