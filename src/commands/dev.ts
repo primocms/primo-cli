@@ -230,7 +230,11 @@ async function prune_dropped_path(
 	}
 
 	if (stat.isSymbolicLink()) {
-		await remove_tracked_path(target_path)
+		// A link is a leaf: unlink only the link itself. remove_tracked_path
+		// would also walk the target tree (mark_deleted_tree's readdir follows
+		// the link), bookkeeping paths outside the site for no benefit.
+		mark_deleted_path(target_path)
+		await fs.unlink(target_path).catch(() => {})
 		return true
 	}
 
@@ -3117,8 +3121,16 @@ async function sync_directory(
 			let dest_content = ''
 			try {
 				dest_content = await fs.readFile(dest_path, 'utf-8')
-			} catch {
-				// File doesn't exist locally
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+					// File doesn't exist locally
+				} else {
+					// Unreadable: neither the comparison nor a backup of the
+					// prior content is possible, so leave the file alone this
+					// cycle and retry once the cause is gone.
+					console.log(chalk.dim(`  kept ${file_relative}: unreadable, not overwritten`))
+					continue
+				}
 			}
 
 			if (should_skip_empty_block_schema_writeback(file_relative, src_content, dest_content, options)) {
@@ -3133,12 +3145,19 @@ async function sync_directory(
 			if (src_content.trim() !== dest_content.trim()) {
 				// Trash the prior content so the user can recover if this
 				// overwrite was unwanted. Skipped when there was no prior file.
-				// Trashing must never block the sync — failures are logged and ignored.
-				if (dest_content && options.workspace_dir && options.site_name) {
+				// If a backup can't be taken, the overwrite is skipped too:
+				// the incoming value still exists on the CMS side, so a later
+				// cycle retries it — the local value has no copy anywhere else.
+				if (dest_content && (!options.workspace_dir || !options.site_name)) {
+					console.log(chalk.dim(`  kept ${file_relative}: not overwritten without a trash backup (no trash location)`))
+					continue
+				}
+				if (dest_content) {
 					try {
-						await trash_existing_file(dest_content, options.workspace_dir, options.site_name, file_relative)
+						await trash_existing_file(dest_content, options.workspace_dir!, options.site_name!, file_relative)
 					} catch {
-						console.log(chalk.dim(`  trash failed for ${file_relative}`))
+						console.log(chalk.dim(`  kept ${file_relative}: not overwritten without a trash backup (trash write failed)`))
+						continue
 					}
 				}
 
