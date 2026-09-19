@@ -216,8 +216,16 @@ async function prune_dropped_path(
 
 	let stat
 	try {
-		stat = await fs.stat(target_path)
+		// lstat, not stat: a symlink has to be a leaf here. The tree delete
+		// this replaced (fs.rm recursive) never followed links, so walking
+		// into one would be a new way to delete files outside the site.
+		stat = await fs.lstat(target_path)
 	} catch {
+		return true
+	}
+
+	if (stat.isSymbolicLink()) {
+		await remove_tracked_path(target_path)
 		return true
 	}
 
@@ -2180,12 +2188,41 @@ async function blocked_empty_schema_writebacks(temp_dir: string, site_dir: strin
 // the CMS — mid-import, partially seeded, or never imported — not a real
 // "the user deleted every page" state, because a site in that state can't
 // start. Mirroring one onto disk prunes the whole workspace, so the caller
-// skips the cycle instead. Returns false when the local site has no homepage
-// either: there's nothing left to protect, and refusing forever would wedge
-// the sync.
+// skips the cycle instead.
+//
+// The local side is measured by whatever the sync actually manages, not by
+// the homepage alone: a site can be mid-build with blocks and site data but
+// no pages/index.yaml yet, and that content is just as prunable. Returns
+// false only when there is genuinely nothing left to lose, so an empty site
+// can still receive its first pull instead of wedging.
 async function is_implausibly_thin_export(temp_dir: string, site_dir: string): Promise<boolean> {
 	if (await path_exists(path.join(temp_dir, HOMEPAGE_FILE))) return false
-	return await path_exists(path.join(site_dir, HOMEPAGE_FILE))
+
+	for (const dir of SITE_SYNC_DIRS) {
+		if (await has_any_file(path.join(site_dir, dir))) return true
+	}
+	return false
+}
+
+// True when the tree holds at least one file. Dot-entries are ignored so a
+// stray .DS_Store doesn't read as content.
+async function has_any_file(target_path: string): Promise<boolean> {
+	let entries: import('fs').Dirent[]
+	try {
+		entries = await fs.readdir(target_path, { withFileTypes: true })
+	} catch {
+		return false
+	}
+
+	for (const entry of entries) {
+		if (entry.name.startsWith('.')) continue
+		if (entry.isDirectory()) {
+			if (await has_any_file(path.join(target_path, entry.name))) return true
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 let warned_thin_library_export = false
