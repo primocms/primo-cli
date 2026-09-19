@@ -15,12 +15,21 @@ concurrency:
   group: test-${{ github.ref }}
   cancel-in-progress: true
 
+# This job runs PR-authored code (npm lifecycle scripts, the test suite), so
+# give it no more than it needs to read the checkout.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Otherwise checkout leaves GITHUB_TOKEN in .git/config, where
+          # anything running afterward can read it.
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:

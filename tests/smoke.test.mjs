@@ -139,10 +139,19 @@ describe('primo push', () => {
 	})
 })
 
+// Walks manually rather than using readdir's `recursive` option: that landed
+// in Node 18.17, and package.json declares support from 18.0.0. On 18.0-18.16
+// the option is ignored, so this would only ever see the top-level entries and
+// miss the nested pages/index.yaml.
 async function find_file(root, name) {
-	const entries = await fs.readdir(root, { withFileTypes: true, recursive: true })
+	const entries = await fs.readdir(root, { withFileTypes: true })
 	for (const entry of entries) {
-		if (entry.isFile() && entry.name === name) return path.join(entry.parentPath ?? entry.path, entry.name)
+		const full = path.join(root, entry.name)
+		if (entry.isFile() && entry.name === name) return full
+		if (entry.isDirectory()) {
+			const found = await find_file(full, name)
+			if (found) return found
+		}
 	}
 	return null
 }
