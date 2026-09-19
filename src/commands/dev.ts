@@ -206,6 +206,11 @@ async function trash_existing_file(
 // conflicted file the caller had already decided to preserve. A directory is
 // only removed once every child under it is gone.
 //
+// A file or directory whose backup can't be taken — unreadable, trash write
+// failed, or no trash location configured — is kept, not deleted: unlike an
+// overwrite there is no incoming copy anywhere else, so deleting it anyway
+// would be unrecoverable.
+//
 // Returns true when nothing survived, so the caller can report a clean delete.
 async function prune_dropped_path(
 	target_path: string,
@@ -230,21 +235,34 @@ async function prune_dropped_path(
 	}
 
 	if (!stat.isDirectory()) {
-		if (options.workspace_dir && options.site_name) {
-			const content = await fs.readFile(target_path, 'utf-8').catch(() => null)
-			if (content !== null) {
-				try {
-					await trash_existing_file(content, options.workspace_dir, options.site_name, file_relative)
-				} catch {
-					console.log(chalk.dim(`  trash failed for ${file_relative}`))
-				}
-			}
+		if (!options.workspace_dir || !options.site_name) {
+			console.log(chalk.dim(`  kept ${file_relative}: not deleted without a trash backup (no trash location)`))
+			return false
+		}
+		const content = await fs.readFile(target_path, 'utf-8').catch(() => null)
+		if (content === null) {
+			console.log(chalk.dim(`  kept ${file_relative}: not deleted without a trash backup (unreadable)`))
+			return false
+		}
+		try {
+			await trash_existing_file(content, options.workspace_dir, options.site_name, file_relative)
+		} catch {
+			console.log(chalk.dim(`  kept ${file_relative}: not deleted without a trash backup (trash write failed)`))
+			return false
 		}
 		await remove_tracked_path(target_path)
 		return true
 	}
 
-	const entries = await fs.readdir(target_path, { withFileTypes: true }).catch(() => [])
+	let entries
+	try {
+		entries = await fs.readdir(target_path, { withFileTypes: true })
+	} catch {
+		// A tree that can't be enumerated can't be backed up either; removing
+		// it anyway would delete children no trash copy was made of.
+		console.log(chalk.dim(`  kept ${file_relative}: not deleted without a trash backup (unreadable)`))
+		return false
+	}
 	let emptied = true
 	for (const entry of entries) {
 		const child_path = path.join(target_path, entry.name)
