@@ -198,37 +198,64 @@ async function trash_existing_file(
 	await fs.writeFile(trash_path, prior_content)
 }
 
-// Recursively trash every file under a path before it gets deleted, so
-// CMS->file deletes are recoverable the same way overwrites are.
-async function trash_path_recursive(
+// Remove a path the CMS export dropped, trashing each file first so the delete
+// stays recoverable the same way an overwrite does.
+//
+// Descendants listed in skip_paths are kept: the "files win on conflict"
+// policy is per-file, so removing a directory wholesale would delete a
+// conflicted file the caller had already decided to preserve. A directory is
+// only removed once every child under it is gone.
+//
+// Returns true when nothing survived, so the caller can report a clean delete.
+async function prune_dropped_path(
 	target_path: string,
-	workspace_dir: string,
-	site_name: string,
-	file_relative: string
-): Promise<void> {
+	file_relative: string,
+	options: SyncDirectoryOptions
+): Promise<boolean> {
+	if (options.skip_paths?.has(file_relative)) return false
+
 	let stat
 	try {
 		stat = await fs.stat(target_path)
 	} catch {
-		return
+		return true
 	}
 
-	if (stat.isFile()) {
-		const content = await fs.readFile(target_path, 'utf-8').catch(() => null)
-		if (content !== null) {
-			await trash_existing_file(content, workspace_dir, site_name, file_relative)
+	if (!stat.isDirectory()) {
+		if (options.workspace_dir && options.site_name) {
+			const content = await fs.readFile(target_path, 'utf-8').catch(() => null)
+			if (content !== null) {
+				try {
+					await trash_existing_file(content, options.workspace_dir, options.site_name, file_relative)
+				} catch {
+					console.log(chalk.dim(`  trash failed for ${file_relative}`))
+				}
+			}
 		}
-		return
+		await remove_tracked_path(target_path)
+		return true
 	}
-
-	if (!stat.isDirectory()) return
 
 	const entries = await fs.readdir(target_path, { withFileTypes: true }).catch(() => [])
+	let emptied = true
 	for (const entry of entries) {
 		const child_path = path.join(target_path, entry.name)
 		const child_relative = `${file_relative}/${entry.name}`
-		await trash_path_recursive(child_path, workspace_dir, site_name, child_relative)
+		if (!await prune_dropped_path(child_path, child_relative, options)) {
+			emptied = false
+		}
 	}
+
+	if (emptied) {
+		await remove_tracked_path(target_path)
+	}
+	return emptied
+}
+
+function describe_pruned_path(file_relative: string, removed_all: boolean): string {
+	return removed_all
+		? `${file_relative} (deleted, prior in .primo/trash/)`
+		: `${file_relative} (partially deleted; conflicted local files kept)`
 }
 
 // Compare line counts between prior and incoming content to flag suspicious
@@ -2887,17 +2914,12 @@ async function sync_from_cms(site_dir: string, api_url: string, config: SiteConf
 			const files = await sync_directory(temp_path, local_path, dir, sync_options)
 			changed_files.push(...files)
 		} else if (await path_exists(local_path)) {
-			// The CMS export dropped this whole directory. Trash it first —
-			// this branch used to rm the tree outright, which made the
-			// largest possible CMS→file delete the only unrecoverable one
-			// (sync_directory trashes every file it prunes individually).
-			try {
-				await trash_path_recursive(local_path, workspace_dir, config.name, dir)
-			} catch {
-				console.log(chalk.dim(`  trash failed for ${dir}`))
-			}
-			await remove_tracked_path(local_path)
-			changed_files.push(`${dir} (deleted, prior in .primo/trash/)`)
+			// The CMS export dropped this whole directory. This branch used to
+			// rm the tree outright, which made the largest possible CMS→file
+			// delete both the only unrecoverable one and the only one that
+			// ignored files-win conflict resolution.
+			const removed_all = await prune_dropped_path(local_path, dir, sync_options)
+			changed_files.push(describe_pruned_path(dir, removed_all))
 		}
 	}
 
@@ -2981,13 +3003,11 @@ async function sync_library_from_cms(base_dir: string, api_url: string): Promise
 	} else if (await path_exists(local_library_path)) {
 		// Local library is empty, so there is nothing to lose — but still trash
 		// whatever is there before removing it.
-		try {
-			await trash_path_recursive(local_library_path, base_dir, LIBRARY_DIR, LIBRARY_DIR)
-		} catch {
-			console.log(chalk.dim(`  trash failed for ${LIBRARY_DIR}`))
-		}
-		await remove_tracked_path(local_library_path)
-		changed_files = [`${LIBRARY_DIR} (deleted, prior in .primo/trash/)`]
+		const removed_all = await prune_dropped_path(local_library_path, LIBRARY_DIR, {
+			workspace_dir: base_dir,
+			site_name: LIBRARY_DIR
+		})
+		changed_files = [describe_pruned_path(LIBRARY_DIR, removed_all)]
 	}
 	warned_thin_library_export = false
 
@@ -3105,17 +3125,10 @@ async function sync_directory(
 
 		// Trash the file/tree before removing so a CMS-side delete
 		// (often triggered by an upstream parse error dropping references)
-		// is recoverable from .primo/trash/.
-		if (options.workspace_dir && options.site_name) {
-			try {
-				await trash_path_recursive(dest_path, options.workspace_dir, options.site_name, file_relative)
-			} catch {
-				console.log(chalk.dim(`  trash failed for ${file_relative}`))
-			}
-		}
-
-		await remove_tracked_path(dest_path)
-		changed_files.push(`${file_relative} (deleted, prior in .primo/trash/)`)
+		// is recoverable from .primo/trash/. skip_paths is re-checked per
+		// descendant: this entry may be a directory holding a conflicted file.
+		const removed_all = await prune_dropped_path(dest_path, file_relative, options)
+		changed_files.push(describe_pruned_path(file_relative, removed_all))
 	}
 
 	return changed_files
