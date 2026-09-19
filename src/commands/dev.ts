@@ -72,6 +72,10 @@ const last_logged_conflicts = new Map<string, string>()
 const synced_files = new Map<string, string>()
 const synced_deleted_paths = new Map<string, number>()
 const warned_empty_schema_writebacks = new Set<string>()
+// Sites whose CMS export currently looks too thin to mirror. Keyed by site so
+// the 1s poll prints the refusal once instead of every cycle, and cleared as
+// soon as the export recovers so a later occurrence is reported again.
+const warned_thin_exports = new Set<string>()
 
 // Snapshot of library folder paths known to be in the DB after the last
 // successful push, mapped to the underlying DB record ID (group id or
@@ -88,6 +92,10 @@ const SITES_DIR = 'sites'
 const LIBRARY_DIR = 'library'
 const MCP_CONFIG_FILE = '.mcp.json'
 const SITE_SYNC_DIRS = ['blocks', 'page-types', 'pages', 'site']
+// Every site needs this file to boot — `primo dev` refuses to start without
+// it (see validate.ts). Used as the liveness check on a CMS export before we
+// let it prune local files.
+const HOMEPAGE_FILE = 'pages/index.yaml'
 
 type IDCategory = 'pages' | 'page_sections' | 'blocks' | 'page_types' | 'site_fields' | 'block_fields' | 'page_type_fields'
 
@@ -2140,6 +2148,47 @@ async function blocked_empty_schema_writebacks(temp_dir: string, site_dir: strin
 	return blocked
 }
 
+// A CMS export is only a safe mirror target while it still describes a
+// bootable site. An export that dropped pages/index.yaml is a partial read of
+// the CMS — mid-import, partially seeded, or never imported — not a real
+// "the user deleted every page" state, because a site in that state can't
+// start. Mirroring one onto disk prunes the whole workspace, so the caller
+// skips the cycle instead. Returns false when the local site has no homepage
+// either: there's nothing left to protect, and refusing forever would wedge
+// the sync.
+async function is_implausibly_thin_export(temp_dir: string, site_dir: string): Promise<boolean> {
+	if (await path_exists(path.join(temp_dir, HOMEPAGE_FILE))) return false
+	return await path_exists(path.join(site_dir, HOMEPAGE_FILE))
+}
+
+let warned_thin_library_export = false
+
+function warn_thin_library_export(): void {
+	if (warned_thin_library_export) return
+	warned_thin_library_export = true
+
+	console.log('')
+	console.log(chalk.red('  ✗ library: refused CMS→file sync — the CMS returned no shared library'))
+	console.log(chalk.red('    Local files were left alone. Mirroring this would have deleted the'))
+	console.log(chalk.red('    whole library/ directory.'))
+	console.log(chalk.dim('    The CMS library is likely not seeded yet. Restart `primo dev` without'))
+	console.log(chalk.dim('    --author cms to push the local library up.'))
+	console.log('')
+}
+
+function warn_thin_export(site_name: string, site_key: string): void {
+	if (warned_thin_exports.has(site_key)) return
+	warned_thin_exports.add(site_key)
+
+	console.log('')
+	console.log(chalk.red(`  ✗ ${site_name}: refused CMS→file sync — the CMS export has no ${HOMEPAGE_FILE}`))
+	console.log(chalk.red('    Local files were left alone. Mirroring this export would have deleted'))
+	console.log(chalk.red("    this site's pages, blocks and page types on disk."))
+	console.log(chalk.dim('    The CMS is likely mid-import or only partially seeded. Restart `primo dev`'))
+	console.log(chalk.dim('    without --author cms to push the local files back up.'))
+	console.log('')
+}
+
 function is_excluded_path(relative_path: string, excluded_paths: Set<string>): boolean {
 	const normalized = to_posix_path(relative_path)
 
@@ -2791,6 +2840,14 @@ async function sync_from_cms(site_dir: string, api_url: string, config: SiteConf
 	await extract(temp_zip, { dir: temp_dir })
 	await fs.unlink(temp_zip)
 
+	const site_key = get_site_sync_key(site_dir, config)
+	if (await is_implausibly_thin_export(temp_dir, site_dir)) {
+		warn_thin_export(config.name, site_key)
+		await fs.rm(temp_dir, { recursive: true, force: true })
+		return
+	}
+	warned_thin_exports.delete(site_key)
+
 	const format_options = resolve_format_options(server_config)
 	const block_content_refs = await collect_block_content_references(site_dir)
 	const blocked_writebacks = await blocked_empty_schema_writebacks(temp_dir, site_dir, config.name, block_content_refs)
@@ -2830,8 +2887,17 @@ async function sync_from_cms(site_dir: string, api_url: string, config: SiteConf
 			const files = await sync_directory(temp_path, local_path, dir, sync_options)
 			changed_files.push(...files)
 		} else if (await path_exists(local_path)) {
+			// The CMS export dropped this whole directory. Trash it first —
+			// this branch used to rm the tree outright, which made the
+			// largest possible CMS→file delete the only unrecoverable one
+			// (sync_directory trashes every file it prunes individually).
+			try {
+				await trash_path_recursive(local_path, workspace_dir, config.name, dir)
+			} catch {
+				console.log(chalk.dim(`  trash failed for ${dir}`))
+			}
 			await remove_tracked_path(local_path)
-			changed_files.push(dir)
+			changed_files.push(`${dir} (deleted, prior in .primo/trash/)`)
 		}
 	}
 
@@ -2850,10 +2916,9 @@ async function sync_from_cms(site_dir: string, api_url: string, config: SiteConf
 			post_baseline.set(skipped, local_value)
 		}
 	}
-	site_sync_baselines.set(get_site_sync_key(site_dir, config), post_baseline)
+	site_sync_baselines.set(site_key, post_baseline)
 
 	if (conflict_paths.length > 0) {
-		const site_key = get_site_sync_key(site_dir, config)
 		const conflict_signature = conflict_paths.join('|')
 		if (last_logged_conflicts.get(site_key) !== conflict_signature) {
 			last_logged_conflicts.set(site_key, conflict_signature)
@@ -2865,7 +2930,7 @@ async function sync_from_cms(site_dir: string, api_url: string, config: SiteConf
 		}
 	} else {
 		// Cleared up — clear the dedupe key so a fresh conflict re-prints.
-		last_logged_conflicts.delete(get_site_sync_key(site_dir, config))
+		last_logged_conflicts.delete(site_key)
 	}
 	if (changed_files.length > 0) {
 		for (const file of changed_files) {
@@ -2895,11 +2960,36 @@ async function sync_library_from_cms(base_dir: string, api_url: string): Promise
 	const local_library_path = path.join(base_dir, LIBRARY_DIR)
 	let changed_files: string[] = []
 	if (await path_exists(temp_library_path)) {
-		changed_files = await sync_directory(temp_library_path, local_library_path, LIBRARY_DIR)
+		// workspace_dir/site_name are what gate trashing inside sync_directory.
+		// Without them every library overwrite and prune ran with no backup at
+		// all, unlike the per-site path. The matchers for the empty-writeback
+		// guards anchor on blocks/ and site/, so a library/ path can't trip
+		// them — site_name here is only the trash label.
+		changed_files = await sync_directory(temp_library_path, local_library_path, LIBRARY_DIR, {
+			workspace_dir: base_dir,
+			site_name: LIBRARY_DIR
+		})
+	} else if (await has_library_content(local_library_path)) {
+		// The CMS returned no library at all while the workspace has one. That
+		// is a CMS that was never seeded (in --author cms the startup path pulls
+		// instead of importing, so the first run hits this), not a user who
+		// deleted every shared block. Mirroring it wipes the whole library, so
+		// refuse and leave the files alone.
+		warn_thin_library_export()
+		await fs.rm(temp_dir, { recursive: true, force: true })
+		return
 	} else if (await path_exists(local_library_path)) {
+		// Local library is empty, so there is nothing to lose — but still trash
+		// whatever is there before removing it.
+		try {
+			await trash_path_recursive(local_library_path, base_dir, LIBRARY_DIR, LIBRARY_DIR)
+		} catch {
+			console.log(chalk.dim(`  trash failed for ${LIBRARY_DIR}`))
+		}
 		await remove_tracked_path(local_library_path)
-		changed_files = [LIBRARY_DIR]
+		changed_files = [`${LIBRARY_DIR} (deleted, prior in .primo/trash/)`]
 	}
+	warned_thin_library_export = false
 
 	await fs.rm(temp_dir, { recursive: true, force: true })
 	library_snapshot = await scan_library_folders(local_library_path)
