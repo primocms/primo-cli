@@ -1,0 +1,42 @@
+name: Tests
+
+# This package publishes to npm independently of the server, so a broken
+# build reaches users directly — 0.1.10 and 0.1.11 both shipped a dist that
+# 404'd against every real server. Running the smoke suite on every PR is
+# the cheap guard against repeating that.
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+# This job runs PR-authored code (npm lifecycle scripts, the test suite), so
+# give it no more than it needs to read the checkout.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Otherwise checkout leaves GITHUB_TOKEN in .git/config, where
+          # anything running afterward can read it.
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # `npm test` builds first, so this also fails on a TypeScript error.
+      - run: npm test
