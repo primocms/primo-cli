@@ -17,6 +17,7 @@ import { login } from './commands/login.js'
 import { validate_site } from './commands/validate.js'
 import { deploy } from './commands/deploy.js'
 import { build_site } from './commands/build.js'
+import { status } from './commands/status.js'
 import { mcp_install, mcp_list, mcp_print, client_option, UNKNOWN_CLIENTS_HINT } from './commands/mcp.js'
 
 const pkg_path = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json')
@@ -191,6 +192,13 @@ ${chalk.bold('See also')}
                 it ships the workspace with an editable CMS to Railway or Fly.
 `)
 	.action(build_site)
+
+program
+	.command('status')
+	.description('Report the workspace: server state, sites, groups, and last sync')
+	.option('-d, --dir <dir>', 'Workspace directory', '.')
+	.option('--json', 'Machine-readable output')
+	.action((options) => status(options))
 
 const mcp = program
 	.command('mcp')
