@@ -10,7 +10,7 @@ import archiver from 'archiver'
  * 404'd against every real server; nothing in this repo would have noticed.
  * Recording requests here is what makes that class of break visible.
  */
-export async function start_mock_server({ sites = [], export_files = {} } = {}) {
+export async function start_mock_server({ sites = [], export_files = {}, site_groups = [] } = {}) {
 	const requests = []
 
 	const server = http.createServer(async (req, res) => {
@@ -29,12 +29,16 @@ export async function start_mock_server({ sites = [], export_files = {} } = {}) 
 			return json(res, 200, { status: 'ok' })
 		}
 
+		if (url.pathname === '/api/primo/dev-auth' && req.method === 'POST') {
+			return json(res, 200, { token: 'dev-token' })
+		}
+
 		if (url.pathname === '/api/collections/sites/records') {
 			return json(res, 200, { items: sites, page: 1, perPage: 200, totalItems: sites.length })
 		}
 
 		if (url.pathname === '/api/collections/site_groups/records') {
-			return json(res, 200, { items: [], page: 1, perPage: 200, totalItems: 0 })
+			return json(res, 200, { items: site_groups, page: 1, perPage: 200, totalItems: site_groups.length })
 		}
 
 		const export_match = url.pathname.match(/^\/api\/primo\/export\/([^/]+)$/)

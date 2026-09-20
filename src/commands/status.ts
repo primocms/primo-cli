@@ -24,6 +24,8 @@ interface SiteStatus {
 	site_id: string | null
 	group: string | null
 	sync: SiteSync | null
+	/** Whether the site exists in the running CMS. null when the server is down. */
+	in_cms: boolean | null
 }
 
 /**
@@ -51,8 +53,19 @@ export async function status(options: StatusOptions) {
 
 	const server_config = await read_server_config(base_dir)
 	const port = server_config.port ?? 3000
+	const api_url = `http://127.0.0.1:${port}`
 	const running = await is_server_running(port)
 	const sites = await read_sites(base_dir)
+
+	// When the server is up, its dev-auth token unlocks the authoritative CMS
+	// state — the collections API is otherwise auth-gated and returns empty.
+	const cms = running ? await read_live_cms(api_url) : null
+	if (cms) {
+		const known = new Set(cms.sites.map((site) => site.id))
+		for (const site of sites) {
+			site.in_cms = site.site_id ? known.has(site.site_id) : false
+		}
+	}
 
 	if (as_json) {
 		console.log(JSON.stringify({
@@ -60,7 +73,8 @@ export async function status(options: StatusOptions) {
 			port,
 			running,
 			groups: server_config.site_groups ?? [],
-			sites
+			sites,
+			...(cms ? { cms } : {})
 		}, null, 2))
 		return
 	}
@@ -70,6 +84,9 @@ export async function status(options: StatusOptions) {
 	console.log(`  ${chalk.dim('server')}  ${running ? chalk.green(`running on port ${port}`) : chalk.yellow(`not running (port ${port})`)}`)
 	console.log(`  ${chalk.dim('groups')}  ${(server_config.site_groups ?? []).length}`)
 	console.log(`  ${chalk.dim('sites')}   ${sites.length}`)
+	if (cms) {
+		console.log(`  ${chalk.dim('cms')}     ${cms.sites.length} site record${cms.sites.length === 1 ? '' : 's'}, ${cms.groups.length} group${cms.groups.length === 1 ? '' : 's'}`)
+	}
 
 	const failed = sites.filter((site) => site.sync && !site.sync.ok)
 	if (failed.length > 0) {
@@ -77,6 +94,15 @@ export async function status(options: StatusOptions) {
 		console.log(chalk.red(`  ${failed.length} site${failed.length === 1 ? '' : 's'} with a failed last import:`))
 		for (const site of failed) {
 			console.log(`    ${chalk.red('✖')} ${site.slug}  ${chalk.dim(site.sync?.error ?? 'last import failed')}`)
+		}
+	}
+
+	const missing = sites.filter((site) => site.in_cms === false)
+	if (missing.length > 0) {
+		console.log('')
+		console.log(chalk.yellow(`  ${missing.length} site${missing.length === 1 ? '' : 's'} on disk but not registered in the CMS:`))
+		for (const site of missing) {
+			console.log(`    ${chalk.yellow('!')} ${site.slug}  ${chalk.dim('run `primo add ' + site.slug + '`')}`)
 		}
 	}
 	console.log('')
@@ -116,7 +142,8 @@ async function read_sites(base_dir: string): Promise<SiteStatus[]> {
 			name: str(config?.name),
 			site_id: str(config?.site_id),
 			group: str(config?.group),
-			sync: await read_sync(site_dir)
+			sync: await read_sync(site_dir),
+			in_cms: null
 		})
 	}
 
@@ -134,6 +161,50 @@ async function read_sync(site_dir: string): Promise<SiteSync | null> {
 		if (typeof parsed.warned_at === 'string') sync.warned_at = parsed.warned_at
 		if (typeof parsed.last_import_at === 'string') sync.last_import_at = parsed.last_import_at
 		return sync
+	} catch {
+		return null
+	}
+}
+
+interface CmsSite {
+	id: string
+	name?: string
+	group?: string
+}
+
+interface CmsGroup {
+	id: string
+	name?: string
+}
+
+/**
+ * Read the running server's authoritative state. The collections API is
+ * auth-gated, so this first exchanges the local dev-auth endpoint for a token —
+ * the same route the MCP `build_preview` uses. Returns null when the server
+ * can't be reached or doesn't grant a token.
+ */
+async function read_live_cms(api_url: string): Promise<{ sites: CmsSite[]; groups: CmsGroup[] } | null> {
+	try {
+		const auth = await fetch(`${api_url}/api/primo/dev-auth`, {
+			method: 'POST',
+			signal: AbortSignal.timeout(1500)
+		})
+		if (!auth.ok) return null
+		const { token } = (await auth.json()) as { token?: string }
+		if (!token) return null
+
+		const headers = { Authorization: token }
+		const [sites_response, groups_response] = await Promise.all([
+			fetch(`${api_url}/api/collections/sites/records?perPage=200`, { headers }),
+			fetch(`${api_url}/api/collections/site_groups/records?perPage=200`, { headers })
+		])
+		const sites = sites_response.ok
+			? ((await sites_response.json()) as { items?: CmsSite[] }).items ?? []
+			: []
+		const groups = groups_response.ok
+			? ((await groups_response.json()) as { items?: CmsGroup[] }).items ?? []
+			: []
+		return { sites, groups }
 	} catch {
 		return null
 	}

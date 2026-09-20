@@ -75,6 +75,28 @@ describe('primo status', () => {
 		}
 	})
 
+	test('marks which sites are registered in the running CMS', async () => {
+		const server = await start_mock_server({
+			sites: [{ id: 'aaaaaaaaaaaaaaa', name: 'Alpha' }],
+			site_groups: [{ id: 'g1', name: 'Group One' }]
+		})
+		const workspace = await make_workspace_with_sites(Number(new URL(server.url).port))
+		try {
+			const result = await run_status(['--json'], workspace)
+			assert.equal(result.code, 0, result.output)
+			const parsed = JSON.parse(result.stdout)
+
+			assert.equal(parsed.running, true)
+			assert.equal(parsed.cms.sites.length, 1)
+
+			assert.equal(parsed.sites.find((site) => site.slug === 'alpha').in_cms, true)
+			assert.equal(parsed.sites.find((site) => site.slug === 'bravo').in_cms, false)
+		} finally {
+			await server.close()
+			await workspace.cleanup()
+		}
+	})
+
 	test('fails clearly outside a workspace', async () => {
 		const workspace = await make_workspace()
 		try {
