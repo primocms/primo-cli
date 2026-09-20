@@ -108,9 +108,11 @@ export async function new_site(options: NewOptions) {
 		}
 		await write_site_config(site_dir, config)
 
-		// Create default page type config + sibling fields.yaml
+		// Create default page type config + sibling fields.yaml + head.svelte.
+		// No `_id`s anywhere in the scaffold: the server mints and writes them
+		// back on first import (see AGENTS.md). Hand-authoring ids here
+		// contradicts that rule and masks the write-back path.
 		const page_type_config = {
-			_id: generate_id(),
 			name: 'Default',
 			icon: 'mdi:file-document-outline',
 			color: '#2B407D',
@@ -118,8 +120,7 @@ export async function new_site(options: NewOptions) {
 		}
 		await fs.writeFile(
 			path.join(site_dir, 'page-types', 'default', 'config.yaml'),
-			`_id: ${page_type_config._id}
-name: ${page_type_config.name}
+			`name: ${page_type_config.name}
 icon: ${page_type_config.icon}
 color: "${page_type_config.color}"
 allowed_blocks:
@@ -128,7 +129,29 @@ allowed_blocks:
 		)
 		await fs.writeFile(
 			path.join(site_dir, 'page-types', 'default', 'fields.yaml'),
-			'[]\n'
+			`- name: seo_title
+  label: SEO Title
+  type: text
+- name: seo_description
+  label: SEO Description
+  type: text
+- name: og_image
+  label: Social Share Image
+  type: image
+`
+		)
+		// Injected into <svelte:head> by Primo — do NOT wrap it in one.
+		await fs.writeFile(
+			path.join(site_dir, 'page-types', 'default', 'head.svelte'),
+			`<title>{seo_title || 'New site'}</title>
+<meta name="description" content={seo_description || ''} />
+<meta property="og:type" content="website" />
+<meta property="og:title" content={seo_title || 'New site'} />
+<meta property="og:description" content={seo_description || ''} />
+{#if og_image?.url}
+	<meta property="og:image" content={og_image.url} />
+{/if}
+`
 		)
 		await fs.writeFile(
 			path.join(site_dir, 'page-types', 'default', 'layout.yaml'),
@@ -183,23 +206,19 @@ allowed_blocks:
 
 		await fs.writeFile(
 			path.join(site_dir, 'blocks', 'hero', 'config.yaml'),
-			`_id: ${generate_id()}
-name: Hero
+			`name: Hero
 `
 		)
 
 		await fs.writeFile(
 			path.join(site_dir, 'blocks', 'hero', 'fields.yaml'),
-			`- _id: ${generate_id()}
-  name: headline
+			`- name: headline
   label: Headline
   type: text
-- _id: ${generate_id()}
-  name: subheadline
+- name: subheadline
   label: Subheadline
   type: text
-- _id: ${generate_id()}
-  name: cta
+- name: cta
   label: Call to Action
   type: link
 `
@@ -280,17 +299,13 @@ cta:
 		)
 
 		// Create index page
-		const page_id = generate_id()
-		const section_id = generate_id()
 		await fs.writeFile(
 			path.join(site_dir, 'pages', 'index.yaml'),
-			`_id: ${page_id}
-name: Home
+			`name: Home
 page_type: default
 fields: {}
 sections:
-  - _id: ${section_id}
-    block: hero
+  - block: hero
     content:
       headline: Welcome to ${display_name}
       subheadline: Edit this content in your local files or CMS
