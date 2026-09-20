@@ -496,7 +496,9 @@ function generate_page_component(components: Array<{ name: string; block_name: s
 
 	// Bare identifiers for head scope; keys are pre-filtered to valid, safe
 	// binding names by head_identifier_keys.
-	const head_declarations = head_keys.map((key) => `let ${key} = head_props['${key}']`).join('\n')
+	// `$derived` (not a plain `let`) keeps these reactive and silences Svelte's
+	// state_referenced_locally warning, which otherwise fires for every key.
+	const head_declarations = head_keys.map((key) => `let ${key} = $derived(head_props['${key}'])`).join('\n')
 
 	const section_renders = sections.map((_, i) => {
 		return `<Section_${i} {...section_${i}_props} />`
@@ -627,7 +629,10 @@ async function load_layout(site_dir: string, page_type: string): Promise<Layout>
 	const layout_path = path.join(site_dir, 'page-types', page_type, 'layout.yaml')
 	try {
 		const content = await fs.readFile(layout_path, 'utf-8')
-		return load_yaml(content) as Layout
+		// A comment-only or empty layout.yaml parses to null/undefined — treat it
+		// as an empty layout rather than crashing on `layout.header`.
+		const parsed = load_yaml(content)
+		return (parsed && typeof parsed === 'object' ? parsed : {}) as Layout
 	} catch {
 		// No layout file, return empty layout
 		return {}
@@ -654,10 +659,18 @@ async function resolve_layout_sections(sections: PageSection[], site_dir: string
 }
 
 async function resolve_page_sections(sections: PageSection[], site_dir: string, site_data: SiteData, page_url_map: Map<string, string>): Promise<PageSection[]> {
-	// Resolve site-field references in page sections
+	// Resolve site-field references in page sections. Like layout sections, a
+	// page section with no content of its own falls back to the block's
+	// content.yaml defaults, so a file-authored section renders its defaults
+	// instead of nothing.
 	const resolved: PageSection[] = []
 	for (const section of sections) {
-		const content = section.content || {}
+		let content: Record<string, unknown>
+		if (section.content && Object.keys(section.content).length > 0) {
+			content = section.content
+		} else {
+			content = await load_block_defaults(site_dir, section.block)
+		}
 		const resolved_content = await resolve_site_fields(site_dir, section.block, content, site_data)
 		// Resolve internal page: links to URLs (walks nested repeaters/groups too)
 		resolved.push({ ...section, content: resolve_links(resolved_content, page_url_map) as Record<string, unknown> })
