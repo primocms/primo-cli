@@ -9,8 +9,8 @@ import extract from 'extract-zip'
 import { dump as dump_yaml, load as load_yaml } from 'js-yaml'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { ensure_binary, ensure_data_dir } from '../utils/binary.js'
-import { read_site_config, type SiteConfig, SITE_CONFIG_FILE } from '../utils/site-config.js'
-import { read_server_config, type ServerConfig, type SiteGroupConfig, format_group_name, group_id_notice, SERVER_CONFIG_FILE, resolve_format_options } from '../utils/server-config.js'
+import { read_site_config, write_site_config, type SiteConfig, SITE_CONFIG_FILE } from '../utils/site-config.js'
+import { read_server_config, write_server_config, type ServerConfig, type SiteGroupConfig, format_group_name, group_id_notice, SERVER_CONFIG_FILE, resolve_format_options } from '../utils/server-config.js'
 import { format_file_contents, should_format, type FormatOptions } from '../utils/format.js'
 import { normalize_site } from './validate.js'
 
@@ -1720,6 +1720,48 @@ function resolve_site_group(config: SiteConfig, server_config: ServerConfig): Si
 	})
 }
 
+/**
+ * The server assigns group ids on import (its store regenerates any id it
+ * considers invalid), so the id in `server.yaml` is only a local reference.
+ * When the server tells us the id it actually stored, write it back so the
+ * files and the database agree. Older servers don't return one — then this is
+ * a no-op and `group_id_notice` explains the drift instead.
+ *
+ * Best-effort: an import must never fail because writeback did.
+ */
+export async function apply_server_group_id(
+	server_group_id: string,
+	site_dir: string,
+	config: SiteConfig,
+	server_config: ServerConfig,
+	workspace_dir: string
+): Promise<void> {
+	if (!server_group_id) return
+
+	const configured = server_config.site_groups ?? []
+	const ref = config.group?.trim()
+	const target = configured.find((group) => group.id === ref || group.name === ref) ?? configured[0]
+	if (!target || target.id === server_group_id) return
+
+	try {
+		server_config.site_groups = configured.map((group) =>
+			group === target ? { ...group, id: server_group_id } : group
+		)
+		await write_server_config(workspace_dir, server_config)
+
+		// Only rewrite site.yaml when it referenced the group by its old id.
+		// A name reference stays a name — names are the stable key.
+		if (ref && ref === target.id) {
+			config.group = server_group_id
+			await write_site_config(site_dir, config)
+		}
+
+		console.log(chalk.dim(`  group "${target.name}": server id ${server_group_id} (was ${target.id}); updated ${SERVER_CONFIG_FILE}`))
+	} catch {
+		// Best-effort — never fail an import over writeback.
+	}
+}
+
 export async function wait_for_ready(url: string, timeout_ms: number): Promise<boolean> {
 	const start = Date.now()
 	const health_url = `${url}/api/health`
@@ -2693,7 +2735,7 @@ export async function import_site_files(site_dir: string, api_url: string, confi
 			let warning_details: ImportWarning[] = []
 			if (bootstrap_response.ok) {
 				try {
-					const result = await bootstrap_response.json() as { created_ids?: Record<string, Record<string, unknown>>, warnings?: ImportWarning[] }
+					const result = await bootstrap_response.json() as { created_ids?: Record<string, Record<string, unknown>>, warnings?: ImportWarning[], group_id?: string }
 					// Bootstrap runs the same import as the regular path, so it
 					// must write back created ids too — otherwise the very first
 					// push never renames upload files to their canonical suffixed
@@ -2705,6 +2747,7 @@ export async function import_site_files(site_dir: string, api_url: string, confi
 					warning_count = print_import_warnings(config.name, result.warnings)
 					dropped_field_count = count_dropped_fields(result.warnings)
 					warning_details = normalize_warning_details(result.warnings)
+					await apply_server_group_id(result.group_id ?? '', site_dir, config, server_config, workspace_dir)
 				} catch {
 					// ignore JSON parse errors
 				}
