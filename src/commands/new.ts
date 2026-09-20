@@ -5,6 +5,7 @@ import ora from 'ora'
 import inquirer from 'inquirer'
 import { dev_server } from './dev.js'
 import { SITE_CONFIG_FILE, write_site_config } from '../utils/site-config.js'
+import { derive_display_name } from '../utils/site-name.js'
 import { SERVER_CONFIG_FILE, read_server_config, write_server_config } from '../utils/server-config.js'
 
 interface NewOptions {
@@ -99,9 +100,7 @@ export async function new_site(options: NewOptions) {
 
 		// Create site config
 		// If name has dots (hostname), use first part capitalized as display name
-		const display_name = site_name!.includes('.')
-			? site_name!.split('.')[0].charAt(0).toUpperCase() + site_name!.split('.')[0].slice(1)
-			: site_name!.charAt(0).toUpperCase() + site_name!.slice(1).replace(/-/g, ' ')
+		const display_name = derive_display_name(site_name!)
 		const config = {
 			name: display_name,
 			site_id: generate_id(),
