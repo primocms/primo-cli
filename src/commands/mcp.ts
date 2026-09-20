@@ -3,7 +3,6 @@ import chalk from 'chalk'
 import {
 	MCP_CLIENTS,
 	MCP_SERVER_NAME,
-	build_entry,
 	build_fragment,
 	choose_scope,
 	client_ids,
@@ -20,15 +19,15 @@ import {
 } from '../utils/mcp-clients.js'
 import {
 	build_toml_block,
-	deep_equal,
 	get_at_key_path,
-	merge_json_config,
-	merge_toml_config,
 	parse_json_lenient,
-	read_if_exists,
-	write_config_atomic,
-	type MergeAction
+	read_if_exists
 } from '../utils/mcp-config.js'
+import {
+	UNKNOWN_CLIENT_HINT,
+	run_mcp_wiring,
+	type ClientResult
+} from '../utils/mcp-wiring.js'
 
 export interface McpInstallOptions {
 	client?: string[]
@@ -51,20 +50,6 @@ export interface McpPrintOptions {
 	json?: boolean
 }
 
-type ResultAction = MergeAction | 'manual' | 'error'
-
-interface ClientResult {
-	client: string
-	name: string
-	scope: McpScope
-	path: string
-	action: ResultAction
-	changed: boolean
-	backup?: string | null
-	reason?: string
-	note?: string
-}
-
 interface ListedClient {
 	client: string
 	name: string
@@ -76,7 +61,6 @@ interface ListedClient {
 	note?: string
 }
 
-const UNKNOWN_CLIENT_HINT = `Known clients: ${client_ids().join(', ')}`
 export const UNKNOWN_CLIENTS_HINT = UNKNOWN_CLIENT_HINT
 
 function collect_client(value: string, previous: string[]): string[] {
@@ -85,29 +69,23 @@ function collect_client(value: string, previous: string[]): string[] {
 
 export const client_option = collect_client
 
-function selected_clients(options: { client?: string[]; all?: boolean }, cwd: string): string[] {
-	const explicit = (options.client || []).map((id) => id.trim()).filter(Boolean)
-	for (const id of explicit) {
-		if (!get_client(id)) throw new Error(`Unknown client "${id}". ${UNKNOWN_CLIENT_HINT}`)
-	}
-	if (options.all) return client_ids()
-	if (explicit.length > 0) return explicit
-	return detect_clients({ cwd, home: path_context(cwd).home })
-}
-
 function describe_scope(scope: McpScope): string {
 	return scope === 'project' ? 'project' : 'user'
 }
 
 export async function mcp_install(options: McpInstallOptions) {
-	const ctx = path_context()
-	const cwd = ctx.cwd
 	const as_json = !!options.json
-	const launch = resolve_launch()
 
-	let ids: string[]
+	let run: Awaited<ReturnType<typeof run_mcp_wiring>>
 	try {
-		ids = selected_clients(options, cwd)
+		run = await run_mcp_wiring({
+			clients: options.client,
+			all: options.all,
+			global: options.global,
+			project: options.project,
+			dryRun: options.dryRun,
+			force: options.force
+		})
 	} catch (err: any) {
 		if (as_json) {
 			console.log(JSON.stringify({ command: 'mcp install', error: err.message }, null, 2))
@@ -117,84 +95,26 @@ export async function mcp_install(options: McpInstallOptions) {
 		throw err
 	}
 
-	if (ids.length === 0) {
-		print_no_clients(launch, as_json)
+	if (run.results.length === 0) {
+		print_no_clients(run.launch, as_json)
 		return
 	}
 
-	const results: ClientResult[] = []
-
-	for (const id of ids) {
-		const client = get_client(id)
-		if (!client) continue
-		results.push(await install_one(client, { ...options, cwd, launch }))
-	}
-
-	// A write failure (e.g. EACCES) is reported per client; make it visible to
+	// A failed write (e.g. EACCES) is reported per client; make it visible to
 	// scripts too, matching the unknown-client path above.
-	if (results.some((result) => result.action === 'error')) process.exitCode = 1
-
+	if (run.results.some((result) => result.action === 'error')) process.exitCode = 1
 	if (as_json) {
 		console.log(JSON.stringify({
 			command: 'mcp install',
 			dry_run: !!options.dryRun,
 			force: !!options.force,
-			launch,
-			results
+			launch: run.launch,
+			results: run.results
 		}, null, 2))
 		return
 	}
 
-	print_install_results(results, launch, !!options.dryRun)
-}
-
-async function install_one(
-	client: McpClientDef,
-	options: McpInstallOptions & { cwd: string; launch: McpLaunch }
-): Promise<ClientResult> {
-	const scopes = resolve_scopes(client, path_context(options.cwd))
-	const chosen = choose_scope(client, scopes, options)
-	const base: ClientResult = {
-		client: client.id,
-		name: client.name,
-		scope: chosen.scope,
-		path: chosen.target,
-		action: 'unchanged',
-		changed: false,
-		note: client.note
-	}
-
-	if (!client.writable) {
-		return { ...base, action: 'manual', reason: client.note || 'no safe on-disk config; use `primo mcp print`' }
-	}
-
-	try {
-		const existing = await read_if_exists(chosen.target)
-		const entry = build_entry(client, options.launch)
-
-		const merged = client.format === 'toml'
-			? merge_toml_config({ existing, key_path: client.key_path, launch: options.launch, force: !!options.force })
-			: merge_json_config({
-				existing,
-				key_path: client.key_path,
-				entry,
-				force: !!options.force,
-				equivalent: (a, b) => entries_equivalent(client, a, b)
-			})
-
-		if (!merged.changed || merged.content === null) {
-			return { ...base, action: merged.action, reason: merged.reason }
-		}
-
-		if (options.dryRun) {
-			return { ...base, action: merged.action, changed: false, reason: 'dry run — nothing written' }
-		}
-
-		const { backup } = await write_config_atomic(chosen.target, merged.content)
-		return { ...base, action: merged.action, changed: true, backup }
-	} catch (err: any) {
-		return { ...base, action: 'error', reason: err?.message || String(err) }
-	}
+	print_install_results(run.results, run.launch, !!options.dryRun)
 }
 
 function print_no_clients(launch: McpLaunch, as_json: boolean) {
@@ -255,23 +175,6 @@ function print_install_results(results: ClientResult[], launch: McpLaunch, dry_r
 
 function format_launch(launch: McpLaunch): string {
 	return [launch.command, ...launch.args].join(' ')
-}
-
-/**
- * Compares two entries, ignoring a `"type": "stdio"` that is optional in most
- * flat clients. This avoids rewriting a user's working entry just to add the
- * redundant type field.
- */
-function entries_equivalent(client: McpClientDef, a: unknown, b: unknown): boolean {
-	if (client.entry_kind !== 'flat') return deep_equal(a, b)
-	if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return deep_equal(a, b)
-	return deep_equal(strip_optional_stdio_type(a as Record<string, unknown>), strip_optional_stdio_type(b as Record<string, unknown>))
-}
-
-function strip_optional_stdio_type(entry: Record<string, unknown>): Record<string, unknown> {
-	const clone: Record<string, unknown> = { ...entry }
-	if (clone.type === 'stdio' || clone.type === undefined) delete clone.type
-	return clone
 }
 
 function pad(text: string, width: number): string {
@@ -384,4 +287,4 @@ export async function mcp_print(options: McpPrintOptions) {
 }
 
 // Re-exported for callers that only need the launch resolution (and tests).
-export { resolve_launch, expand_path, find_on_path, build_entry, build_fragment, path_context }
+export { resolve_launch, expand_path, find_on_path, build_entry, build_fragment, path_context } from '../utils/mcp-clients.js'
