@@ -49,7 +49,9 @@ ${chalk.bold('Working with an agent')}
 program
 	.command('init [name]')
 	.description('Initialize a new Primo workspace (server) in a new folder or the current directory')
-	.action((name) => init_workspace({ name }))
+	.option('--no-mcp', 'Skip wiring MCP clients into your agent')
+	.option('--yes', 'Wire detected MCP clients without prompting')
+	.action((name, options) => init_workspace({ name, ...options }))
 
 program
 	.command('new [name]')
