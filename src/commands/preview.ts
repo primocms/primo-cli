@@ -22,6 +22,12 @@ interface SyncStatus {
 	failed_at?: string
 }
 
+export interface PreviewResult {
+	site_url: string
+	pages: number
+	symbols: number
+}
+
 /**
  * Rebuild a site's published preview. This is the CLI counterpart to the MCP
  * `build_preview` tool, for humans, CI, and agents without an MCP client: it
@@ -31,101 +37,68 @@ interface SyncStatus {
  * lives in `primo-mcp`'s publish compiler, imported dynamically so a
  * `primo-mcp` without the subpath export degrades with a clear message instead
  * of breaking the command.
+ *
+ * Throws on any failure; callers format the message.
  */
-export async function preview(options: PreviewOptions) {
-	const site_dir = path.resolve(options.dir)
-	const as_json = !!options.json
-
-	const fail = (message: string) => {
-		if (as_json) {
-			console.log(JSON.stringify({ ok: false, error: message }, null, 2))
-		} else {
-			console.log(chalk.red(message))
-		}
-		process.exitCode = 1
-	}
+export async function build_site_preview(site_dir_input: string, api_url_override?: string): Promise<PreviewResult> {
+	const site_dir = path.resolve(site_dir_input)
 
 	let config: { site_id?: string; host?: string } | null = null
 	try {
 		config = (await read_site_config(site_dir)) as { site_id?: string; host?: string } | null
 	} catch {
-		fail(`No site.yaml found at ${site_dir}/site.yaml — run from a site directory, or pass --dir <site>.`)
-		return
+		throw new Error(`No site.yaml found at ${site_dir}/site.yaml — run from a site directory, or pass --dir <site>.`)
 	}
 	const site_id = config?.site_id
 	if (!site_id) {
-		fail(`site.yaml at ${site_dir} is missing site_id.`)
-		return
+		throw new Error(`site.yaml at ${site_dir} is missing site_id.`)
 	}
 
 	// If the last file→CMS push failed, the server still holds pre-edit state;
 	// compiling it would publish a stale preview that looks successful.
 	const sync = await read_sync(site_dir)
 	if (sync && sync.ok === false) {
-		fail(`The most recent file→CMS push failed at ${sync.failed_at ?? 'an unknown time'} and the server still holds pre-edit state. Fix the error and let \`primo dev\` re-import before building a preview. Error: ${sync.error ?? 'unknown'}`)
-		return
+		throw new Error(`The most recent file→CMS push failed at ${sync.failed_at ?? 'an unknown time'} and the server still holds pre-edit state. Fix the error and let \`primo dev\` re-import before building a preview. Error: ${sync.error ?? 'unknown'}`)
 	}
 
-	const workspace = await find_workspace(site_dir)
-	if (!workspace) {
-		fail(`No ${SERVER_CONFIG_FILE} found above ${site_dir}. Run \`primo preview\` from inside a workspace.`)
-		return
-	}
-	const api_url = `http://127.0.0.1:${workspace.port}`
-
-	let token: string
-	try {
-		token = await dev_auth(api_url)
-	} catch (error) {
-		fail(error instanceof Error ? error.message : String(error))
-		return
-	}
-
-	let record: SiteRecord
-	try {
-		record = await fetch_site_record(api_url, token, site_id)
-	} catch (error) {
-		fail(error instanceof Error ? error.message : String(error))
-		return
-	}
-
-	let compile_and_upload: (api_url: string, token: string, record: SiteRecord) => Promise<{ pageCount: number; symbolCount: number }>
-	try {
-		// Non-literal specifier: the subpath only exists in primo-mcp >= 0.1.8,
-		// so a static specifier would fail to type-resolve against older installs.
-		const compiler_specifier = 'primo-mcp/compiler'
-		const compiler = (await import(compiler_specifier)) as {
-			compileAndUploadPublishArtifacts: (api_url: string, token: string, record: SiteRecord) => Promise<{ pageCount: number; symbolCount: number }>
+	let api_url = api_url_override
+	if (!api_url) {
+		const workspace = await find_workspace(site_dir)
+		if (!workspace) {
+			throw new Error(`No ${SERVER_CONFIG_FILE} found above ${site_dir}. Run \`primo preview\` from inside a workspace.`)
 		}
-		compile_and_upload = compiler.compileAndUploadPublishArtifacts
-	} catch {
-		fail('This build of primo-mcp does not expose its compiler subpath (needs primo-mcp >= 0.1.8). Upgrade with `npm i -g primo-mcp@latest` (or `npx primo-mcp@latest`).')
-		return
+		api_url = `http://127.0.0.1:${workspace.port}`
 	}
 
-	let summary: { pageCount: number; symbolCount: number }
-	try {
-		summary = await compile_and_upload(api_url, token, record)
-	} catch (error) {
-		fail(`Preview compile failed: ${error instanceof Error ? error.message : error}`)
-		return
-	}
-
-	try {
-		await generate(api_url, token, site_id)
-	} catch (error) {
-		fail(error instanceof Error ? error.message : String(error))
-		return
-	}
+	const token = await dev_auth(api_url)
+	const record = await fetch_site_record(api_url, token, site_id)
+	const compile_and_upload = await load_compiler()
+	const summary = await compile_and_upload(api_url, token, record)
+	await generate(api_url, token, site_id)
 
 	const host = record.host || config?.host
 	const site_url = host ? `http://${host}` : `${api_url}/?_site=${encodeURIComponent(site_id)}`
+	return { site_url, pages: summary.pageCount, symbols: summary.symbolCount }
+}
 
-	if (as_json) {
-		console.log(JSON.stringify({ ok: true, site_url, pages: summary.pageCount, symbols: summary.symbolCount }, null, 2))
-	} else {
-		console.log(chalk.green(`✓ Preview rebuilt (${summary.pageCount} page${summary.pageCount === 1 ? '' : 's'})`))
-		console.log(`  ${chalk.cyan(site_url)}`)
+export async function preview(options: PreviewOptions) {
+	const as_json = !!options.json
+	try {
+		const result = await build_site_preview(options.dir)
+		if (as_json) {
+			console.log(JSON.stringify({ ok: true, site_url: result.site_url, pages: result.pages, symbols: result.symbols }, null, 2))
+			return
+		}
+		console.log(chalk.green(`✓ Preview rebuilt (${result.pages} page${result.pages === 1 ? '' : 's'})`))
+		console.log(`  ${chalk.cyan(result.site_url)}`)
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		if (as_json) {
+			console.log(JSON.stringify({ ok: false, error: message }, null, 2))
+		} else {
+			console.log(chalk.red(message))
+		}
+		process.exitCode = 1
 	}
 }
 
@@ -186,6 +159,24 @@ async function fetch_site_record(api_url: string, token: string, site_id: string
 		throw new Error(`Could not read the site record (HTTP ${response.status}): ${body || 'no body'}`)
 	}
 	return (await response.json()) as SiteRecord
+}
+
+type CompileAndUpload = (
+	api_url: string,
+	token: string,
+	record: SiteRecord
+) => Promise<{ pageCount: number; symbolCount: number }>
+
+async function load_compiler(): Promise<CompileAndUpload> {
+	// Non-literal specifier: the subpath only exists in primo-mcp >= 0.1.8, so a
+	// static specifier would fail to type-resolve against older installs.
+	const compiler_specifier = 'primo-mcp/compiler'
+	try {
+		const compiler = (await import(compiler_specifier)) as { compileAndUploadPublishArtifacts: CompileAndUpload }
+		return compiler.compileAndUploadPublishArtifacts
+	} catch {
+		throw new Error('This build of primo-mcp does not expose its compiler subpath (needs primo-mcp >= 0.1.8). Upgrade with `npm i -g primo-mcp@latest` (or `npx primo-mcp@latest`).')
+	}
 }
 
 async function generate(api_url: string, token: string, site_id: string): Promise<void> {
