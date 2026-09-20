@@ -2240,7 +2240,16 @@ async function blocked_empty_schema_writebacks(temp_dir: string, site_dir: strin
 // false only when there is genuinely nothing left to lose, so an empty site
 // can still receive its first pull instead of wedging.
 async function is_implausibly_thin_export(temp_dir: string, site_dir: string): Promise<boolean> {
-	if (await path_exists(path.join(temp_dir, HOMEPAGE_FILE))) return false
+	// The homepage has to be a regular file: a directory or symlink at that
+	// path is a malformed export, not a bootable site, and the prune loop
+	// would remove blocks and page-types before ever reaching the malformed
+	// pages entry.
+	try {
+		const homepage_stat = await fs.lstat(path.join(temp_dir, HOMEPAGE_FILE))
+		if (homepage_stat.isFile()) return false
+	} catch {
+		// No homepage at all — fall through to the content check.
+	}
 
 	for (const dir of SITE_SYNC_DIRS) {
 		if (await has_any_file(path.join(site_dir, dir))) return true
@@ -3128,6 +3137,13 @@ async function sync_directory(
 		console.log(chalk.dim(`  kept ${relative_path}: symlink, not followed`))
 		return changed_files
 	}
+	if (dest_stat && !dest_stat.isDirectory()) {
+		// A file where the export expects a directory (a type switch or a
+		// local shape conflict). mkdir would throw and abort the whole sync
+		// cycle, so keep it for the user to resolve instead.
+		console.log(chalk.dim(`  kept ${relative_path}: not a directory, not synced`))
+		return changed_files
+	}
 	await fs.mkdir(dest, { recursive: true })
 
 	for (const entry of entries) {
@@ -3149,6 +3165,10 @@ async function sync_directory(
 			}
 			if (child_stat?.isSymbolicLink()) {
 				console.log(chalk.dim(`  kept ${file_relative}: symlink, not followed`))
+				continue
+			}
+			if (child_stat && !child_stat.isDirectory()) {
+				console.log(chalk.dim(`  kept ${file_relative}: not a directory, not synced`))
 				continue
 			}
 			const nested = await sync_directory(src_path, dest_path, file_relative, options)
