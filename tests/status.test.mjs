@@ -1,6 +1,7 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'fs/promises'
+import net from 'node:net'
 import path from 'path'
 import { run_cli, make_workspace } from './helpers/run-cli.mjs'
 import { start_mock_server } from './helpers/mock-server.mjs'
@@ -11,7 +12,21 @@ import { start_mock_server } from './helpers/mock-server.mjs'
  * per-site sync state, liveness, and the not-a-workspace error.
  */
 
-async function make_workspace_with_sites(port = 39472) {
+/** An ephemeral port nothing is listening on, so the health probe fails. */
+async function free_port() {
+	return await new Promise((resolve, reject) => {
+		const probe = net.createServer()
+		probe.once('error', reject)
+		probe.listen(0, '127.0.0.1', () => {
+			const address = probe.address()
+			const port = typeof address === 'object' && address ? address.port : 0
+			probe.close(() => resolve(port))
+		})
+	})
+}
+
+async function make_workspace_with_sites(port) {
+	const chosen_port = port ?? (await free_port())
 	const workspace = await make_workspace()
 	const sites = path.join(workspace.work, 'sites')
 	await fs.mkdir(path.join(sites, 'alpha', '.primo'), { recursive: true })
@@ -19,7 +34,7 @@ async function make_workspace_with_sites(port = 39472) {
 	// A folder without site.yaml is not a site and must be ignored.
 	await fs.mkdir(path.join(sites, 'notes'), { recursive: true })
 
-	await fs.writeFile(path.join(workspace.work, 'server.yaml'), `port: ${port}\nsite_groups:\n  - id: g1\n    name: Group One\n    index: 0\n`)
+	await fs.writeFile(path.join(workspace.work, 'server.yaml'), `port: ${chosen_port}\nsite_groups:\n  - id: g1\n    name: Group One\n    index: 0\n`)
 	await fs.writeFile(path.join(sites, 'alpha', 'site.yaml'), 'name: Alpha\nsite_id: aaaaaaaaaaaaaaa\ngroup: g1\n')
 	await fs.writeFile(
 		path.join(sites, 'alpha', '.primo', 'sync_status.json'),
@@ -27,7 +42,7 @@ async function make_workspace_with_sites(port = 39472) {
 	)
 	await fs.writeFile(path.join(sites, 'bravo', 'site.yaml'), 'name: Bravo\nsite_id: bbbbbbbbbbbbbbb\ngroup: g1\n')
 
-	return workspace
+	return { ...workspace, port: chosen_port }
 }
 
 function run_status(args, workspace) {
@@ -42,7 +57,7 @@ describe('primo status', () => {
 			assert.equal(result.code, 0, result.output)
 			const parsed = JSON.parse(result.stdout)
 
-			assert.equal(parsed.port, 39472)
+			assert.equal(parsed.port, workspace.port)
 			assert.equal(parsed.running, false)
 			assert.equal(parsed.groups.length, 1)
 
