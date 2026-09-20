@@ -1750,15 +1750,42 @@ async function verify_site_ready(api_url: string, site_id: string): Promise<bool
 	return false
 }
 
-export async function site_exists(api_url: string, site_id: string): Promise<boolean> {
-	// Only 404 means the site genuinely doesn't exist. Any other non-ok status
-	// (401/403 from auth, 5xx, rate limits) leaves us uncertain — default to
-	// "exists" so we take the additive `import` path instead of the destructive
-	// `bootstrap` path. Bootstrapping a site that already exists discards
-	// remote state when the request later fails, and the next pull then
-	// stomps in-progress local edits with stale DB content.
+// Dev-auth tokens are per server and stable for a process run; cache so a
+// dev loop with many sites doesn't re-mint one per site.
+const dev_token_cache = new Map<string, string>()
+
+/** Fetch a local dev token; null when the server doesn't offer one. */
+async function dev_auth_token(api_url: string): Promise<string | null> {
+	const cached = dev_token_cache.get(api_url)
+	if (cached) return cached
 	try {
-		const response = await fetch_with_timeout(`${api_url}/api/collections/sites/records/${site_id}`, {}, 5000)
+		const response = await fetch_with_timeout(`${api_url}/api/primo/dev-auth`, { method: 'POST' }, 2000)
+		if (!response.ok) return null
+		const body = (await response.json()) as { token?: string }
+		if (!body.token) return null
+		dev_token_cache.set(api_url, body.token)
+		return body.token
+	} catch {
+		return null
+	}
+}
+
+export async function site_exists(api_url: string, site_id: string): Promise<boolean> {
+	// The collections API is auth-gated: without a token, reading a specific
+	// record returns 404 even when it exists — which would send `primo add`
+	// (and dev's import path) down the destructive `bootstrap` path for an
+	// already-registered site. Authenticate with a local dev token first.
+	//
+	// With a token, 404 is authoritative. Any other non-ok status (5xx, rate
+	// limits) is still uncertain — default to "exists" so we take the additive
+	// `import` path rather than bootstrap. Bootstrapping a site that already
+	// exists discards remote state when the request later fails, and the next
+	// pull then stomps in-progress local edits with stale DB content.
+	try {
+		const headers: Record<string, string> = {}
+		const token = await dev_auth_token(api_url)
+		if (token) headers.Authorization = token
+		const response = await fetch_with_timeout(`${api_url}/api/collections/sites/records/${site_id}`, { headers }, 5000)
 		if (response.ok) return true
 		if (response.status === 404) return false
 		return true

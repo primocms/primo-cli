@@ -29,8 +29,19 @@ export async function start_mock_server({ sites = [], export_files = {} } = {}) 
 			return json(res, 200, { status: 'ok' })
 		}
 
+		if (url.pathname === '/api/primo/dev-auth' && req.method === 'POST') {
+			return json(res, 200, { token: 'dev-token' })
+		}
+
 		if (url.pathname === '/api/collections/sites/records') {
 			return json(res, 200, { items: sites, page: 1, perPage: 200, totalItems: sites.length })
+		}
+
+		const site_record_match = url.pathname.match(/^\/api\/collections\/sites\/records\/([^/]+)$/)
+		if (site_record_match && req.method === 'GET') {
+			const site = sites.find((candidate) => candidate.id === site_record_match[1])
+			if (!site) return json(res, 404, { message: 'no such site' })
+			return json(res, 200, site)
 		}
 
 		if (url.pathname === '/api/collections/site_groups/records') {

@@ -75,14 +75,13 @@ export async function add_site(target: string, options: AddOptions) {
 	let server_config = await read_server_config(base_dir)
 	const port = server_config.port ?? parseInt(options.port, 10)
 
-	// `primo add` and `primo dev`'s sites-root watcher both mint a site_id for a
-	// newly-appeared folder. If dev is up when we add, the two race: the watcher
-	// adopts the folder under its own id while add writes a different id to
-	// site.yaml, leaving disk pointing at an id the CMS doesn't have. Refuse
-	// while ANYTHING holds the port so there is exactly one minter — the headless
-	// import below. This check runs BEFORE ensure_site_config so we never stamp a
-	// site_id we'd then strand. `primo dev` picks the folder up on its next start
-	// (or its watcher, if it's already been given an id).
+	// `primo add` is the only thing that mints a site_id for a hand-authored
+	// folder: `primo dev` skips a site without one rather than adopting it (see
+	// discover_sites in dev.ts). The guard below is about the port, not a
+	// minting race — the headless CMS cannot bind an occupied port, so we refuse
+	// while anything holds it. It runs BEFORE ensure_site_config so we never
+	// stamp a site_id we'd then strand. `primo dev` picks the folder up on its
+	// next start.
 	//
 	// The guard is TCP occupancy, not a healthy-Primo response: a server that's
 	// still starting, an unhealthy Primo, or any other listener all own the port
@@ -186,7 +185,15 @@ export async function add_site(target: string, options: AddOptions) {
 		process.exit(1)
 	}
 
-	spinner.succeed(`${config.name} registered (${timings.mode})`)
+	// `mode: 'import'` means the site already existed in the CMS (register_site
+	// only takes the import path when site_exists() is true), so say so rather
+	// than printing an identical line to the first registration.
+	const already_registered = timings.mode === 'import'
+	spinner.succeed(
+		already_registered
+			? `${config.name} already registered — re-imported`
+			: `${config.name} registered (${timings.mode})`
+	)
 	report_warnings(timings)
 	console.log('')
 	console.log(chalk.dim('  Run `primo dev` to serve it.'))
