@@ -7,6 +7,7 @@ import ora from 'ora'
 import { spawn } from 'child_process'
 import { ensure_binary, ensure_data_dir } from '../utils/binary.js'
 import { read_site_config, write_site_config, type SiteConfig } from '../utils/site-config.js'
+import { derive_display_name } from '../utils/site-name.js'
 import { SERVER_CONFIG_FILE, read_server_config, write_server_config, type ServerConfig } from '../utils/server-config.js'
 import { normalize_site } from './validate.js'
 import { import_site_files, site_exists, wait_for_ready, kill_process, type ImportTimings } from './dev.js'
@@ -24,14 +25,6 @@ function generate_id(): string {
 		id += ID_ALPHABET[randomInt(ID_ALPHABET.length)]
 	}
 	return id
-}
-
-// Mirror of new.ts's display-name derivation so `primo add maison-verde`
-// and `primo new maison-verde` produce the same site name.
-function derive_display_name(folder_name: string): string {
-	return folder_name.includes('.')
-		? folder_name.split('.')[0].charAt(0).toUpperCase() + folder_name.split('.')[0].slice(1)
-		: folder_name.charAt(0).toUpperCase() + folder_name.slice(1).replace(/-/g, ' ')
 }
 
 // Register an existing sites/<name> folder with the workspace CMS: ensure
