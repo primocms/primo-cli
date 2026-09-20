@@ -3112,6 +3112,22 @@ async function sync_directory(
 	const entries = await fs.readdir(src, { withFileTypes: true })
 	const source_names = new Set(entries.map(entry => entry.name))
 
+	// The destination has to be inspected before anything is created inside
+	// it: mkdir and the recursive sync both follow a directory symlink, which
+	// would write CMS content into the link's target outside the site.
+	let dest_stat
+	try {
+		dest_stat = await fs.lstat(dest)
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+			console.log(chalk.dim(`  kept ${relative_path}: not synced (could not inspect)`))
+			return changed_files
+		}
+	}
+	if (dest_stat?.isSymbolicLink()) {
+		console.log(chalk.dim(`  kept ${relative_path}: symlink, not followed`))
+		return changed_files
+	}
 	await fs.mkdir(dest, { recursive: true })
 
 	for (const entry of entries) {
@@ -3120,6 +3136,21 @@ async function sync_directory(
 		const file_relative = relative_path ? `${relative_path}/${entry.name}` : entry.name
 
 		if (entry.isDirectory()) {
+			// Same inspection for a subdirectory the export contains: a
+			// symlink here would have the recursion follow the link.
+			let child_stat
+			try {
+				child_stat = await fs.lstat(dest_path)
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+					console.log(chalk.dim(`  kept ${file_relative}: not synced (could not inspect)`))
+					continue
+				}
+			}
+			if (child_stat?.isSymbolicLink()) {
+				console.log(chalk.dim(`  kept ${file_relative}: symlink, not followed`))
+				continue
+			}
 			const nested = await sync_directory(src_path, dest_path, file_relative, options)
 			changed_files.push(...nested)
 		} else {
