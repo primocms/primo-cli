@@ -46,6 +46,27 @@ export function format_group_name(group_id: string): string {
 		.replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
+/**
+ * A notice explaining that Primo assigns site-group ids on import and matches
+ * groups by name, so `server.yaml`'s `id` is only a local reference. Returns
+ * null when there is nothing surprising to explain.
+ *
+ * Short, human-chosen ids are the ones that surprise people — the server
+ * replaces them with an assigned id. Ids that already look server-assigned are
+ * left alone so the notice stays quiet.
+ */
+export function group_id_notice(group_ref: string | undefined, configured: SiteGroupConfig[]): string | null {
+	const ref = group_ref?.trim()
+	if (!ref) return null
+
+	const group = configured.find((candidate) => candidate.id === ref || candidate.name === ref)
+	const id = group?.id ?? ref
+	if (id.length >= 15) return null
+
+	const label = group?.name ?? ref
+	return `group "${label}": Primo assigns group ids on import and matches groups by name — the id "${id}" in server.yaml is a local reference only.`
+}
+
 export function normalize_server_config(config: ServerConfig): ServerConfig {
 	const site_groups = Array.isArray(config.site_groups)
 		? config.site_groups.reduce<SiteGroupConfig[]>((groups, group, index) => {

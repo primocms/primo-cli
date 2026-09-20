@@ -10,7 +10,7 @@ import { dump as dump_yaml, load as load_yaml } from 'js-yaml'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { ensure_binary, ensure_data_dir } from '../utils/binary.js'
 import { read_site_config, type SiteConfig, SITE_CONFIG_FILE } from '../utils/site-config.js'
-import { read_server_config, type ServerConfig, type SiteGroupConfig, format_group_name, SERVER_CONFIG_FILE, resolve_format_options } from '../utils/server-config.js'
+import { read_server_config, type ServerConfig, type SiteGroupConfig, format_group_name, group_id_notice, SERVER_CONFIG_FILE, resolve_format_options } from '../utils/server-config.js'
 import { format_file_contents, should_format, type FormatOptions } from '../utils/format.js'
 import { normalize_site } from './validate.js'
 
@@ -1677,9 +1677,20 @@ async function get_sites_root(base_dir: string): Promise<string> {
 	throw new Error(`Server workspace is missing ${SITES_DIR}/. Run \`primo new\` from the workspace root or create ${SITES_DIR}/ first.`)
 }
 
+// Group-id notices are educational and would otherwise repeat on every import
+// (the dev watcher re-imports on file changes), so show each once per process.
+const group_notices_shown = new Set<string>()
+
 function resolve_site_group(config: SiteConfig, server_config: ServerConfig): SiteGroupConfig {
 	const configured_groups = server_config.site_groups ?? []
 	const group_ref = config.group?.trim()
+
+	const notice = group_id_notice(group_ref, configured_groups)
+	if (notice && !group_notices_shown.has(notice)) {
+		group_notices_shown.add(notice)
+		console.log(chalk.yellow(`  ${notice}`))
+	}
+
 	const ensure_group_id = (group: SiteGroupConfig): SiteGroupConfig => ({
 		...group,
 		id: typeof group.id === 'string' && group.id.trim().length >= 15 ? group.id.trim() : generate_id()
