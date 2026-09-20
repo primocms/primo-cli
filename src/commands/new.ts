@@ -4,6 +4,7 @@ import chalk from 'chalk'
 import ora from 'ora'
 import inquirer from 'inquirer'
 import { dev_server } from './dev.js'
+import { build_site_preview } from './preview.js'
 import { SITE_CONFIG_FILE, write_site_config } from '../utils/site-config.js'
 import { derive_display_name } from '../utils/site-name.js'
 import { SERVER_CONFIG_FILE, read_server_config, write_server_config } from '../utils/server-config.js'
@@ -376,11 +377,24 @@ sections:
 			}
 
 			if (outcome === 'reloaded') {
-				// Only claim the site is live when the reload actually imported it.
+				// Generate the preview before printing the URL, so the URL we show
+				// actually serves the site. Until a preview is built the site URL
+				// redirects to /admin.
+				let preview_url: string | null = null
+				try {
+					const built = await build_site_preview(site_dir, `http://127.0.0.1:${port}`)
+					preview_url = built.site_url
+				} catch {
+					// Compiler unavailable, or the build failed — the site is on disk.
+				}
 				console.log('')
 				console.log(`  ${chalk.cyan(display_name)}`)
 				console.log(`    ${chalk.dim('Edit:')}    http://${host}/admin/site`)
-				console.log(`    ${chalk.dim('Preview:')} http://${host}/`)
+				console.log(
+					preview_url
+						? `    ${chalk.dim('Preview:')} ${preview_url}`
+						: `    ${chalk.dim('Preview:')} not built yet — run ${chalk.cyan('primo preview')}, or Build Preview in the dashboard`
+				)
 				console.log('')
 			} else if (outcome === 'quarantined') {
 				console.log('')

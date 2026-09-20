@@ -18,6 +18,7 @@ import { validate_site } from './commands/validate.js'
 import { deploy } from './commands/deploy.js'
 import { build_site } from './commands/build.js'
 import { status } from './commands/status.js'
+import { preview } from './commands/preview.js'
 import { mcp_install, mcp_list, mcp_print, client_option, UNKNOWN_CLIENTS_HINT } from './commands/mcp.js'
 
 const pkg_path = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json')
@@ -204,6 +205,13 @@ program
 	.option('-d, --dir <dir>', 'Workspace directory', '.')
 	.option('--json', 'Machine-readable output')
 	.action((options) => status(options))
+
+program
+	.command('preview')
+	.description('Rebuild the published preview of the current site (requires a running `primo dev`)')
+	.option('-d, --dir <dir>', 'Site directory', '.')
+	.option('--json', 'Machine-readable output')
+	.action((options) => preview(options))
 
 const mcp = program
 	.command('mcp')
