@@ -37,6 +37,13 @@ export async function start_mock_server({ sites = [], export_files = {}, site_gr
 			return json(res, 200, { items: sites, page: 1, perPage: 200, totalItems: sites.length })
 		}
 
+		const site_record_match = url.pathname.match(/^\/api\/collections\/sites\/records\/([^/]+)$/)
+		if (site_record_match && req.method === 'GET') {
+			const site = sites.find((candidate) => candidate.id === site_record_match[1])
+			if (!site) return json(res, 404, { message: 'no such site' })
+			return json(res, 200, site)
+		}
+
 		if (url.pathname === '/api/collections/site_groups/records') {
 			return json(res, 200, { items: site_groups, page: 1, perPage: 200, totalItems: site_groups.length })
 		}
