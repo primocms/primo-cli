@@ -375,18 +375,23 @@ sections:
 				// are on disk; restarting `primo dev` will pick them up.
 			}
 
-			console.log('')
-			console.log(`  ${chalk.cyan(display_name)}`)
-			console.log(`    ${chalk.dim('Edit:')}    http://${host}/admin/site`)
-			console.log(`    ${chalk.dim('Preview:')} http://${host}/`)
-			console.log('')
-			if (outcome === 'quarantined') {
-				console.log(chalk.yellow('  Site created, but the dev server couldn\'t import it (duplicate IDs).'))
-				console.log(chalk.dim('  Check the `primo dev` logs and fix the conflict.'))
+			if (outcome === 'reloaded') {
+				// Only claim the site is live when the reload actually imported it.
 				console.log('')
-			} else if (outcome === 'unreachable') {
-				console.log(chalk.yellow('  Couldn\'t reach the running dev server to reload it.'))
-				console.log(chalk.dim('  Restart `primo dev` to pick up the new site.'))
+				console.log(`  ${chalk.cyan(display_name)}`)
+				console.log(`    ${chalk.dim('Edit:')}    http://${host}/admin/site`)
+				console.log(`    ${chalk.dim('Preview:')} http://${host}/`)
+				console.log('')
+			} else if (outcome === 'quarantined') {
+				console.log('')
+				console.log(chalk.yellow(`  ${display_name} was created, but the dev server couldn't import it (duplicate IDs).`))
+				console.log(chalk.dim('  Fix the conflict, then restart `primo dev` to pick it up.'))
+				console.log('')
+			} else {
+				console.log('')
+				console.log(chalk.yellow(`  ${display_name} was created on disk, but the running dev server didn't import it.`))
+				console.log(chalk.dim('  The reload endpoint didn\'t respond (hot reload may be disabled).'))
+				console.log(chalk.dim('  Restart `primo dev` to pick up the new site, or stop it and run `primo add <name>`.'))
 				console.log('')
 			}
 		} else if (!options.skipDev) {
@@ -395,7 +400,8 @@ sections:
 			await dev_server({ dir: base_dir, port: String(port) })
 		} else {
 			console.log('')
-			console.log(chalk.dim('  Next steps:'))
+			console.log(chalk.dim(`  ${display_name} was created on disk but isn't registered yet.`))
+			console.log(chalk.dim('  Run `primo dev` to import it:'))
 			console.log(chalk.dim('    primo dev'))
 			console.log('')
 		}

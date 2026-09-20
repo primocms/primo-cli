@@ -70,7 +70,12 @@ program
 Creating a folder under ${chalk.cyan('sites/')} isn't enough to make it appear in the
 dashboard — its records must be imported into the workspace database. This
 command does that one-time import (minting a site_id into site.yaml if needed)
-and exits. If ${chalk.cyan('primo dev')} is already running, it picks the site up live.
+and exits.
+
+It needs the workspace port free: stop ${chalk.cyan('primo dev')} before running it.
+(A running ${chalk.cyan('primo dev')} imports new sites itself — on its next start, or
+via its sites/ watcher.) ${chalk.cyan('primo add')} refuses rather than race it, because
+two site_id minters leave site.yaml pointing at an id the CMS doesn't have.
 
 ${chalk.bold('Examples')}
   primo add maison-verde
