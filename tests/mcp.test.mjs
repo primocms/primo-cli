@@ -43,6 +43,17 @@ async function backups_of(file_path) {
 	return entries.filter((entry) => entry.startsWith(`${base}.bak-`))
 }
 
+/**
+ * The application-support parent the CLI resolves for the current platform.
+ * Pass the same APPDATA override to run_mcp so Windows stays isolated to the
+ * fake home.
+ */
+function app_support_path(home, appdata) {
+	if (process.platform === 'darwin') return path.join(home, 'Library', 'Application Support')
+	if (process.platform === 'win32') return appdata
+	return path.join(home, '.config')
+}
+
 describe('primo mcp list', () => {
 	test('--json has a stable shape and lists every known client', async () => {
 		const workspace = await make_mcp_workspace()
@@ -54,7 +65,7 @@ describe('primo mcp list', () => {
 			assert.ok(Array.isArray(parsed.clients))
 
 			const ids = parsed.clients.map((client) => client.client)
-			for (const expected of ['claude', 'cursor', 'vscode', 'codex', 'opencode', 'gemini', 'cline', 'windsurf', 'continue', 'zed', 'jetbrains']) {
+			for (const expected of ['claude', 'claude-desktop', 'cursor', 'vscode', 'codex', 'opencode', 'gemini', 'cline', 'windsurf', 'continue', 'zed', 'jetbrains']) {
 				assert.ok(ids.includes(expected), `${expected} missing from mcp list`)
 			}
 			for (const client of parsed.clients) {
@@ -109,6 +120,31 @@ describe('primo mcp install — JSON merge safety', () => {
 			const parsed = await read_json(path.join(workspace.work, '.vscode/mcp.json'))
 			assert.deepEqual(parsed.servers.primo, { type: 'stdio', command: 'npx', args: ['-y', 'primo-mcp'] })
 			assert.equal(parsed.mcpServers, undefined)
+		} finally {
+			await workspace.cleanup()
+		}
+	})
+
+	test('writes Claude Desktop config under the OS application-support dir', async () => {
+		const workspace = await make_mcp_workspace()
+		try {
+			const appdata = path.join(workspace.home, 'AppData', 'Roaming')
+			const file = path.join(
+				app_support_path(workspace.home, appdata),
+				'Claude',
+				'claude_desktop_config.json'
+			)
+			await fs.mkdir(path.dirname(file), { recursive: true })
+			await fs.writeFile(file, JSON.stringify({ mcpServers: { other: { command: 'other' } }, theme: 'dark' }, null, 2))
+
+			const result = await run_mcp(['mcp', 'install', '--client', 'claude-desktop'], workspace, { APPDATA: appdata })
+			assert.equal(result.code, 0, result.output)
+
+			const parsed = await read_json(file)
+			assert.equal(parsed.theme, 'dark', 'unrelated key was clobbered')
+			assert.deepEqual(parsed.mcpServers.other, { command: 'other' }, 'sibling server was clobbered')
+			// Claude Desktop entries are plain command/args — no "type" field.
+			assert.deepEqual(parsed.mcpServers.primo, { command: 'npx', args: ['-y', 'primo-mcp'] })
 		} finally {
 			await workspace.cleanup()
 		}
@@ -286,6 +322,37 @@ describe('primo mcp install — detection', () => {
 			const parsed = JSON.parse(result.stdout)
 			const detected = parsed.clients.filter((client) => client.detected).map((client) => client.client)
 			assert.deepEqual(detected.sort(), ['gemini', 'vscode'])
+		} finally {
+			await workspace.cleanup()
+		}
+	})
+
+	test('detects Claude Desktop from the application-support dir', async () => {
+		const workspace = await make_mcp_workspace()
+		try {
+			const appdata = path.join(workspace.home, 'AppData', 'Roaming')
+			await fs.mkdir(path.join(app_support_path(workspace.home, appdata), 'Claude'), { recursive: true })
+
+			const result = await run_mcp(['mcp', 'list', '--json'], workspace, { APPDATA: appdata })
+			assert.equal(result.code, 0, result.output)
+			const parsed = JSON.parse(result.stdout)
+			const detected = parsed.clients.filter((client) => client.detected).map((client) => client.client)
+			assert.ok(detected.includes('claude-desktop'), `claude-desktop not detected: ${JSON.stringify(detected)}`)
+		} finally {
+			await workspace.cleanup()
+		}
+	})
+
+	test('detects token-based user dirs (opencode under XDG_CONFIG_HOME)', async () => {
+		const workspace = await make_mcp_workspace()
+		try {
+			await fs.mkdir(path.join(workspace.xdg, 'opencode'), { recursive: true })
+
+			const result = await run_mcp(['mcp', 'list', '--json'], workspace)
+			assert.equal(result.code, 0, result.output)
+			const parsed = JSON.parse(result.stdout)
+			const detected = parsed.clients.filter((client) => client.detected).map((client) => client.client)
+			assert.ok(detected.includes('opencode'), `opencode not detected: ${JSON.stringify(detected)}`)
 		} finally {
 			await workspace.cleanup()
 		}

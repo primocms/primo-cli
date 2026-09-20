@@ -89,6 +89,19 @@ export const MCP_CLIENTS: McpClientDef[] = [
 		writable: true
 	},
 	{
+		id: 'claude-desktop',
+		name: 'Claude Desktop',
+		docs: 'https://modelcontextprotocol.io/quickstart/user',
+		format: 'json',
+		entry_kind: 'flat',
+		// claude_desktop_config.json uses plain command/args entries (no "type").
+		key_path: ['mcpServers', MCP_SERVER_NAME],
+		scopes: [{ scope: 'user', paths: ['{appSupport}/Claude/claude_desktop_config.json'] }],
+		user_dirs: ['{appSupport}/Claude'],
+		writable: true,
+		note: 'Official on macOS and Windows; the Linux path is best-effort.'
+	},
+	{
 		id: 'cursor',
 		name: 'Cursor',
 		docs: 'https://cursor.com/docs/context/mcp',
@@ -320,6 +333,7 @@ export function expand_path(template: string, ctx: PathContext): string {
 		'{cwd}': ctx.cwd,
 		'{xdg}': ctx.xdg,
 		'{.config}': config,
+		'{appSupport}': app_support_dir(ctx),
 		'{vscodeGlobalStorage}': vscode_global_storage(ctx)
 	}
 	let out = template
@@ -331,6 +345,16 @@ export function expand_path(template: string, ctx: PathContext): string {
 
 /** `~/.config` (or XDG_CONFIG_HOME) — the parent of per-client config dirs. */
 function xdg_config_dir(ctx: PathContext): string {
+	return ctx.xdg
+}
+
+/**
+ * Per-OS application-support parent for GUI apps (Claude Desktop and friends):
+ * macOS `~/Library/Application Support`, Windows `%APPDATA%`, Linux `~/.config`.
+ */
+function app_support_dir(ctx: PathContext): string {
+	if (ctx.platform === 'darwin') return path.join(ctx.home, 'Library', 'Application Support')
+	if (ctx.platform === 'win32') return process.env.APPDATA || path.join(ctx.home, 'AppData', 'Roaming')
 	return ctx.xdg
 }
 
@@ -399,7 +423,10 @@ function client_matches(
 		if (exists_sync(path.join(ctx.cwd, marker))) return true
 	}
 	for (const dir of client.user_dirs || []) {
-		if (exists_sync(expand_path(path.join(ctx.home, dir), path_context(ctx.cwd)))) return true
+		// Token paths ({home}, {appSupport}, {.config}, {vscodeGlobalStorage}, …)
+		// expand to absolute directly; bare paths are relative to home.
+		const template = dir.includes('{') ? dir : path.join(ctx.home, dir)
+		if (exists_sync(expand_path(template, path_context(ctx.cwd)))) return true
 	}
 	for (const binary of client.binaries || []) {
 		if (find_binary(binary)) return true
