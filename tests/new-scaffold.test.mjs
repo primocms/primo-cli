@@ -31,7 +31,9 @@ describe('primo new scaffold', () => {
 						continue
 					}
 					const text = await fs.readFile(full, 'utf-8')
-					if (/^_id:/m.test(text)) offenders.push(path.relative(site, full))
+					// Catch `_id:` at any indentation, including as a YAML list item
+					// (`- _id: …`), not just a top-level key.
+					if (/^\s*(?:-\s*)?_id\s*:/m.test(text)) offenders.push(path.relative(site, full))
 				}
 			}
 			await walk(site)
