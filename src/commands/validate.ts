@@ -84,6 +84,26 @@ function get_field_id(field: any): string | undefined {
 	return field?._id || field?.id
 }
 
+/**
+ * Parses YAML with the same loader `primo build` uses and returns a
+ * human-readable error when it fails. Validation must reject any file the
+ * build refuses to parse — otherwise `primo validate` passes a site that
+ * `primo build` then crashes on.
+ */
+function yaml_syntax_error(content: string): string | null {
+	try {
+		load_yaml(content)
+		return null
+	} catch (err: any) {
+		const reason = err?.reason || err?.message || String(err)
+		const mark = err?.mark
+		const where = mark && typeof mark.line === 'number'
+			? ` (line ${mark.line + 1}, column ${(mark.column ?? 0) + 1})`
+			: ''
+		return `${reason}${where}`
+	}
+}
+
 function get_fields_array(data: unknown): any[] {
 	if (Array.isArray(data)) {
 		return data
@@ -297,6 +317,11 @@ export async function validate_site(options: ValidateOptions) {
 	errors.push(...site_head_errors.filter(e => e.severity === 'error'))
 	warnings.push(...site_head_errors.filter(e => e.severity === 'warning'))
 
+	// Validate site content (parsed by `primo build`)
+	const site_content_errors = await validate_site_content(site_dir)
+	errors.push(...site_content_errors.filter(e => e.severity === 'error'))
+	warnings.push(...site_content_errors.filter(e => e.severity === 'warning'))
+
 	// Validate pages
 	const pages_errors = await validate_pages(site_dir)
 	errors.push(...pages_errors.filter(e => e.severity === 'error'))
@@ -417,9 +442,18 @@ async function validate_blocks(site_dir: string): Promise<ValidationError[]> {
 			})
 		}
 
-		// content.yaml is required for blocks — it seeds the editor sidebar.
+		// content.yaml is required for blocks — it seeds the editor sidebar and
+		// is parsed by `primo build`.
 		try {
-			await fs.access(content_path)
+			const content_raw = await fs.readFile(content_path, 'utf-8')
+			const yaml_error = yaml_syntax_error(content_raw)
+			if (yaml_error) {
+				errors.push({
+					file: `blocks/${block_name}/content.yaml`,
+					message: `Invalid YAML syntax: ${yaml_error}`,
+					severity: 'error'
+				})
+			}
 		} catch {
 			errors.push({
 				file: `blocks/${block_name}/content.yaml`,
@@ -531,9 +565,17 @@ async function validate_page_types(site_dir: string): Promise<ValidationError[]>
 
 		// layout.yaml is required — comment-only stub is fine, but the file
 		// must exist so the page type's header/body/footer slots are
-		// discoverable.
+		// discoverable, and it is parsed by `primo build`.
 		try {
-			await fs.access(layout_path)
+			const layout_raw = await fs.readFile(layout_path, 'utf-8')
+			const yaml_error = yaml_syntax_error(layout_raw)
+			if (yaml_error) {
+				errors.push({
+					file: `page-types/${page_type_name}/layout.yaml`,
+					message: `Invalid YAML syntax: ${yaml_error}`,
+					severity: 'error'
+				})
+			}
 		} catch {
 			errors.push({
 				file: `page-types/${page_type_name}/layout.yaml`,
@@ -579,6 +621,31 @@ async function validate_site_fields(site_dir: string): Promise<ValidationError[]
 	}
 
 	return errors
+}
+
+async function validate_site_content(site_dir: string): Promise<ValidationError[]> {
+	const content_path = path.join(site_dir, 'site', 'content.yaml')
+	try {
+		const content = await fs.readFile(content_path, 'utf-8')
+		const yaml_error = yaml_syntax_error(content)
+		if (yaml_error) {
+			return [{
+				file: 'site/content.yaml',
+				message: `Invalid YAML syntax: ${yaml_error}`,
+				severity: 'error'
+			}]
+		}
+	} catch (error: any) {
+		if (error?.code !== 'ENOENT') {
+			return [{
+				file: 'site/content.yaml',
+				message: `Failed to read file: ${error}`,
+				severity: 'error'
+			}]
+		}
+	}
+
+	return []
 }
 
 async function validate_head_svelte_file(
@@ -746,6 +813,17 @@ async function validate_pages(site_dir: string): Promise<ValidationError[]> {
 
 		try {
 			const content = await fs.readFile(file_path, 'utf-8')
+
+			// Same loader as `primo build`; a syntax error here is build-fatal.
+			const yaml_error = yaml_syntax_error(content)
+			if (yaml_error) {
+				errors.push({
+					file: yaml_file,
+					message: `Invalid YAML syntax: ${yaml_error}`,
+					severity: 'error'
+				})
+				continue
+			}
 
 			if (/^slug:/m.test(content)) {
 				errors.push({
