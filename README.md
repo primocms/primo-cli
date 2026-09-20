@@ -183,6 +183,34 @@ npx wrangler pages deploy dist
 # Or just push to a repo connected to any static host
 ```
 
+## Connect your agent
+
+Give an MCP-capable coding agent (Claude Code, Claude Desktop, Cursor, VS Code / Copilot, Codex,
+OpenCode, Gemini CLI, Cline, Windsurf, Continue, Zed) direct access to Primo
+tools. The server is the official [`primo-mcp`](https://www.npmjs.com/package/primo-mcp)
+stdio server; install it globally for the direct command, or let the CLI fall
+back to `npx -y primo-mcp`.
+
+```bash
+npm install -g primo-mcp     # recommended prerequisite
+
+primo mcp install            # detect clients and merge the Primo entry
+primo mcp install --dry-run  # show the target paths and what would change
+primo mcp install --client cursor --client vscode
+primo mcp install --all --global
+primo mcp list               # what's detected, configured, and where
+primo mcp print --client opencode   # paste it yourself
+```
+
+`install` merges only the `primo` entry: existing settings, sibling servers and
+comments are preserved. Every write backs up the file first
+(`<file>.bak-<timestamp>`) and is atomic. Re-running is idempotent, `--dry-run`
+writes nothing, and a conflicting `primo` entry is left in place unless you pass
+`--force`. Files with JSONC comments that can't be preserved are never rewritten
+— `primo mcp print` emits the snippet instead.
+
+MCP is optional. `primo validate` and `primo build` work without it.
+
 ## Site Structure
 
 ```

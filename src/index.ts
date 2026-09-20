@@ -17,6 +17,7 @@ import { login } from './commands/login.js'
 import { validate_site } from './commands/validate.js'
 import { deploy } from './commands/deploy.js'
 import { build_site } from './commands/build.js'
+import { mcp_install, mcp_list, mcp_print, client_option, UNKNOWN_CLIENTS_HINT } from './commands/mcp.js'
 
 const pkg_path = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json')
 const pkg_version = JSON.parse(fs.readFileSync(pkg_path, 'utf-8')).version as string
@@ -40,6 +41,9 @@ ${chalk.bold('Going live — pick one')}
   Want others to edit content? .................. ${chalk.cyan('primo deploy')}
   Just hosting a static blog? ................... ${chalk.cyan('primo build')}
   Already have a hosted Primo server? ........... ${chalk.cyan('primo push')}
+
+${chalk.bold('Working with an agent')}
+  Give your editor Primo MCP tools .............. ${chalk.cyan('primo mcp install')}
 `)
 
 program
@@ -185,6 +189,54 @@ ${chalk.bold('See also')}
                 it ships the workspace with an editable CMS to Railway or Fly.
 `)
 	.action(build_site)
+
+const mcp = program
+	.command('mcp')
+	.description('Connect your agent client to Primo MCP tools')
+	.addHelpText('after', `
+Wires the official ${chalk.cyan('primo-mcp')} stdio server into your agent client's config.
+Install it first with ${chalk.cyan('npm install -g primo-mcp')} for the direct command, or let
+these commands fall back to ${chalk.cyan('npx -y primo-mcp')}.
+
+${chalk.bold('Commands')}
+  install   Detect/select clients and merge the Primo entry safely
+  list      Show known clients, whether they're detected and configured
+  print     Emit a snippet to paste manually (GUI-only clients)
+
+${chalk.bold('Examples')}
+  primo mcp install                 Auto-detect clients in this project
+  primo mcp install --dry-run       Show what would change, write nothing
+  primo mcp install --client cursor --client vscode
+  primo mcp install --all --global  Configure every known client at user scope
+  primo mcp print --client opencode
+`)
+
+mcp
+	.command('install')
+	.description('Wire primo-mcp into detected/selected agent clients')
+	.option('--client <name>', `Target a specific client (repeatable). ${UNKNOWN_CLIENTS_HINT}`, client_option, [])
+	.option('--all', 'Target every known client')
+	.option('--global', 'Use user scope where a client supports it')
+	.option('--project', 'Use project scope where a client supports it')
+	.option('--dry-run', 'Show the target path and what would change, write nothing')
+	.option('--force', 'Replace an existing "primo" entry whose content differs')
+	.option('--json', 'Machine-readable result')
+	.action(mcp_install)
+
+mcp
+	.command('list')
+	.description('Show known MCP clients, detection and target paths')
+	.option('--json', 'Machine-readable result')
+	.action(mcp_list)
+
+mcp
+	.command('print')
+	.description('Emit the config snippet for a client so you can paste it manually')
+	.option('--client <name>', `Client to print (repeatable). Omit for all. ${UNKNOWN_CLIENTS_HINT}`, client_option, [])
+	.option('--global', 'Print the user-scope path where supported')
+	.option('--project', 'Print the project-scope path where supported')
+	.option('--json', 'Machine-readable result')
+	.action(mcp_print)
 
 // Custom unknown-command handler. commander's default suggestion engine is
 // based on Levenshtein distance and won't reach across renames like
