@@ -152,6 +152,7 @@ export async function build_site(options: BuildOptions) {
 		const site_data = await load_site_data(site_dir)
 
 		// Build each page
+		const failed_pages: Array<{ name: string; error: string }> = []
 		for (const page_file of page_files) {
 			const page_content = await fs.readFile(page_file, 'utf-8')
 			const page = load_yaml(page_content) as Page
@@ -175,6 +176,7 @@ export async function build_site(options: BuildOptions) {
 			})
 
 			if (result.error) {
+				failed_pages.push({ name: page.name || page_path || 'home', error: result.error })
 				console.log(chalk.yellow(`  Warning: ${page.name}: ${result.error}`))
 			}
 
@@ -198,6 +200,23 @@ export async function build_site(options: BuildOptions) {
 
 		// Clean up temp directory
 		await fs.rm(temp_dir, { recursive: true, force: true })
+
+		// A page that fell back to the error page is not a successful build: the
+		// output contains "Build Error" HTML. Fail loudly so CI and agents see it
+		// instead of a green build that shipped broken pages.
+		if (failed_pages.length > 0) {
+			const plural = failed_pages.length === 1 ? '' : 's'
+			spinner.fail(`Build finished with ${failed_pages.length} failed page${plural}`)
+			console.log('')
+			for (const failure of failed_pages) {
+				console.log(chalk.red(`  ✖ ${failure.name}: ${failure.error}`))
+			}
+			console.log('')
+			console.log(chalk.dim(`  Fallback error pages were written to ${options.output}, but the build is not clean.`))
+			console.log('')
+			process.exitCode = 1
+			return
+		}
 
 		spinner.succeed(`Built ${page_files.length} page${page_files.length !== 1 ? 's' : ''} to ${chalk.cyan(output_dir)}`)
 

@@ -66,4 +66,24 @@ describe('primo build', () => {
 			await workspace.cleanup()
 		}
 	})
+
+	test('exits non-zero when a page cannot render', async () => {
+		const workspace = await make_workspace()
+		try {
+			const site_dir = path.join(workspace.work, 'site')
+			const out_dir = path.join(workspace.work, 'out')
+			await make_site(site_dir)
+			// A component that throws at render time (undeclared identifier).
+			await write_file(site_dir, 'blocks/hero/component.svelte', '<section><h1>{this_does_not_exist}</h1></section>\n')
+
+			const result = await run_cli(['build', '-d', site_dir, '-o', out_dir], {
+				cwd: workspace.work,
+				home: workspace.home
+			})
+			assert.notEqual(result.code, 0, `a failed page must fail the build, got exit 0:\n${result.output}`)
+			assert.match(result.output, /failed page/i)
+		} finally {
+			await workspace.cleanup()
+		}
+	})
 })
