@@ -409,6 +409,16 @@ function backup_suffix(): string {
 	return new Date().toISOString().replace(/[:.]/g, '-')
 }
 
+/** Best-effort chmod; Windows only honors the read-only bit. Never fatal. */
+async function apply_mode(target: string, mode: number | undefined) {
+	if (mode === undefined) return
+	try {
+		await fs.chmod(target, mode)
+	} catch {
+		// A mode change failing must not fail the config write.
+	}
+}
+
 /** Writes `content` atomically, backing up any existing file first. */
 export async function write_config_atomic(file_path: string, content: string): Promise<WriteResult> {
 	const dir = path.dirname(file_path)
@@ -416,13 +426,24 @@ export async function write_config_atomic(file_path: string, content: string): P
 
 	const existing = await read_if_exists(file_path)
 	let backup: string | null = null
+	// Preserve the original mode. Config files often hold other servers' API
+	// keys, and fs.writeFile + rename would otherwise re-create them with the
+	// default 0644 mode, widening access on shared hosts.
+	let mode: number | undefined
 	if (existing !== null) {
+		try {
+			mode = (await fs.stat(file_path)).mode & 0o777
+		} catch {
+			// stat failed; fall back to the default mode
+		}
 		backup = `${file_path}.bak-${backup_suffix()}`
 		await fs.writeFile(backup, existing, 'utf8')
+		await apply_mode(backup, mode)
 	}
 
 	const tmp = path.join(dir, `.${path.basename(file_path)}.tmp-${process.pid}-${Date.now()}`)
 	await fs.writeFile(tmp, content, 'utf8')
+	await apply_mode(tmp, mode)
 	await fs.rename(tmp, file_path)
 	return { backup }
 }

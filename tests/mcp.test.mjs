@@ -230,6 +230,38 @@ describe('primo mcp install — JSON merge safety', () => {
 			await workspace.cleanup()
 		}
 	})
+
+	test('preserves the config file mode on the file and its backup', { skip: process.platform === 'win32' }, async () => {
+		const workspace = await make_mcp_workspace()
+		try {
+			const file = path.join(workspace.work, 'opencode.json')
+			await fs.writeFile(file, '{\n  "theme": "dark"\n}\n')
+			await fs.chmod(file, 0o600)
+
+			const result = await run_mcp(['mcp', 'install', '--client', 'opencode', '--project'], workspace)
+			assert.equal(result.code, 0, result.output)
+
+			assert.equal((await fs.stat(file)).mode & 0o777, 0o600, 'the config file lost its 0600 mode')
+			const backups = await backups_of(file)
+			assert.equal(backups.length, 1)
+			assert.equal((await fs.stat(path.join(path.dirname(file), backups[0]))).mode & 0o777, 0o600, 'the backup did not inherit 0600')
+		} finally {
+			await workspace.cleanup()
+		}
+	})
+
+	test('exits non-zero when a write fails', async () => {
+		const workspace = await make_mcp_workspace()
+		try {
+			// A directory where the config file should be makes the read fail.
+			await fs.mkdir(path.join(workspace.work, '.cursor', 'mcp.json'), { recursive: true })
+			const result = await run_mcp(['mcp', 'install', '--client', 'cursor', '--project'], workspace)
+			assert.notEqual(result.code, 0, `expected a non-zero exit on a failed write, got 0: ${result.output}`)
+			assert.match(result.output, /error|EISDIR|EACCES|illegal|directory/i)
+		} finally {
+			await workspace.cleanup()
+		}
+	})
 })
 
 describe('primo mcp install — TOML merge safety', () => {

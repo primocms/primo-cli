@@ -130,6 +130,10 @@ export async function mcp_install(options: McpInstallOptions) {
 		results.push(await install_one(client, { ...options, cwd, launch }))
 	}
 
+	// A write failure (e.g. EACCES) is reported per client; make it visible to
+	// scripts too, matching the unknown-client path above.
+	if (results.some((result) => result.action === 'error')) process.exitCode = 1
+
 	if (as_json) {
 		console.log(JSON.stringify({
 			command: 'mcp install',
