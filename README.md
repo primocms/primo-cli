@@ -1,6 +1,6 @@
 # Primo CLI
 
-Local development CLI for [Primo](https://primo.page) - build and edit sites with a visual CMS.
+Local development CLI for [Primo](https://primo.build) - build and edit sites with a visual CMS.
 
 ## Installation
 
@@ -261,7 +261,7 @@ workspace/
 
 ## Documentation
 
-Full documentation: [primo.page/docs](https://primo.page/docs)
+Full documentation: [docs.primo.build](https://docs.primo.build)
 
 ## Requirements
 
