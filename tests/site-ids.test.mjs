@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
+import net from 'node:net'
 import yaml from 'js-yaml'
 import { find_duplicate_site_ids, find_copied_entity_ids, strip_entity_ids } from '../dist/utils/site-ids.js'
 import { run_cli, make_workspace } from './helpers/run-cli.mjs'
@@ -46,6 +47,15 @@ test('primo new without a terminal creates the site and returns instead of start
 	const workspace = await make_workspace(); t.after(workspace.cleanup)
 	const options = { cwd: workspace.work, home: workspace.home, timeout_ms: 20000 }
 	assert.equal((await run_cli(['init', '--no-mcp', 'ws'], options)).code, 0)
+	// Keep this startup check independent of any existing dev server on 3000.
+	const listener = net.createServer()
+	await new Promise((resolve, reject) => {
+		listener.once('error', reject)
+		listener.listen(0, '127.0.0.1', resolve)
+	})
+	const port = listener.address().port
+	await new Promise((resolve, reject) => listener.close(error => error ? reject(error) : resolve()))
+	await write(path.join(workspace.work, 'ws'), 'server.yaml', `port: ${port}\n`)
 	const result = await run_cli(['new', 'demo'], { ...options, cwd: path.join(workspace.work, 'ws') })
 	assert.equal(result.code, 0, result.output)
 	assert.match(result.output, /primo dev/)
