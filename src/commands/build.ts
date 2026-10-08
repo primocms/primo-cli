@@ -8,14 +8,16 @@ import * as esbuild from 'esbuild'
 import { fileURLToPath } from 'url'
 import { read_site_config, type SiteConfig, SITE_CONFIG_FILE } from '../utils/site-config.js'
 import { validate_head_svelte_content } from '../utils/head-svelte.js'
+import { read_upload_paths } from '../utils/portable-uploads.js'
+import { markdown_to_html, rich_text_to_html } from '../utils/rich-text.js'
+import { PRIMO_BASELINE_CSS } from '../utils/baseline-css.js'
 
-// CSS reset applied to all sites by default
-const CSS_RESET = `*, *::before, *::after { box-sizing: border-box; }
-* { margin: 0; }
-body { line-height: 1.5; -webkit-font-smoothing: antialiased; }
-img, picture, video, canvas, svg { display: block; max-width: 100%; }
-input, button, textarea, select { font: inherit; }
-p, h1, h2, h3, h4, h5, h6 { overflow-wrap: break-word; }`
+// Start of every page's <head>, as server publish emits it
+const HEAD_START = '<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="Primo" />'
+const BASELINE_STYLE = `<style data-primo-baseline>${PRIMO_BASELINE_CSS}</style>`
+
+// Output directory for uploads, same as server publish (sites/<host>/_uploads)
+const UPLOADS_DIR = '_uploads'
 
 interface BuildOptions {
 	dir: string
@@ -62,6 +64,7 @@ interface BlockField {
 		field?: string // Backwards compatibility - name of site field
 		[key: string]: unknown
 	} | null
+	subfields?: BlockField[]
 }
 
 interface SiteField {
@@ -72,9 +75,32 @@ interface SiteField {
 	label?: string
 }
 
-interface SiteData {
+interface SiteData extends FieldContext {
 	fields: SiteField[]
 	content: Record<string, unknown>
+}
+
+// A page as page/page-list fields see it. Pages are kept in the order push
+// creates them (sorted file paths), which is the order the CMS lists them in.
+interface SitePage {
+	id?: string
+	name: string
+	page_path: string
+	page_type: string
+	fields: Record<string, unknown>
+}
+
+// What field values are resolved against.
+interface FieldContext {
+	// Upload ID -> symbolic `uploads/<file>` path, from uploads/.manifest.json
+	uploads: Map<string, string>
+	pages: SitePage[]
+	// Page type folder -> its config _id and field definitions
+	page_types: Map<string, { id?: string; fields: BlockField[] }>
+	// Resolved fields per referenced page, shared by all page/page-list fields
+	page_content: Map<string, Record<string, unknown> | undefined>
+	// Resolved fields of the page being rendered, read by page-field fields
+	current_page?: Record<string, unknown>
 }
 
 export async function build_site(options: BuildOptions) {
@@ -115,8 +141,8 @@ export async function build_site(options: BuildOptions) {
 		}
 
 		// site/foot.html is verbatim HTML appended before </body> on every page —
-		// no templating, matching server publish. page-types/*/foot.html is
-		// intentionally not included (it isn't in server publish either).
+		// no templating, matching server publish. The page type's foot.html
+		// follows it (see build_page).
 		let foot_content = ''
 		try {
 			foot_content = await fs.readFile(path.join(site_dir, 'site', 'foot.html'), 'utf-8')
@@ -126,9 +152,12 @@ export async function build_site(options: BuildOptions) {
 			}
 		}
 
-		// Find all pages
+		// Find all pages, in the order push creates them
 		const pages_dir = path.join(site_dir, 'pages')
-		const page_files = await find_pages(pages_dir)
+		const page_files = (await find_pages(pages_dir))
+			.map((file) => ({ file, key: path.relative(pages_dir, file).replaceAll('\\', '/') }))
+			.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+			.map(({ file }) => file)
 
 		// Map each page's _id to its live URL so internal `page:` links resolve.
 		// The URL is derived from the page's file location (same convention the
@@ -141,6 +170,9 @@ export async function build_site(options: BuildOptions) {
 		// Compile all blocks once and cache them
 		const block_cache = new Map<string, { js: string; css: string }>()
 
+		// Per block: whether it ships a client bundle in _symbols/
+		const client_cache = new Map<string, boolean>()
+
 		// Cache layouts per page type
 		const layout_cache = new Map<string, Layout>()
 
@@ -148,8 +180,11 @@ export async function build_site(options: BuildOptions) {
 		// string = no head.svelte for that page type).
 		const page_type_head_cache = new Map<string, string>()
 
-		// Load site data (fields and content)
-		const site_data = await load_site_data(site_dir)
+		// Cache per-page-type foot.html (empty string = none)
+		const page_type_foot_cache = new Map<string, string>()
+
+		// Load site data (fields, content, pages and page types)
+		const site_data = await load_site_data(site_dir, page_files)
 
 		// Build each page
 		const failed_pages: Array<{ name: string; error: string }> = []
@@ -165,12 +200,15 @@ export async function build_site(options: BuildOptions) {
 				page_path,
 				site_dir,
 				temp_dir,
+				output_dir,
 				head_content,
 				foot_content,
 				site_name: config.name,
 				block_cache,
+				client_cache,
 				layout_cache,
 				page_type_head_cache,
+				page_type_foot_cache,
 				site_data,
 				page_url_map
 			})
@@ -189,9 +227,11 @@ export async function build_site(options: BuildOptions) {
 			await fs.writeFile(out_path, result.html)
 		}
 
-		// Copy uploads directory
+		// Publish uploads where server publish serves them: /_uploads/<file>.
+		// A pulled site's files carry the server's stored filenames, so CMS
+		// content pointing at /_uploads/... resolves here too.
 		const uploads_src = path.join(site_dir, 'uploads')
-		const uploads_dest = path.join(output_dir, 'uploads')
+		const uploads_dest = path.join(output_dir, UPLOADS_DIR)
 		try {
 			await copy_dir(uploads_src, uploads_dest)
 		} catch {
@@ -244,12 +284,15 @@ interface BuildPageOptions {
 	page_path: string
 	site_dir: string
 	temp_dir: string
+	output_dir: string
 	head_content: string
 	foot_content: string
 	site_name: string
 	block_cache: Map<string, { js: string; css: string }>
+	client_cache: Map<string, boolean>
 	layout_cache: Map<string, Layout>
 	page_type_head_cache: Map<string, string>
+	page_type_foot_cache: Map<string, string>
 	site_data: SiteData
 	page_url_map: Map<string, string>
 }
@@ -297,8 +340,27 @@ async function load_page_type_head(
 	return content
 }
 
+// Lazily load a page type's foot.html: verbatim HTML, no templating, like
+// site/foot.html. Empty string means "no foot file present".
+async function load_page_type_foot(
+	site_dir: string,
+	page_type: string,
+	cache: Map<string, string>
+): Promise<string> {
+	const cached = cache.get(page_type)
+	if (cached !== undefined) return cached
+	let content = ''
+	try {
+		content = await fs.readFile(path.join(site_dir, 'page-types', page_type, 'foot.html'), 'utf-8')
+	} catch (error: any) {
+		if (error?.code !== 'ENOENT') throw error
+	}
+	cache.set(page_type, content)
+	return content
+}
+
 async function build_page(options: BuildPageOptions): Promise<{ html: string; error?: string }> {
-	const { page, page_path, site_dir, temp_dir, head_content, foot_content, site_name, block_cache, layout_cache, page_type_head_cache, site_data, page_url_map } = options
+	const { page, page_path, site_dir, temp_dir, output_dir, head_content, foot_content, site_name, block_cache, client_cache, layout_cache, page_type_head_cache, page_type_foot_cache, site_data, page_url_map } = options
 
 	try {
 		const page_build_id = safe_temp_id(page._id || page.id || page_path || page.name || 'page')
@@ -316,20 +378,34 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 		const page_type_head = await load_page_type_head(site_dir, page_type, page_type_head_cache)
 		const combined_head_content = page_type_head ? `${head_content}\n${page_type_head}` : head_content
 
+		// Server publish appends site.foot + page_type.foot before </body>,
+		// verbatim and without a separator.
+		const page_type_foot = await load_page_type_foot(site_dir, page_type, page_type_foot_cache)
+
+		// The page's own fields, which page-field fields in every section
+		// (layout ones included) read, as on server publish
+		const page_type_fields = await load_page_type_fields(site_dir, page_type)
+		const page_fields = resolve_field_values(page_type_fields, page.fields || {}, site_data)
+		const section_data: SiteData = { ...site_data, current_page: page_fields }
+
 		// Combine header + page sections + footer
 		const current_page_id = page._id || page.id
-		const header_sections = await resolve_layout_sections(layout.header || [], site_dir, site_data, page_url_map, current_page_id)
-		const footer_sections = await resolve_layout_sections(layout.footer || [], site_dir, site_data, page_url_map, current_page_id)
-		const page_sections = await resolve_page_sections(page.sections || [], site_dir, site_data, page_url_map, current_page_id)
+		const header_sections = await resolve_layout_sections(layout.header || [], site_dir, section_data, page_url_map, current_page_id)
+		const footer_sections = await resolve_layout_sections(layout.footer || [], site_dir, section_data, page_url_map, current_page_id)
+		const page_sections = await resolve_page_sections(page.sections || [], site_dir, section_data, page_url_map, current_page_id)
 		const sections = [...header_sections, ...page_sections, ...footer_sections]
+		const section_slots = get_section_slots([
+			...header_sections.map((section) => ({ section, zone: 'header' as const })),
+			...page_sections.map((section) => ({ section, zone: 'main' as const })),
+			...footer_sections.map((section) => ({ section, zone: 'footer' as const }))
+		])
 
 		// Head fragments see site fields merged with the page's own fields (page
 		// wins), each pre-declared as a bare identifier — same scope as server
 		// publish. Every DEFINED field key is declared even when no value is set
 		// (binding to undefined), so `{seo_title || fallback}` works on pages
 		// that leave the field empty instead of throwing ReferenceError.
-		const head_data: Record<string, unknown> = { ...site_data.content, ...(page.fields || {}) }
-		const page_type_fields = await load_page_type_fields(site_dir, page_type)
+		const head_data: Record<string, unknown> = { ...site_data.content, ...page_fields }
 		const head_keys = head_identifier_keys([
 			...site_data.fields.map((field) => field.name),
 			...page_type_fields.map((field) => field.name),
@@ -338,10 +414,8 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 
 		// Compile each block and collect CSS
 		const all_css: string[] = []
-		const section_components: string[] = []
 
-		for (let i = 0; i < sections.length; i++) {
-			const section = sections[i]
+		for (const section of sections) {
 			const block_name = section.block
 
 			// Check cache first
@@ -354,21 +428,13 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 			if (compiled.css) {
 				all_css.push(compiled.css)
 			}
-
-			// Create import and usage for this section
-			const component_name = `Section_${i}_${block_name.replace(/-/g, '_')}`
-			section_components.push({
-				name: component_name,
-				block_name,
-				props: section.content || {}
-			} as any)
 		}
 
 		// Create a page component that renders all sections and the head. The
 		// head rides through <svelte:head> so its Svelte syntax ({expression},
 		// {@html}, {#if}) is actually evaluated — pasting the fragment into the
 		// output verbatim leaked raw template syntax into deployed pages.
-		const page_component = generate_page_component(section_components as any, sections, combined_head_content, head_keys)
+		const page_component = generate_page_component(section_slots, combined_head_content, head_keys)
 		const page_component_path = path.join(temp_dir, `page_${page_build_id}.svelte`)
 		await fs.writeFile(page_component_path, page_component)
 
@@ -414,12 +480,7 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 			platform: 'node',
 			outfile: bundle_path,
 			logLevel: 'silent',
-			alias: {
-				'svelte/internal/server': path.join(svelte_base, 'src/internal/server/index.js'),
-				'svelte/internal/shared': path.join(svelte_base, 'src/internal/shared/index.js'),
-				'svelte/internal/client': path.join(svelte_base, 'src/internal/client/index.js'),
-				'svelte': path.join(svelte_base, 'src/index.js')
-			}
+			plugins: [svelte_resolver(svelte_base)]
 		})
 
 		// Import and render
@@ -438,6 +499,10 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 
 		const rendered = render(PageComponent, { props })
 
+		// Interactive blocks get a client bundle and hydrate in place, as on
+		// server publish. Blocks without a script ship no JavaScript.
+		const hydration_script = await generate_hydration_script(section_slots, { site_dir, temp_dir, output_dir, client_cache, svelte_base })
+
 		// No automatic <title> — server publish emits none, and an injected
 		// title would suppress any title a page-type head renders (Svelte keeps
 		// the first <title> it encounters). Warn so the omission is visible.
@@ -446,22 +511,19 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 		}
 
 		// Head <style> tags flow through rendered.head as real global style
-		// elements (matching server publish). Reset first so head styles can
+		// elements (matching server publish). Baseline first so head styles can
 		// override it; block CSS last, as component styles land during render.
 		const block_css = all_css.filter(Boolean).join('\n')
 		const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<style>
-${CSS_RESET}
-	</style>
+	${HEAD_START}
+	${BASELINE_STYLE}
 	${rendered.head || ''}
 ${block_css ? `	<style>\n${block_css}\n	</style>\n` : ''}</head>
-<body>
+<body id="page">
 ${rendered.body || ''}
-${foot_content}</body>
+${hydration_script}${foot_content}${page_type_foot}</body>
 </html>`
 
 		return { html }
@@ -479,7 +541,7 @@ async function compile_block(site_dir: string, block_name: string, temp_dir: str
 	const component_path = path.join(site_dir, 'blocks', block_name, 'component.svelte')
 
 	try {
-		const source = await fs.readFile(component_path, 'utf-8')
+		const source = await read_block_source(site_dir, block_name)
 
 		// Compile with Svelte
 		const compiled = compile(source, {
@@ -503,14 +565,122 @@ async function compile_block(site_dir: string, block_name: string, temp_dir: str
 	}
 }
 
-function generate_page_component(components: Array<{ name: string; block_name: string; props: Record<string, unknown> }>, sections: PageSection[], head_content: string, head_keys: string[]): string {
-	const imports = sections.map((section, i) => {
-		const safe_name = section.block.replace(/-/g, '_')
+async function read_block_source(site_dir: string, block_name: string): Promise<string> {
+	const component_path = path.join(site_dir, 'blocks', block_name, 'component.svelte')
+	const fields = await load_block_fields(site_dir, block_name)
+	return inject_field_props(await fs.readFile(component_path, 'utf-8'), fields.map((field) => field.name))
+}
+
+interface ClientBuildOptions {
+	site_dir: string
+	temp_dir: string
+	output_dir: string
+	client_cache: Map<string, boolean>
+	svelte_base: string
+}
+
+// The module script server publish appends to the body: import each
+// interactive block's bundle once and hydrate every section using it, with
+// the same props the section was rendered with.
+async function generate_hydration_script(slots: SectionSlot[], options: ClientBuildOptions): Promise<string> {
+	const imports: string[] = []
+	for (const block_name of new Set(slots.map(({ section }) => section.block))) {
+		let has_js = options.client_cache.get(block_name)
+		if (has_js === undefined) {
+			has_js = await bundle_block_client(block_name, options)
+			options.client_cache.set(block_name, has_js)
+		}
+		if (!has_js) continue
+		const hydrations = slots
+			.filter(({ section }) => section.block === block_name)
+			.map(({ section, dom_id }) =>
+				`hydrate(App, { target: document.querySelector('#section-${dom_id}'), props: ${script_json(section.content || {})} });`
+			)
+			.join('')
+		imports.push(`import('/_symbols/${encodeURIComponent(block_name)}.js').then(({ default: App, hydrate }) => {${hydrations}}).catch(e => console.error(e));`)
+	}
+	return imports.length > 0 ? `<script type="module">${imports.join('')}</script>\n` : ''
+}
+
+// Compile a block for the browser and bundle it with the svelte runtime
+// into _symbols/<block>.js, exporting the component and `hydrate` like the
+// server's symbol modules. Returns false for blocks without a script, which
+// server publish doesn't hydrate either.
+async function bundle_block_client(block_name: string, options: ClientBuildOptions): Promise<boolean> {
+	const component_path = path.join(options.site_dir, 'blocks', block_name, 'component.svelte')
+	const script = (await fs.readFile(component_path, 'utf-8')).match(/<script[^>]*>([\s\S]*?)<\/script>/)
+	if (!script?.[1].trim()) return false
+
+	const compiled = compile(await read_block_source(options.site_dir, block_name), {
+		generate: 'client',
+		filename: component_path,
+		css: 'external',
+		name: block_name.replace(/-/g, '_')
+	})
+	await fs.writeFile(path.join(options.temp_dir, `${block_name}.client.js`), compiled.js.code)
+
+	await esbuild.build({
+		stdin: {
+			contents: `export { default } from './${block_name}.client.js'\nexport { hydrate } from 'svelte'\n`,
+			resolveDir: options.temp_dir,
+			loader: 'js'
+		},
+		bundle: true,
+		format: 'esm',
+		platform: 'browser',
+		minify: true,
+		outfile: path.join(options.output_dir, '_symbols', `${block_name}.js`),
+		logLevel: 'silent',
+		plugins: [svelte_resolver(options.svelte_base)]
+	})
+	return true
+}
+
+// JSON for an inline <script>: `<` is escaped so content can't close the tag.
+function script_json(value: unknown): string {
+	return JSON.stringify(value).replace(/</g, '\\u003c')
+}
+
+// Blocks may use their fields as bare identifiers without declaring props.
+// Server publish injects `let { <fields> } = $props()` into any block that
+// doesn't call $props() itself; do the same so such blocks render here too.
+function inject_field_props(source: string, field_names: unknown[]): string {
+	if (source.includes('$props(')) return source
+	const keys = head_identifier_keys(field_names.filter((name): name is string => typeof name === 'string'))
+	if (keys.length === 0) return source
+	const declaration = `let { ${keys.join(', ')} } = $props()`
+	const instance_script = /<script(?![^>]*\bmodule\b)(?![^>]*\bcontext\s*=\s*["']module["'])[^>]*>/
+	return instance_script.test(source)
+		? source.replace(instance_script, (tag) => `${tag}\n${declaration}\n`)
+		: `<script>\n${declaration}\n</script>\n${source}`
+}
+
+interface SectionSlot {
+	section: PageSection
+	zone: 'header' | 'main' | 'footer'
+	// Page-unique wrapper id: the section's _id when it has one
+	dom_id: string
+}
+
+// Give each section a page-unique wrapper id, like the section record ids
+// server publish uses.
+function get_section_slots(sections: Array<Omit<SectionSlot, 'dom_id'>>): SectionSlot[] {
+	const used = new Set<string>()
+	return sections.map((slot, i) => {
+		let dom_id = safe_temp_id(slot.section._id || `${i}`)
+		if (used.has(dom_id)) dom_id = `${dom_id}-${i}`
+		used.add(dom_id)
+		return { ...slot, dom_id }
+	})
+}
+
+function generate_page_component(slots: SectionSlot[], head_content: string, head_keys: string[]): string {
+	const imports = slots.map(({ section }, i) => {
 		return `import Section_${i} from './${section.block}.compiled.js'`
 	}).join('\n')
 
 	const props_declarations = [
-		...sections.map((_, i) => `section_${i}_props = {}`),
+		...slots.map((_, i) => `section_${i}_props = {}`),
 		'head_props = {}'
 	].join(',\n\t')
 
@@ -520,9 +690,20 @@ function generate_page_component(components: Array<{ name: string; block_name: s
 	// state_referenced_locally warning, which otherwise fires for every key.
 	const head_declarations = head_keys.map((key) => `let ${key} = $derived(head_props['${key}'])`).join('\n')
 
-	const section_renders = sections.map((_, i) => {
-		return `<Section_${i} {...section_${i}_props} />`
-	}).join('\n\t\t')
+	// Same page structure as server publish: header/main/footer zones (main
+	// always, the others only when used), each section in a wrapper div.
+	const render_zone = (zone: SectionSlot['zone']) => slots
+		.map((slot, i) => ({ ...slot, i }))
+		.filter((slot) => slot.zone === zone)
+		.map(({ section, dom_id, i }) =>
+			`<div data-section="${dom_id}" id="section-${dom_id}" data-symbol="${safe_temp_id(section.block)}"><Section_${i} {...section_${i}_props} /></div>`
+		)
+		.join('\n\t')
+	const zones = (['header', 'main', 'footer'] as const)
+		.map((zone) => ({ zone, markup: render_zone(zone) }))
+		.filter(({ zone, markup }) => zone === 'main' || markup)
+		.map(({ zone, markup }) => `<${zone}>\n\t${markup}\n</${zone}>`)
+		.join('\n')
 
 	return `<script module>
 ${imports}
@@ -539,9 +720,7 @@ ${head_declarations}
 ${head_content}
 </svelte:head>
 
-<main>
-	${section_renders}
-</main>`
+${zones}`
 }
 
 function generate_error_page(site_name: string, page_name: string, error: string, head_content: string): string {
@@ -557,11 +736,10 @@ function generate_error_page(site_name: string, page_name: string, error: string
 	return `<!DOCTYPE html>
 <html lang="en">
 <head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	${HEAD_START}
+	${BASELINE_STYLE}
 	<title>${escape_html(title)}</title>
 	<style>
-${CSS_RESET}
 ${head_css}
 	</style>
 </head>
@@ -629,11 +807,14 @@ function safe_temp_id(value: string): string {
 	return value.replace(/[^a-zA-Z0-9_-]/g, '_') || 'page'
 }
 
+// Dotfiles (uploads/.manifest.json, .DS_Store, ...) are site metadata, not
+// assets, and are never published.
 async function copy_dir(src: string, dest: string): Promise<void> {
 	await fs.mkdir(dest, { recursive: true })
 	const entries = await fs.readdir(src, { withFileTypes: true })
 
 	for (const entry of entries) {
+		if (entry.name.startsWith('.')) continue
 		const src_path = path.join(src, entry.name)
 		const dest_path = path.join(dest, entry.name)
 
@@ -671,7 +852,9 @@ async function resolve_layout_sections(sections: PageSection[], site_dir: string
 			content = await load_block_defaults(site_dir, section.block)
 		}
 		// Resolve any site-field references in the content
-		const resolved_content = await resolve_site_fields(site_dir, section.block, content, site_data)
+		const site_resolved = await resolve_site_fields(site_dir, section.block, content, site_data)
+		// Convert stored values (images, rich text, ...) into what the block receives
+		const resolved_content = resolve_field_values(await load_block_fields(site_dir, section.block), site_resolved, site_data)
 		// Resolve internal page: links to URLs (walks nested repeaters/groups too)
 		resolved.push({ ...section, content: resolve_links(resolved_content, page_url_map, current_page_id) as Record<string, unknown> })
 	}
@@ -691,7 +874,8 @@ async function resolve_page_sections(sections: PageSection[], site_dir: string, 
 		} else {
 			content = await load_block_defaults(site_dir, section.block)
 		}
-		const resolved_content = await resolve_site_fields(site_dir, section.block, content, site_data)
+		const site_resolved = await resolve_site_fields(site_dir, section.block, content, site_data)
+		const resolved_content = resolve_field_values(await load_block_fields(site_dir, section.block), site_resolved, site_data)
 		// Resolve internal page: links to URLs (walks nested repeaters/groups too)
 		resolved.push({ ...section, content: resolve_links(resolved_content, page_url_map, current_page_id) as Record<string, unknown> })
 	}
@@ -753,6 +937,162 @@ function resolve_links(value: unknown, page_url_map: Map<string, string>, curren
 	return value
 }
 
+function is_plain_object(value: unknown): value is Record<string, unknown> {
+	return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+// Convert stored field values into what blocks and head fragments receive,
+// by field type, as server publish does (see the CMS's Content.svelte.ts).
+// Walks repeater/group subfields; keys without a field definition pass
+// through unchanged, fields without a value get the server's empty value.
+// Returns new objects, never mutates `content`.
+function resolve_field_values(
+	fields: Array<SiteField | BlockField>,
+	content: Record<string, unknown>,
+	context: FieldContext
+): Record<string, unknown> {
+	const resolved: Record<string, unknown> = { ...content }
+	for (const field of fields as BlockField[]) {
+		if (!field?.name) continue
+		// Derived from other pages, never from a stored value
+		if (field.type === 'page-list' || field.type === 'page-field') {
+			const value = field.type === 'page-list' ? resolve_page_list(field, context) : resolve_page_field(field, context)
+			if (value === undefined) delete resolved[field.name]
+			else resolved[field.name] = value
+			continue
+		}
+		if (resolved[field.name] === undefined) {
+			const empty = empty_field_value(field)
+			if (empty !== undefined) resolved[field.name] = empty
+			continue
+		}
+		const value = resolved[field.name]
+		const subfields = Array.isArray(field.subfields) ? field.subfields : []
+		if (field.type === 'image') {
+			resolved[field.name] = resolve_image(value, context.uploads)
+		} else if (field.type === 'rich-text') {
+			resolved[field.name] = rich_text_to_html(value)
+		} else if (field.type === 'markdown' && typeof value === 'string') {
+			resolved[field.name] = markdown_to_html(value)
+		} else if (field.type === 'page') {
+			const page = typeof value === 'string' ? context.pages.find((candidate) => candidate.id === value) : undefined
+			const page_value = page && resolve_page_reference(page, context)
+			if (page_value === undefined) delete resolved[field.name]
+			else resolved[field.name] = page_value
+		} else if (field.type === 'repeater' && Array.isArray(value)) {
+			resolved[field.name] = value.map((item) => is_plain_object(item) ? resolve_field_values(subfields, item, context) : item)
+		} else if (field.type === 'group' && is_plain_object(value)) {
+			resolved[field.name] = resolve_field_values(subfields, value, context)
+		}
+	}
+	return resolved
+}
+
+// A referenced page as server publish passes it: the page's resolved fields
+// plus _meta. created_at has no source in site files and stays unset.
+// Undefined for a page that (indirectly) references itself.
+function resolve_page_reference(page: SitePage, context: FieldContext): Record<string, unknown> | undefined {
+	const key = page.id || `/${page.page_path}`
+	if (!context.page_content.has(key)) {
+		context.page_content.set(key, undefined)
+		const fields = context.page_types.get(page.page_type)?.fields || []
+		context.page_content.set(key, resolve_field_values(fields, page.fields, { ...context, current_page: undefined }))
+	}
+	const data = context.page_content.get(key)
+	if (!data) return undefined
+	return {
+		...data,
+		_meta: {
+			created_at: undefined,
+			name: page.name,
+			slug: page.page_path.split('/').pop() || '',
+			url: page.page_path === '' ? '/' : `/${page.page_path}`
+		}
+	}
+}
+
+// Every page of the configured page type (its folder name, or its _id).
+function resolve_page_list(field: BlockField, context: FieldContext): unknown[] | undefined {
+	const ref = field.config?.page_type
+	if (typeof ref !== 'string' || !ref) return undefined
+	const folder = context.page_types.has(ref) ? ref : [...context.page_types].find(([, page_type]) => page_type.id === ref)?.[0]
+	if (!folder) return undefined
+	const pages = context.pages.filter((page) => page.page_type === folder).map((page) => resolve_page_reference(page, context))
+	// Like the server: no pages leaves the field unset
+	return pages.length > 0 && pages.every(Boolean) ? pages : undefined
+}
+
+// A page type field, read from the page being rendered (or its empty value).
+// The reference is `<page-type-folder>--<field-key>`, a field _id, or a bare
+// key only one page type defines.
+function resolve_page_field(field: BlockField, context: FieldContext): unknown {
+	const ref = field.config?.field
+	if (typeof ref !== 'string' || !ref || !context.current_page) return undefined
+	let page_field: BlockField | undefined
+	const separator = ref.indexOf('--')
+	if (separator >= 0) {
+		const key = ref.slice(separator + 2)
+		page_field = context.page_types.get(ref.slice(0, separator))?.fields.find((candidate) => candidate.name === key)
+	} else {
+		const all_fields = [...context.page_types.values()].flatMap((page_type) => page_type.fields)
+		const by_key = all_fields.filter((candidate) => candidate.name === ref)
+		page_field = all_fields.find((candidate) => get_field_id(candidate) === ref) ?? (by_key.length === 1 ? by_key[0] : undefined)
+	}
+	if (!page_field?.name) return undefined
+	return context.current_page[page_field.name] ?? empty_field_value(page_field)
+}
+
+// What server publish hands a block for a field with no value, so blocks can
+// read e.g. `image.url` on any section. Site references are resolved
+// elsewhere and stay undefined. An empty rich-text field is '' here; the
+// server passes an empty tiptap doc object.
+function empty_field_value(field: BlockField): unknown {
+	switch (field.type) {
+		case 'image': return { url: '', src: '', alt: '', size: null, width: null, height: null, focal_point: { x: 0.5, y: 0.5 }, position: '50% 50%' }
+		case 'link': return { url: '', label: '', text: '', active: false }
+		case 'repeater': return []
+		case 'group': return {}
+		case 'switch': return true
+		case 'number': return 0
+		case 'info': return null
+		case 'page': return null
+		case 'site-field':
+		case 'page-field':
+		case 'page-list': return undefined
+		default: return ''
+	}
+}
+
+// An image's own url wins; otherwise its upload resolves to the copy of the
+// file the build writes to /_uploads/. `upload` is either a manifest ID (as
+// pulled from the hosted server) or a symbolic `uploads/<file>` path.
+// Like the server, every image also gets its focal point and the matching
+// CSS `position`; a value that isn't an object gets the empty value.
+function resolve_image(value: unknown, uploads: Map<string, string>): unknown {
+	if (!is_plain_object(value)) return empty_field_value({ name: '', type: 'image' })
+	const focal_point = get_focal_point(value)
+	const resolved = { ...value, focal_point, position: get_focal_position(focal_point) }
+	if (typeof value.url === 'string' && value.url) return resolved
+	const upload = typeof value.upload === 'string' ? value.upload : ''
+	const upload_path = upload.startsWith('uploads/') ? upload : uploads.get(upload)
+	if (!upload_path) return resolved
+	const file = upload_path.slice('uploads/'.length)
+	return { ...resolved, url: `/${UPLOADS_DIR}/${file.split('/').map(encodeURIComponent).join('/')}` }
+}
+
+// Mirror the CMS's get_focal_point / get_focal_position (builder/utils.ts):
+// fractions clamped to 0..1 and rounded to 3 decimals, missing or malformed
+// coordinates are centered; `position` is e.g. "37.5% 62%".
+function get_focal_point(value: Record<string, unknown>): { x: number; y: number } {
+	const point = is_plain_object(value.focal_point) ? value.focal_point : undefined
+	const fraction = (n: unknown) => (typeof n === 'number' && Number.isFinite(n) ? Math.round(Math.min(1, Math.max(0, n)) * 1000) / 1000 : 0.5)
+	return { x: fraction(point?.x), y: fraction(point?.y) }
+}
+
+function get_focal_position({ x, y }: { x: number; y: number }): string {
+	return `${Math.round(x * 1000) / 10}% ${Math.round(y * 1000) / 10}%`
+}
+
 async function load_block_defaults(site_dir: string, block_name: string): Promise<Record<string, unknown>> {
 	const content_path = path.join(site_dir, 'blocks', block_name, 'content.yaml')
 	try {
@@ -784,7 +1124,7 @@ function get_field_id(field: { id?: string; _id?: string }): string | undefined 
 	return field._id || field.id
 }
 
-async function load_site_data(site_dir: string): Promise<SiteData> {
+async function load_site_data(site_dir: string, page_files: string[]): Promise<SiteData> {
 	const fields_path = path.join(site_dir, 'site', 'fields.yaml')
 	const content_path = path.join(site_dir, 'site', 'content.yaml')
 
@@ -804,7 +1144,52 @@ async function load_site_data(site_dir: string): Promise<SiteData> {
 		// No site content defined
 	}
 
-	return { fields, content }
+	// Images referencing uploads by ID resolve through the manifest. Without a
+	// readable one only symbolic `uploads/<file>` references resolve.
+	let uploads = new Map<string, string>()
+	try {
+		uploads = await read_upload_paths(site_dir)
+	} catch (error) {
+		console.log(chalk.yellow(`  Warning: could not read uploads/.manifest.json: ${error instanceof Error ? error.message : error}`))
+	}
+	const page_types = new Map<string, { id?: string; fields: BlockField[] }>()
+	let page_type_folders: string[] = []
+	try {
+		page_type_folders = (await fs.readdir(path.join(site_dir, 'page-types'), { withFileTypes: true }))
+			.filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+			.map((entry) => entry.name)
+	} catch {
+		// No page types
+	}
+	for (const folder of page_type_folders) {
+		let id: string | undefined
+		try {
+			const config = load_yaml(await fs.readFile(path.join(site_dir, 'page-types', folder, 'config.yaml'), 'utf-8')) as { _id?: unknown } | null
+			if (typeof config?._id === 'string' && config._id) id = config._id
+		} catch {
+			// No config; the folder name still identifies the page type
+		}
+		page_types.set(folder, { id, fields: await load_page_type_fields(site_dir, folder) })
+	}
+
+	const pages: SitePage[] = []
+	for (const page_file of page_files) {
+		try {
+			const page = load_yaml(await fs.readFile(page_file, 'utf-8')) as Page
+			pages.push({
+				id: page._id || page.id,
+				name: page.name,
+				page_path: get_page_path_from_file(site_dir, page_file),
+				page_type: page.page_type || 'default',
+				fields: is_plain_object(page.fields) ? page.fields : {}
+			})
+		} catch {
+			// Unparseable page files surface when that page is built
+		}
+	}
+
+	const context: FieldContext = { uploads, pages, page_types, page_content: new Map() }
+	return { ...context, fields, content: resolve_field_values(fields, content, context) }
 }
 
 async function load_block_fields(site_dir: string, block_name: string): Promise<BlockField[]> {
@@ -885,6 +1270,26 @@ async function resolve_site_fields(
 	}
 
 	return resolved
+}
+
+// Pin every `svelte` and `svelte/*` import (compiler output and block code
+// like `svelte/transition`) to the CLI's own svelte, resolved through its
+// package.json exports for the bundle's platform. Hardcoded file aliases broke
+// on svelte 5, which has no src/index.js, and mangled subpath imports.
+function svelte_resolver(svelte_base: string): esbuild.Plugin {
+	return {
+		name: 'primo-svelte',
+		setup(build) {
+			build.onResolve({ filter: /^svelte(\/|$)/ }, (args) => {
+				if (args.pluginData?.primo_svelte) return undefined
+				return build.resolve(args.path, {
+					kind: args.kind,
+					resolveDir: path.dirname(svelte_base),
+					pluginData: { primo_svelte: true }
+				})
+			})
+		}
+	}
 }
 
 async function find_svelte_path(): Promise<string> {
