@@ -542,6 +542,7 @@ If a file appears to have lost content after a sync (deleted entries, shrunken Y
 - \`site-field\` references a site field by name: \`config: { field: <site-field-name> }\`.
 - \`page-field\` references a page type field as \`<page-type-folder>--<field-key>\`, e.g. \`config: { field: blog-post--author }\`.
 - \`url\` holds a plain string (\`/about\`, \`https://...\`). \`link\` holds \`{ label, url }\`; a \`url\` that matches a page path is stored as a reference to that page.
+- \`image\` holds \`{ url, alt, upload, width, height }\` and an optional \`focal_point: { x, y }\` (fractions 0..1 of the image; centered when missing). Blocks also receive \`position\` (e.g. \`"37.5% 62%"\`): use it as \`object-position\` or \`background-position\` so cropped images keep the focal point in view.
 - Run \`primo validate\` (from the workspace root it checks every site) before assuming a schema change landed.
 
 ## Workflow
