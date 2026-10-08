@@ -121,7 +121,10 @@ test('init writes AGENTS.md and a CLAUDE.md that imports it, without clobbering'
 	assert.equal((await run_cli(['init', '--no-mcp', 'ws'], options)).code, 0)
 	const ws = path.join(workspace.work, 'ws')
 	assert.match(await fs.readFile(path.join(ws, 'CLAUDE.md'), 'utf8'), /^@AGENTS\.md$/m)
-	assert.match(await fs.readFile(path.join(ws, 'AGENTS.md'), 'utf8'), /## Fields/)
+	const agents = await fs.readFile(path.join(ws, 'AGENTS.md'), 'utf8')
+	assert.match(agents, /## Fields/)
+	// Same line as the CMS's exported AGENTS.md
+	assert.ok(agents.includes('- `image` holds `{ url, alt, upload, width, height }` and an optional `focal_point: { x, y }` (fractions 0..1 of the image; centered when missing). Blocks also receive `position` (e.g. `"37.5% 62%"`): use it as `object-position` or `background-position` so cropped images keep the focal point in view.\n'))
 	await fs.writeFile(path.join(ws, 'CLAUDE.md'), 'my notes\n')
 	await run_cli(['new', 'demo', '--skip-dev'], { ...options, cwd: ws })
 	assert.equal(await fs.readFile(path.join(ws, 'CLAUDE.md'), 'utf8'), 'my notes\n')
