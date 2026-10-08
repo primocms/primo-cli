@@ -608,8 +608,8 @@ async function generate_hydration_script(slots: SectionSlot[], options: ClientBu
 // server publish doesn't hydrate either.
 async function bundle_block_client(block_name: string, options: ClientBuildOptions): Promise<boolean> {
 	const component_path = path.join(options.site_dir, 'blocks', block_name, 'component.svelte')
-	const script = (await fs.readFile(component_path, 'utf-8')).match(/<script[^>]*>([\s\S]*?)<\/script>/)
-	if (!script?.[1].trim()) return false
+	const scripts = [...(await fs.readFile(component_path, 'utf-8')).matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)]
+	if (!scripts.some((script) => script[1].trim())) return false
 
 	const compiled = compile(await read_block_source(options.site_dir, block_name), {
 		generate: 'client',
