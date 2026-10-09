@@ -156,7 +156,7 @@ async function dev_auth(api_url: string): Promise<string> {
 	return body.token
 }
 
-async function fetch_site_record(api_url: string, token: string, site_id: string): Promise<SiteRecord> {
+export async function fetch_site_record(api_url: string, token: string, site_id: string): Promise<SiteRecord> {
 	const response = await fetch(`${api_url}/api/collections/sites/records/${encodeURIComponent(site_id)}`, {
 		headers: { Authorization: token }
 	})
@@ -176,7 +176,7 @@ type CompileAndUpload = (
 	record: SiteRecord
 ) => Promise<{ pageCount: number; symbolCount: number }>
 
-async function load_compiler(): Promise<CompileAndUpload> {
+export async function load_compiler(): Promise<CompileAndUpload> {
 	// Non-literal specifier: the subpath only exists in primo-mcp >= 0.1.8, so a
 	// static specifier would fail to type-resolve against older installs.
 	const compiler_specifier = 'primo-mcp/compiler'

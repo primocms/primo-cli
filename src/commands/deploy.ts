@@ -475,7 +475,7 @@ function print_post_deploy_next_steps(provider: Provider, url: string | undefine
 		console.log(chalk.bold('Next steps'))
 		console.log('')
 		console.log(chalk.dim('  Open the URL above and create your editor account.'))
-		console.log(chalk.dim('  Future edits: `primo push` to upload, `primo pull` to fetch.'))
+		console.log(chalk.dim('  Future edits: `primo push` to save drafts, `primo push --publish` to publish, `primo pull` to fetch.'))
 		console.log('')
 		return
 	}

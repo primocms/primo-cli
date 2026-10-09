@@ -60,13 +60,16 @@ The selected port is saved in `.primo/dev-server.json`, leaving `server.yaml` un
 
 ### `primo push`
 
-Sync local changes to an existing hosted Primo server. Requires a server you've
+Save local changes to the editable hosted draft. Plain `push` does not publish
+them to the public website. Requires a server you've
 already deployed (run `primo deploy` first) and authenticated against (`primo
 login -s <server-url>`).
 
 ```bash
 primo push https://cms.example.com --site abc123
-primo push --only my-site    # Push just one site folder (workspace root)
+primo push --only my-site    # Save one hosted draft (workspace root)
+primo push --only my-site --publish # Save the draft, then publish it
+primo push --json            # Separate push/publication results for scripts
 primo push --preview         # Preview changes without applying
 primo push --dry-run         # Show what would be sent without making requests
 ```
@@ -77,7 +80,9 @@ Options:
 - `--only <slug>` - Push only the named site folder under `sites/` (skips library)
 - `-d, --dir <dir>` - Directory (default: `.`)
 - `-t, --token <token>` - Auth token
-- `--preview` - Preview only
+- `--publish` - Publish selected sites after all site/library imports succeed
+- `--json` - One machine-readable result on stdout; diagnostics go to stderr
+- `--preview` - Preview the import without applying or publishing
 - `--dry-run` - Show what would be pushed without sending requests
 - `--force` - Intentionally overwrite server changes after confirmation, with a backup
 - `--yes` - Confirm `--force` without an interactive prompt
@@ -132,6 +137,55 @@ Options:
 - `-o, --output <dir>` - Workspace output directory (default: `.`)
 - `-t, --token <token>` - Auth token
 
+### `primo publish`
+
+Publish the **current hosted draft**, including edits made in the CMS, without
+uploading local files. Use the same server, token, `--dir`, `--site`, and `--only`
+selection options as `push`. From a workspace root it publishes each included
+site; it does not publish the shared library separately.
+
+```bash
+primo publish --only my-site
+primo publish https://cms.example.com --site abc123 # No local checkout required
+primo publish --dir sites/my-site --json
+primo push --only my-site --publish --json
+primo status --hosted --only my-site --json
+```
+
+`deploy` provisions hosting, `push` saves drafts, `publish` makes hosted drafts
+public, and `preview` rebuilds a local `primo dev` preview. `--publish` cannot be
+combined with `--preview` or `--dry-run`. Publication uses your hosted login,
+never the local dev-auth endpoint.
+
+A combined push waits for all selected imports (including the shared library)
+before publishing any sites. If an import fails, publication is not attempted;
+earlier draft imports remain saved. Publications then run per site, with every
+outcome reported separately. A failed publication exits nonzero, preserves the
+successful push baseline and draft, and prints a scoped `primo publish` retry
+command. Retry publication without re-uploading the successful push.
+
+JSON results include `ok`, `results`, and per-target `push`/`publish` objects
+with `state`, revisions, attempt IDs, and stable error codes. States distinguish
+`not_requested`, `not_attempted`, `succeeded`, `failed`, and `unknown`. A lost
+publication response is checked against server status; if it cannot be resolved,
+the outcome is `unknown`. Check status before retrying. Tokens are excluded from
+results and retry commands.
+
+`status --hosted` (also implied by `--server`) reads authenticated server state:
+draft and published revisions, unpublished changes, last publication and attempt,
+errors, and the public URL. It reports `never_published`, `current`, `behind`,
+`publishing`, `failed`, or `unknown`. Local `status` remains available without
+hosted authentication. Legacy publications have an unknown revision; unavailable
+servers yield unknown status and a nonzero exit, rather than cached success.
+
+This workflow requires the accompanying CMS publication endpoints and migration.
+Upgrade the CMS and CLI together and pull to refresh push baselines: publication
+artifacts are now excluded from the content fingerprint. Builds activate only
+after generation succeeds and the draft revision is checked again. A concurrent
+CMS edit rejects publication; review it before retrying. Failed builds retain the
+previous public output. Active and previous tracked builds are retained; older
+tracked builds and failed staging files are cleaned up best-effort.
+
 ### `primo library push`
 
 Push the local shared block library back to a hosted Primo instance.
@@ -177,7 +231,9 @@ on a single site and deploy the output folder with that host's CLI.
 | --------------------------------------------- | -------------- |
 | Let collaborators edit content from a CMS UI  | `primo deploy` |
 | Ship a static site to any static host         | `primo build`  |
-| Sync local edits to an existing hosted server | `primo push`   |
+| Save local edits to a hosted draft            | `primo push`   |
+| Publish the current hosted draft               | `primo publish` |
+| Save local edits and publish them              | `primo push --publish` |
 
 ### `primo validate`
 

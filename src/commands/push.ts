@@ -10,6 +10,9 @@ import { find_duplicate_site_ids, describe_duplicate_site_ids } from '../utils/s
 import { read_site_config, get_site_config_path, type SiteConfig, SITE_CONFIG_FILE } from '../utils/site-config.js'
 import { get_server_config_path, read_server_config, resolve_format_options, normalize_server_url, type ServerConfig, type SiteGroupConfig } from '../utils/server-config.js'
 import { format_file_contents } from '../utils/format.js'
+import { with_command_output } from '../utils/command-output.js'
+import { publish_target, print_publication_result, type PublicationResult } from '../utils/publication.js'
+import { publish_retry_command } from '../utils/hosted-targets.js'
 
 interface PushOptions {
 	server?: string
@@ -17,10 +20,83 @@ interface PushOptions {
 	only?: string
 	dir: string
 	token?: string
+	publish?: boolean
+	json?: boolean
+	report?: PushReport
+	workspaceServer?: string
 	preview?: boolean
 	dryRun?: boolean
 	force?: boolean
 	yes?: boolean
+}
+
+interface PushResult {
+	target: string
+	server?: string
+	site_id?: string
+	push: { state: 'not_attempted' | 'previewed' | 'succeeded' | 'failed' | 'unknown'; revision?: string; error?: string; error_code?: string }
+	publish: PublicationResult
+	plan?: PushPlan
+}
+interface PushReport {
+	ok: boolean
+	results: PushResult[]
+	error?: string
+	error_code?: string
+}
+
+function push_result(options: PushOptions, label: string, plan?: PushPlan): PushResult {
+	let result = options.report?.results.find((item) => (plan ? item.plan?.dir === plan.dir && item.plan.target === plan.target : item.target === label))
+	if (!result) {
+		result = { target: label, push: { state: 'not_attempted' }, publish: { state: options.publish ? 'not_attempted' : 'not_requested' } }
+		options.report?.results.push(result)
+	}
+	if (plan?.target === 'library') result.publish = { state: 'not_requested' }
+	if (plan) Object.assign(result, { plan, server: plan.server, site_id: plan.target === 'library' ? undefined : plan.target })
+	return result
+}
+
+async function publish_pushed_sites(options: PushOptions): Promise<string[]> {
+	const failed: string[] = []
+	for (const result of options.report?.results || []) {
+		if (result.push.state !== 'succeeded' || result.plan?.target === 'library' || !result.plan) continue
+		if (!options.publish) {
+			console.log(`  Draft updated: ${result.target}. Publication was not requested.`)
+			console.log(`  To publish: ${publish_retry_command(result.plan)}`)
+			continue
+		}
+		console.log(`Publishing: ${result.target}...`)
+		result.publish = await publish_target(result.plan, result.push.revision)
+		print_publication_result(result.target, result.publish, true)
+		if (result.publish.state !== 'succeeded') failed.push(result.target)
+	}
+	return failed
+}
+
+// Preserve the return contract used by deploy while exposing phase results to
+// scripts. A publication failure must never erase a successful push baseline.
+export async function push_site(options: PushOptions): Promise<string[]> {
+	const report: PushReport = { ok: false, results: [] }
+	let failed: string[] = []
+	await with_command_output(options.json, async () => {
+		try {
+			if (options.publish && (options.preview || options.dryRun)) throw new Error('--publish cannot be combined with --preview or --dry-run. No changes were sent.')
+			failed = await push_site_internal({ ...options, report })
+			if (failed.length === 0 && !options.preview && !options.dryRun) failed = await publish_pushed_sites({ ...options, report })
+			else if (options.publish && report.results.some((result) => result.push.state === 'succeeded')) {
+				console.log('Publication was not attempted because the selected push did not complete. Earlier draft changes remain saved.')
+			}
+			report.ok = failed.length === 0
+		} catch (error) {
+			report.error = error instanceof Error ? error.message : String(error)
+			report.error_code = 'push_failed'
+			failed = ['push']
+			console.error(report.error)
+		}
+	})
+	if (!report.ok) process.exitCode = 1
+	if (options.json) console.log(JSON.stringify({ ...report, results: report.results.map(({ plan, ...result }) => result) }, null, 2))
+	return failed
 }
 
 async function path_exists(p: string): Promise<boolean> {
@@ -100,7 +176,7 @@ type CreatedIDs = Record<string, Record<string, unknown>>
 
 // Returns the labels (site slugs / 'library') that failed to push so callers
 // like `primo deploy` can tell a clean run from a partial one. Empty = success.
-export async function push_site(options: PushOptions): Promise<string[]> {
+async function push_site_internal(options: PushOptions): Promise<string[]> {
 	const root_dir = path.resolve(options.dir)
 	const has_site_yaml = await path_exists(get_site_config_path(root_dir))
 	const has_server_yaml = await path_exists(get_server_config_path(root_dir))
@@ -117,9 +193,11 @@ export async function push_site(options: PushOptions): Promise<string[]> {
 			// fall through — bad server.yaml will surface elsewhere
 		}
 	}
-	const effective_options: PushOptions = workspace_server && !options.server
-		? { ...options, server: workspace_server }
-		: options
+	if (!workspace_server && has_site_yaml) {
+		try { workspace_server = (await read_server_config(await root_dir_for(root_dir))).server } catch { /* Single-site checkout. */ }
+	}
+	const effective_options: PushOptions = { ...options, workspaceServer: workspace_server }
+	if (has_site_yaml && options.only) throw new Error('--only selects a site from a workspace root. Use --dir for a site directory.')
 
 	if (options.dryRun) {
 		await print_push_dry_run(root_dir, has_site_yaml, has_server_yaml, effective_options)
@@ -152,9 +230,7 @@ export async function push_site(options: PushOptions): Promise<string[]> {
 		const duplicates = await find_duplicate_site_ids(siblings)
 		const mine = [...duplicates].filter(([, dirs]) => dirs.includes(root_dir))
 		if (mine.length > 0) {
-			console.error(describe_duplicate_site_ids(new Map(mine), path.dirname(parent)))
-			process.exitCode = 1
-			return [path.basename(root_dir)]
+			throw new Error(describe_duplicate_site_ids(new Map(mine), path.dirname(parent)))
 		}
 	}
 
@@ -163,9 +239,13 @@ export async function push_site(options: PushOptions): Promise<string[]> {
 		await push_single_site(root_dir, effective_options, spinner)
 		return []
 	} catch (error) {
+		const result = push_result(options, path.basename(root_dir))
+		if (result.push.state !== 'succeeded' && result.push.state !== 'unknown') result.push = { state: 'failed', error: error instanceof Error ? error.message : String(error), error_code: 'push_failed' }
+		result.push.error = error instanceof Error ? error.message : String(error)
 		spinner.fail(`Push failed: ${error instanceof Error ? error.message : error}`)
 		if (is_auth_error(error)) print_auth_hint()
-		process.exit(1)
+		process.exitCode = 1
+		return [path.basename(root_dir)]
 	}
 }
 
@@ -186,9 +266,7 @@ async function print_push_dry_run(root_dir: string, has_site_yaml: boolean, has_
 	console.log('')
 
 	if (!has_site_yaml && !has_server_yaml) {
-		console.log(chalk.red(`  No ${SITE_CONFIG_FILE} or ${path.basename(get_server_config_path(root_dir))} found in ${root_dir}.`))
-		console.log('')
-		return
+		throw new Error(`No ${SITE_CONFIG_FILE} or ${path.basename(get_server_config_path(root_dir))} found in ${root_dir}.`)
 	}
 
 	const sites: { dir: string; config: ReturnType<typeof Object> | null; label: string }[] = []
@@ -223,7 +301,16 @@ async function print_push_dry_run(root_dir: string, has_site_yaml: boolean, has_
 		library_present = await path_exists(path.join(root_dir, 'library'))
 	}
 
-	const server_raw = options.server || inferred_server
+	const included = options.only ? sites.filter(site => path.basename(site.dir) === options.only) : sites
+	if (options.only && !included.length) throw new Error(`No site folder named "${options.only}" under sites/.`)
+	for (const site of included) {
+		const raw = options.server || site.config?.server || options.workspaceServer || inferred_server
+		const result = push_result(options, path.basename(site.dir))
+		result.site_id = options.site || site.config?.site_id
+		if (raw) result.server = normalize_server_url(raw)
+	}
+	if (library_present && !options.only) push_result(options, 'library')
+	const server_raw = options.server || options.workspaceServer || inferred_server
 	const server = server_raw ? normalize_server_url(server_raw) : undefined
 
 	console.log(`  Target server: ${chalk.cyan(server || '(not set — pass --server or set in site.yaml)')}`)
@@ -232,11 +319,11 @@ async function print_push_dry_run(root_dir: string, has_site_yaml: boolean, has_
 	if (sites.length === 0) {
 		console.log(chalk.yellow('    (no sites found)'))
 	} else {
-		for (const site of sites) {
+		for (const site of included) {
 			console.log(`    ${chalk.green('+')} site: ${site.label}  ${chalk.dim(`(${path.basename(site.dir)})`)}`)
 		}
 	}
-	if (library_present) {
+	if (library_present && !options.only) {
 		console.log(`    ${chalk.green('+')} library/`)
 	}
 	console.log('')
@@ -260,7 +347,7 @@ async function print_push_dry_run(root_dir: string, has_site_yaml: boolean, has_
 
 async function site_target(site_dir: string, options: PushOptions): Promise<PushTarget> {
 	const config = await read_site_config(site_dir)
-	const server_raw = options.server || config.server
+	const server_raw = options.server || config.server || options.workspaceServer
 	if (!server_raw) throw new Error(`Server URL required for ${path.basename(site_dir)}.`)
 	const server = normalize_server_url(server_raw)
 	const target = options.site || config.site_id
@@ -283,26 +370,27 @@ async function push_server(root_dir: string, options: PushOptions): Promise<stri
 	site_dirs.sort()
 	const duplicate_ids = await find_duplicate_site_ids(site_dirs)
 	if (duplicate_ids.size > 0) {
-		console.error(describe_duplicate_site_ids(duplicate_ids, root_dir))
-		return [...duplicate_ids.values()].flat().map(dir => path.basename(dir))
+		throw new Error(describe_duplicate_site_ids(duplicate_ids, root_dir))
 	}
 	const selected = options.only ? site_dirs.filter(dir => path.basename(dir) === options.only) : site_dirs
 	if (!selected.length) {
-		console.error(options.only ? `No site folder named "${options.only}" under sites/.` : 'No site folders found in this server directory.')
-		return [options.only || 'sites']
+		throw new Error(options.only ? `No site folder named "${options.only}" under sites/.` : 'No site folders found in this server directory.')
 	}
 	let plans: PushPlan[]
 	try {
+		if (options.site && selected.length !== 1) throw new Error('--site requires a single site directory.')
 		const targets = await Promise.all(selected.map(dir => site_target(dir, options)))
 		if (!options.only && await path_exists(path.join(root_dir, 'library'))) {
-			const server = options.server ? normalize_server_url(options.server) : targets[0].server
+			const server = options.server || options.workspaceServer ? normalize_server_url((options.server || options.workspaceServer)!) : targets[0].server
 			targets.push({ dir: root_dir, server, target: 'library', token: options.token || await get_auth_token(server), label: 'library' })
 		}
 		plans = await prepare_push(targets, options)
 	} catch (error) {
 		console.error(error instanceof Error ? error.message : error)
+		for (const dir of selected) push_result(options, path.basename(dir)).push = { state: 'not_attempted', error: error instanceof Error ? error.message : String(error), error_code: 'push_preflight_failed' }
 		return selected.map(dir => path.basename(dir))
 	}
+	for (const plan of plans) push_result(options, plan.label, plan)
 	const completed: string[] = []
 	for (let index = 0; index < plans.length; index++) {
 		const plan = plans[index]
@@ -314,8 +402,12 @@ async function push_server(root_dir: string, options: PushOptions): Promise<stri
 			} else {
 				await push_single_site(plan.dir, options, spinner, plan)
 			}
+			if (options.preview) push_result(options, plan.label, plan).push.state = 'previewed'
 			completed.push(plan.label)
 		} catch (error) {
+			const result = push_result(options, plan.label, plan)
+			if (result.push.state !== 'succeeded' && result.push.state !== 'unknown') result.push = { state: 'failed', error: error instanceof Error ? error.message : String(error), error_code: 'push_failed' }
+			result.push.error = error instanceof Error ? error.message : String(error)
 			spinner.fail(`${plan.label}: ${error instanceof Error ? error.message : error}`)
 			if (is_auth_error(error)) print_auth_hint()
 			console.log(`Completed: ${completed.join(', ') || 'none'}`)
@@ -332,6 +424,7 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 	spinner.stop()
 	const plan = prepared || (await prepare_push([await site_target(site_dir, options)], options))[0]
 	spinner.start()
+	const outcome = push_result(options, plan.label, plan)
 	let config: SiteConfig | null = null
 	try {
 		config = await read_site_config(site_dir)
@@ -354,9 +447,11 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 		if (options.preview) {
 			throw new Error('Authentication required for --preview. Run `primo login` first.')
 		}
+		outcome.push = { state: 'unknown', error_code: 'push_outcome_unknown' }
 		spinner.text = 'No auth token — attempting bootstrap...'
 		const bootstrap_result = await try_bootstrap_site(server, undefined, zip_buffer, config, site_id, group_name, plan)
 		if (bootstrap_result.ok) {
+			outcome.push = { state: 'succeeded', revision: bootstrap_result.revision }
 			await finish_push(plan, bootstrap_result)
 			spinner.succeed(`Bootstrapped ${config?.name || path.basename(site_dir)}`)
 			console.log('')
@@ -367,6 +462,7 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 			await apply_upload_writeback(site_dir, await root_dir_for(site_dir), bootstrap_result.created_ids)
 			return
 		}
+		outcome.push = { state: 'failed', error_code: 'push_failed' }
 		throw new Error(bootstrap_result.error)
 	}
 
@@ -381,6 +477,7 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 	if (group_name) form_data.append('group_name', group_name)
 	append_push_guard(form_data, plan)
 
+	if (!options.preview) outcome.push = { state: 'unknown', error_code: 'push_outcome_unknown' }
 	const response = await fetch(endpoint, {
 		method: 'POST',
 		headers: token ? { 'Authorization': `Bearer ${token}` } : {},
@@ -389,6 +486,7 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 
 
 	if (!response.ok) {
+		outcome.push = { state: 'failed', error_code: 'push_failed' }
 		throw new Error(await response_error(response))
 	}
 
@@ -396,12 +494,14 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 	const label = config?.name || path.basename(site_dir)
 
 	if (options.preview) {
+		outcome.push = { state: 'previewed' }
 		spinner.succeed(`Preview: ${label}`)
 		console.log('')
 		print_diff(result.diff)
 		console.log('')
 		console.log(chalk.dim('  Run without --preview to apply these changes'))
 	} else {
+		outcome.push = { state: 'succeeded', revision: result.revision }
 		await finish_push(plan, result)
 		spinner.succeed(`Pushed ${label}`)
 		console.log('')
@@ -409,11 +509,6 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 		// Keep source files portable; repair legacy bare upload IDs when the
 		// local manifest identifies their files.
 		await apply_upload_writeback(site_dir, await root_dir_for(site_dir), result.created_ids)
-		// NOTE: push intentionally does NOT republish the served site. It syncs
-		// content into the CMS; regenerating the published output stays a
-		// separate, deliberate step (the editor's Publish action / the
-		// /api/primo/generate endpoint), so pushing content and choosing when it
-		// goes live remain decoupled.
 	}
 }
 
@@ -486,6 +581,7 @@ async function push_library_dir(root_dir: string, options: PushOptions, spinner:
 	form_data.append('file', new Blob([zip_buffer]), 'library.zip')
 	append_push_guard(form_data, plan)
 
+	push_result(options, plan.label, plan).push = { state: 'unknown', error_code: 'push_outcome_unknown' }
 	const response = await fetch(`${server}/api/primo/import-library`, {
 		method: 'POST',
 		headers: token ? { 'Authorization': `Bearer ${token}` } : {},
@@ -493,13 +589,16 @@ async function push_library_dir(root_dir: string, options: PushOptions, spinner:
 	})
 
 	if (response.status === 404) {
+		push_result(options, plan.label, plan).push = { state: 'failed', error_code: 'push_failed' }
 		throw new Error('Library push endpoint disappeared after preflight; no fallback attempted.')
 	}
 	if (!response.ok) {
+		push_result(options, plan.label, plan).push = { state: 'failed', error_code: 'push_failed' }
 		throw new Error(await response_error(response))
 	}
 
 	const result = await response.json() as { summary?: { groups: number; blocks: number }; revision?: string; backup?: string }
+	push_result(options, plan.label, plan).push = { state: 'succeeded', revision: result.revision }
 	await finish_push(plan, result)
 	spinner.succeed('Pushed library')
 	if (result.summary) {
