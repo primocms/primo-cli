@@ -43,7 +43,7 @@ export async function login(options: LoginOptions) {
 	}
 	console.log('')
 	console.log(chalk.dim('  Token saved to ~/.primo/tokens.json'))
-	console.log(chalk.dim('  You can now use `primo pull` and `primo push` without --token'))
+	console.log(chalk.dim('  You can now use `primo pull`, `primo push`, and `primo publish` without --token'))
 }
 
 // Prompt for credentials (email if not supplied, then password), authenticate

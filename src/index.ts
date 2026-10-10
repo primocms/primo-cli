@@ -10,6 +10,7 @@ import { new_site } from './commands/new.js'
 import { add_site } from './commands/add.js'
 import { pull_site } from './commands/pull.js'
 import { push_site } from './commands/push.js'
+import { publish_site } from './commands/publish.js'
 import { pull_library } from './commands/pull-library.js'
 import { push_library } from './commands/push-library.js'
 import { dev_server } from './commands/dev.js'
@@ -42,7 +43,7 @@ ${chalk.bold('Local development')}
 ${chalk.bold('Going live — pick one')}
   Want others to edit content? .................. ${chalk.cyan('primo deploy')}
   Just hosting a static blog? ................... ${chalk.cyan('primo build')}
-  Already have a hosted Primo server? ........... ${chalk.cyan('primo push')}
+  Already have a hosted Primo server? ........... ${chalk.cyan('primo push --publish')}
 
 ${chalk.bold('Working with an agent')}
   Give your editor Primo MCP tools .............. ${chalk.cyan('primo mcp install')}
@@ -114,13 +115,13 @@ ${chalk.bold('Workspace layout uploaded as one unit')}
 
 ${chalk.bold('See also')}
   primo build   Export a single site as static files
-  primo push    Sync local changes to an existing hosted Primo server
+  primo push    Save local changes as hosted drafts; --publish also publishes them
 `)
 	.action(deploy)
 
 program
 	.command('push [server]')
-	.description('Sync local changes to an existing hosted Primo server')
+	.description('Save local changes to the hosted draft; use --publish to make them public')
 	.option('-s, --server <url>', 'Server URL')
 	.option('--site <id>', 'Site ID')
 	.option('--only <slug>', 'Push only the named site folder under sites/ (skips library)')
@@ -128,7 +129,9 @@ program
 	.option('-t, --token <token>', 'Auth token')
 	.option('--force', 'Overwrite server changes after confirmation, saving a backup first')
 	.option('--yes', 'Confirm --force without an interactive prompt')
-	.option('--preview', 'Preview only')
+	.option('--publish', 'Publish the hosted sites after all selected pushes succeed')
+	.option('--json', 'Machine-readable push and publication results')
+	.option('--preview', 'Preview changes without applying or publishing')
 	.option('--dry-run', 'Show what would be pushed without sending requests')
 	.addHelpText('after', `
 ${chalk.bold('Requires an existing hosted Primo server.')}
@@ -138,8 +141,21 @@ to authenticate this machine before pushing.
 ${chalk.bold('See also')}
   primo deploy  Stand up a new hosted Primo server
   primo login   Authenticate with a hosted Primo server
+  primo publish Publish the hosted draft without uploading local files
 `)
 	.action(async (server, options) => { await push_site({ ...options, server: server || options.server }) })
+
+program
+	.command('publish [server]')
+	.description('Publish the current hosted draft without uploading local files')
+	.option('-s, --server <url>', 'Hosted server URL')
+	.option('--site <id>', 'Site ID (single site only)')
+	.option('--only <slug>', 'Publish only the named site folder under sites/')
+	.option('-d, --dir <dir>', 'Site or workspace directory', '.')
+	.option('-t, --token <token>', 'Auth token')
+	.option('--json', 'Machine-readable publication results')
+	.addHelpText('after', '\nPublishes the hosted draft, including CMS edits. Unsaved local edits are not uploaded.\nUse `primo push --publish` to upload local files and then publish.\n`primo deploy` provisions hosting; `primo preview` rebuilds a local dev preview.\n')
+	.action(async (server, options) => { await publish_site({ ...options, server: server || options.server }) })
 
 program
 	.command('pull [server] [dir]')
@@ -205,7 +221,12 @@ ${chalk.bold('See also')}
 
 program
 	.command('status')
-	.description('Report the workspace: server state, sites, groups, and last sync')
+	.description('Report local workspace state, or hosted draft/publication state with --hosted')
+	.option('--hosted', 'Read authenticated publication status from hosted servers')
+	.option('-s, --server <url>', 'Hosted server URL (implies --hosted)')
+	.option('--site <id>', 'Site ID (single site only)')
+	.option('--only <slug>', 'Select one hosted site folder')
+	.option('-t, --token <token>', 'Hosted auth token')
 	.option('-d, --dir <dir>', 'Workspace directory', '.')
 	.option('--json', 'Machine-readable output')
 	.action((options) => status(options))
@@ -265,20 +286,13 @@ mcp
 	.option('--json', 'Machine-readable result')
 	.action(mcp_print)
 
-// Custom unknown-command handler. commander's default suggestion engine is
-// based on Levenshtein distance and won't reach across renames like
-// publish→deploy, so handle the common renamed/unknown cases explicitly.
+// Give helpful guidance for common command guesses that commander cannot infer.
 program.on('command:*', (operands: string[]) => {
 	const cmd = operands[0]
 	console.error('')
 	console.error(chalk.red(`Unknown command: ${cmd}`))
 	console.error('')
-	if (cmd === 'publish') {
-		console.error(`  ${chalk.cyan('primo publish')} has been replaced by ${chalk.cyan('primo deploy')}.`)
-		console.error(`  ${chalk.dim('It now deploys your whole workspace (all sites + library) as one unit.')}`)
-		console.error('')
-		console.error(`  Run: ${chalk.cyan('primo deploy --help')}`)
-	} else if (cmd === 'register' || cmd === 'import') {
+	if (cmd === 'register' || cmd === 'import') {
 		// Likely guesses for site registration. Deliberately not aliases:
 		// one canonical name keeps docs/transcripts consistent, and leaves
 		// `register` free for a future account/signup meaning.

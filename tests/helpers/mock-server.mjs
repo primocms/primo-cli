@@ -10,12 +10,14 @@ import archiver from 'archiver'
  * 404'd against every real server; nothing in this repo would have noticed.
  * Recording requests here is what makes that class of break visible.
  */
-export async function start_mock_server({ sites = [], export_files = {}, site_groups = [], revisions = {}, on_request, unsupported_guard = false, legacy_export = false } = {}) {
+export async function start_mock_server({ sites = [], export_files = {}, site_groups = [], revisions = {}, on_request, unsupported_guard = false, legacy_export = false, publication = false } = {}) {
 	const requests = []
 	const initial_revision = 'v1:' + 'a'.repeat(64)
 	for (const site of sites) revisions[site.id] ??= initial_revision
 	revisions.library ??= initial_revision
 	let sequence = 1
+	const publications = {}
+	let attempt_sequence = 0
 
 	const server = http.createServer(async (req, res) => {
 		const url = new URL(req.url, 'http://127.0.0.1')
@@ -29,12 +31,44 @@ export async function start_mock_server({ sites = [], export_files = {}, site_gr
 			body_length: body.length, body
 		})
 
-		if (on_request) await on_request({ req, url, body, revisions, requests })
+		if (on_request && await on_request({ req, res, url, body, revisions, requests, publications })) return
 		const state_match = url.pathname.match(/^\/api\/primo\/push-state\/([^/]+)$/)
 		if (state_match && !unsupported_guard) {
 			const target = state_match[1]
 			return json(res, 200, { protocol: 1, exists: revisions[target] !== 'absent', revision: revisions[target] || 'absent' })
 		}
+  const publication_match = url.pathname.match(/^\/api\/primo\/publication\/([^/]+)(?:\/([^/]+)\/(activate|fail))?$/)
+  if (publication && publication_match) {
+   const [, id, attempt_id, action] = publication_match
+   const site = sites.find(site => site.id === id)
+   if (!site) return json(res, 404, {message:'no such site'})
+   const state = publications[id] ??= {protocol:1, site_id:id, state:'never_published', draft_revision:revisions[id],
+    published_revision:'', unpublished_changes:true, published_at:'', site_url:site.host ? 'https://' + site.host : null,
+    attempt:{id:'', revision:'', state:'', started_at:'', finished_at:'', error:''}}
+   state.draft_revision = revisions[id]
+   if (req.method === 'GET') {
+    state.unpublished_changes = state.published_revision !== revisions[id]
+    if (state.attempt.state === 'succeeded') state.state = state.unpublished_changes ? 'behind' : 'current'
+    return json(res,200,state)
+   }
+   const value = JSON.parse(body)
+   if (!action) {
+    if (value.expected_revision !== revisions[id]) return json(res,409,{message:'draft changed'})
+    state.attempt = {id:(++attempt_sequence).toString().padStart(24,'a'), revision:revisions[id], state:'publishing', started_at:new Date().toISOString(),finished_at:'',error:''}
+    state.state = 'publishing'
+    return json(res,200,{attempt_id:state.attempt.id,revision:state.attempt.revision})
+   }
+   if (state.attempt.id !== attempt_id) return json(res,409,{message:'attempt changed'})
+   if (action === 'fail') {
+    state.attempt.state = 'failed'; state.attempt.error = value.error; state.state = 'failed'
+   } else {
+    state.attempt.state = 'succeeded'; state.published_revision = state.attempt.revision
+    state.state = 'current'; state.published_at = new Date().toISOString()
+    return json(res,200,{protocol:1,site_id:id,attempt_id,revision:state.published_revision,state:'succeeded',site_url:state.site_url})
+   }
+   return json(res,200,state)
+  }
+
 		if (url.pathname.includes('/api/primo/push-backups/')) {
 			const zip = await make_zip(export_files)
 			res.writeHead(200, { 'Content-Type': 'application/zip' })
@@ -94,6 +128,7 @@ export async function start_mock_server({ sites = [], export_files = {}, site_gr
 			})
 		}
 
+		if (publication && url.pathname.startsWith('/api/collections/') && req.method === 'GET') return json(res,200,{items:[],totalPages:1})
 		return json(res, 404, { message: `unhandled ${req.method} ${url.pathname}` })
 	})
 

@@ -1,3 +1,5 @@
+import { hosted_targets, type HostedOptions } from '../utils/hosted-targets.js'
+import { read_publication_status } from '../utils/publication.js'
 import { resolve_dev_server } from '../utils/dev-runtime.js'
 import fs from 'fs/promises'
 import path from 'path'
@@ -5,9 +7,8 @@ import chalk from 'chalk'
 import { read_site_config, SITE_CONFIG_FILE } from '../utils/site-config.js'
 import { read_server_config, SERVER_CONFIG_FILE } from '../utils/server-config.js'
 
-interface StatusOptions {
-	dir: string
-	json?: boolean
+interface StatusOptions extends HostedOptions {
+	hosted?: boolean
 }
 
 interface SiteSync {
@@ -36,6 +37,7 @@ interface SiteStatus {
  * `sites/<slug>/site.yaml`, and each site's `.primo/sync_status.json`.
  */
 export async function status(options: StatusOptions) {
+	if (options.hosted || options.server) return hosted_status(options)
 	const base_dir = path.resolve(options.dir)
 	const as_json = !!options.json
 
@@ -207,4 +209,42 @@ async function read_live_cms(api_url: string): Promise<{ sites: CmsSite[]; group
 	} catch {
 		return null
 	}
+}
+
+async function hosted_status(options: StatusOptions) {
+	const results: object[] = []
+	let ok = true
+	let error: string | undefined
+	try {
+		for (const target of await hosted_targets(options)) {
+			try {
+				const publication = await read_publication_status(target)
+				results.push({ target: target.label, server: target.server, site_id: target.target, publication })
+				if (!options.json) {
+					console.log(`${target.label}: ${publication.state}`)
+					console.log(`  Draft: ${publication.draft_revision}`)
+					console.log(`  Published: ${publication.published_revision || '(revision unknown)'}`)
+					if (publication.published_at) console.log(`  Last published: ${publication.published_at}`)
+					if (publication.site_url) console.log(`  ${publication.site_url}`)
+					if (publication.attempt.error) console.log(`  Last attempt: ${publication.attempt.error}`)
+				}
+			} catch (cause) {
+				ok = false
+				const message = cause instanceof Error ? cause.message : String(cause)
+				results.push({
+					target: target.label,
+					server: target.server,
+					site_id: target.target,
+					publication: { state: 'unknown', error: message, error_code: 'publication_status_unavailable' }
+				})
+				if (!options.json) console.error(`${target.label}: unknown — ${message}`)
+			}
+		}
+	} catch (cause) {
+		ok = false
+		error = cause instanceof Error ? cause.message : String(cause)
+		if (!options.json) console.error(error)
+	}
+	if (!ok) process.exitCode = 1
+	if (options.json) console.log(JSON.stringify({ ok, results, ...(error ? { error } : {}) }, null, 2))
 }
