@@ -90,7 +90,7 @@ program
 	.option('-d, --dir <dir>', 'Site directory', '.')
 	.option('-p, --port <port>', 'Local port (server.yaml, otherwise 3000)')
 	.option('-f, --force', 'Kill existing processes on the port')
-	.option('--author <mode>', 'Who is authoring this session: "files" (push only; CMS UI is read-only — default), "cms" (CMS edits write to files; file edits revert), "both" (bidirectional; CMS edits often lost on conflict — beta)', 'files')
+	.option('--author <mode>', 'Who is authoring this session: "files" (push only; CMS UI is read-only — default), "cms" (CMS edits write to files; file edits revert), "both" (experimental bidirectional sync; conflicting edits can overwrite local files or CMS changes)', 'files')
 	.action(dev_server)
 
 program

@@ -51,8 +51,10 @@ primo dev                    # Start in current directory
 primo dev -p 8080            # Use custom port
 primo dev --author files     # Push file edits to the CMS; CMS UI is read-only (default)
 primo dev --author cms       # CMS edits write to files; file edits revert
-primo dev --author both      # Bidirectional sync (beta; CMS edits often lost on conflict)
+primo dev --author both      # Experimental bidirectional sync; conflicting edits can be overwritten
 ```
+
+`--author both` is experimental: conflicting edits can overwrite local files or CMS changes. Commit or back up your workspace before using it. Prefer `--author files` or `--author cms`, using one authoring mode at a time. In CMS mode, local files mirror the CMS, so make file edits in files mode instead.
 
 The port comes from `--port`, then `port:` in the workspace's `server.yaml`, then 3000. Primo also reserves the next port for reload. If the default pair is occupied, it automatically chooses the next available pair and prints the URL. If you explicitly set a port, Primo asks before using another pair for the session; noninteractive runs fail with instructions to pass another `--port`.
 

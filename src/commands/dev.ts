@@ -835,6 +835,10 @@ export async function dev_server(options: DevOptions) {
 
 	try {
 		const sync_policy = resolve_sync_policy(options)
+		if (sync_policy.mode === 'both') {
+			console.log(chalk.yellow('  ⚠ --author both is experimental. Conflicting edits can overwrite local files or CMS changes.'))
+			console.log(chalk.yellow('    Commit or back up your workspace first. Prefer --author files or --author cms, using one authoring mode at a time.'))
+		}
 		site_sync_baselines = new Map()
 		const base_dir = path.resolve(options.dir)
 		await prune_old_trash(base_dir)
