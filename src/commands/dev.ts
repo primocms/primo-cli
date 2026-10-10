@@ -3133,7 +3133,7 @@ async function create_site_zip(dir: string, excluded_paths: Set<string> = new Se
 	})
 }
 
-async function sync_from_cms(site_dir: string, api_url: string, config: SiteConfig, server_config: ServerConfig, workspace_dir: string, sync_policy: SyncPolicy = { mode: 'both' }): Promise<void> {
+export async function sync_from_cms(site_dir: string, api_url: string, config: SiteConfig, server_config: ServerConfig, workspace_dir: string, sync_policy: SyncPolicy = { mode: 'both' }): Promise<void> {
 	const response = await fetch_with_timeout(`${api_url}/api/primo/export/${config.site_id}`, {}, 15000)
 	if (!response.ok) return
 
@@ -3211,20 +3211,10 @@ async function sync_from_cms(site_dir: string, api_url: string, config: SiteConf
 
 	// Clean up temp directory
 	await fs.rm(temp_dir, { recursive: true, force: true })
-	// Baseline reflects the on-disk state we just produced. For paths we
-	// skipped (files-win conflict resolution), the local snapshot's value
-	// is correct — using remote_snapshot would re-trigger the conflict on
-	// the next cycle since the file still differs from the CMS state.
-	const post_baseline: ContentSnapshot = new Map(remote_snapshot)
-	for (const skipped of skip_paths) {
-		const local_value = local_snapshot.get(skipped)
-		if (local_value === undefined) {
-			post_baseline.delete(skipped)
-		} else {
-			post_baseline.set(skipped, local_value)
-		}
-	}
-	site_sync_baselines.set(site_key, post_baseline)
+	// A preserved local edit is still unsynced. Keep the baseline at the
+	// CMS snapshot so the conflict stays protected on every pull until the
+	// CMS and local file agree. Warning deduplication happens below.
+	site_sync_baselines.set(site_key, new Map(remote_snapshot))
 
 	if (conflict_paths.length > 0) {
 		const conflict_signature = conflict_paths.join('|')
