@@ -1,6 +1,6 @@
 {
   "name": "primo-cli",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Local development CLI for Primo",
   "type": "module",
   "bin": {
@@ -49,7 +49,7 @@
     "ora": "^8.0.1",
     "prettier": "^3.0.0",
     "prettier-plugin-svelte": "^3.0.0",
-    "primo-mcp": "^0.1.8",
+    "primo-mcp": "^0.1.10",
     "svelte": "^5.55.0"
   },
   "devDependencies": {
