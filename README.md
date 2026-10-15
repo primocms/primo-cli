@@ -353,3 +353,7 @@ Full documentation: [docs.primo.build](https://docs.primo.build)
 
 - Node.js 18+
 - For `primo deploy`: Railway CLI or Fly.io CLI
+
+## Testing
+
+Run `npm ci`, `npx playwright install chromium`, then `npm test`. The suite builds the CLI and verifies its generated pages in Chromium, including preservation of server-rendered content during hydration. CI installs Chromium and its system dependencies before running the suite.

@@ -38,5 +38,7 @@ jobs:
 
       - run: npm ci
 
+      - run: npx playwright install --with-deps chromium
+
       # `npm test` builds first, so this also fails on a TypeScript error.
       - run: npm test

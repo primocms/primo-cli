@@ -430,11 +430,11 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 			}
 		}
 
-		// Create a page component that renders all sections and the head. The
+		// Create a component for the page head; sections get separate roots. The
 		// head rides through <svelte:head> so its Svelte syntax ({expression},
 		// {@html}, {#if}) is actually evaluated — pasting the fragment into the
 		// output verbatim leaked raw template syntax into deployed pages.
-		const page_component = generate_page_component(section_slots, combined_head_content, head_keys)
+		const page_component = generate_page_component([], combined_head_content, head_keys)
 		const page_component_path = path.join(temp_dir, `page_${page_build_id}.svelte`)
 		await fs.writeFile(page_component_path, page_component)
 
@@ -456,7 +456,9 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 
 		// Write compiled JS and bundle with esbuild
 		const compiled_path = path.join(temp_dir, `page_${page_build_id}.js`)
-		await fs.writeFile(compiled_path, page_compiled.js.code)
+		await fs.writeFile(compiled_path, page_compiled.js.code + '\n' + sections.map((section, i) =>
+			`export { default as Section_${i} } from './${section.block}.compiled.js'`
+		).join('\n'))
 
 		// Copy all block compiled JS files to temp for bundling
 		for (const section of sections) {
@@ -485,19 +487,28 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 
 		// Import and render
 		const bundle_url = `file://${bundle_path}`
-		const { default: PageComponent } = await import(bundle_url)
+		const { default: PageComponent, ...components } = await import(bundle_url)
 
 		// Import render from svelte/server
 		const { render } = await import('svelte/server')
 
-		// Build props for all sections + the head fragment's field data
-		const props: Record<string, unknown> = {}
-		sections.forEach((section, i) => {
-			props[`section_${i}_props`] = section.content || {}
-		})
-		props.head_props = head_data
+		// Supply the head fragment's field data.
+		const props = { head_props: head_data }
 
-		const rendered = render(PageComponent, { props })
+		// Match the client's hydrate() boundary: each section gets its own render().
+		const page_head = render(PageComponent, { props })
+		const rendered = { head: page_head.head || '', body: '' }
+		const zones = new Map<string, string[]>()
+		for (const [i, slot] of section_slots.entries()) {
+			const section = render(components[`Section_${i}`], { props: slot.section.content || {} })
+			rendered.head += section.head || ''
+			const zone = zones.get(slot.zone) || []
+			zone.push(`<div data-section="${slot.dom_id}" id="section-${slot.dom_id}" data-symbol="${safe_temp_id(slot.section.block)}">${section.body}</div>`)
+			zones.set(slot.zone, zone)
+		}
+		rendered.body = (['header', 'main', 'footer'] as const)
+			.filter(zone => zone === 'main' || zones.has(zone))
+			.map(zone => `<${zone}>\n${(zones.get(zone) || []).join('\n')}\n</${zone}>`).join('\n')
 
 		// Interactive blocks get a client bundle and hydrate in place, as on
 		// server publish. Blocks without a script ship no JavaScript.

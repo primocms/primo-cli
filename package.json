@@ -53,6 +53,7 @@
     "svelte": "^5.55.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/archiver": "^6.0.2",
     "@types/js-yaml": "^4.0.9",
     "@types/markdown-it": "^14.2.0",
