@@ -508,7 +508,7 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 		}
 		rendered.body = (['header', 'main', 'footer'] as const)
 			.filter(zone => zone === 'main' || zones.has(zone))
-			.map(zone => `<${zone}>\n${(zones.get(zone) || []).join('\n')}\n</${zone}>`).join('\n')
+			.map(zone => `<${zone}>${(zones.get(zone) || []).join('')}</${zone}>`).join('')
 
 		// Interactive blocks get a client bundle and hydrate in place, as on
 		// server publish. Blocks without a script ship no JavaScript.
