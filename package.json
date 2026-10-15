@@ -4,7 +4,7 @@
   "description": "Local development CLI for Primo",
   "type": "module",
   "bin": {
-    "primo": "./dist/index.js"
+    "primo": "./dist/bootstrap.js"
   },
   "scripts": {
     "build": "tsc",
@@ -56,6 +56,6 @@
     "scripts"
   ],
   "engines": {
-    "node": ">=18.0.0"
+    "node": "^22.13.0 || >=24.0.0"
   }
 }

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { spawn } from 'child_process'
 import fs from 'fs/promises'
 import os from 'os'
@@ -5,10 +6,11 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
-export const CLI_ENTRY = path.join(REPO_ROOT, 'dist/index.js')
+const package_json = JSON.parse(readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'))
+export const CLI_ENTRY = path.join(REPO_ROOT, package_json.bin.primo)
 
 /**
- * Runs the BUILT CLI the way a user does — `node dist/index.js ...` — rather
+ * Runs the BUILT CLI the way a user does — `node <package bin> ...` — rather
  * than importing src/. Testing the build output is the point: it's what npm
  * publishes, and it's what has shipped broken before.
  *

@@ -293,5 +293,5 @@ Full documentation: [docs.primo.build](https://docs.primo.build)
 
 ## Requirements
 
-- Node.js 18+
+- Node.js 22.13+ (22.x) or 24+
 - For `primo deploy`: Railway CLI or Fly.io CLI
