@@ -22,6 +22,9 @@ permissions:
 
 jobs:
   test:
+    strategy:
+      matrix:
+        node: [22.13.0, 24]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -33,10 +36,17 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
+      - id: old-node
+        run: echo "path=$(command -v node)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
           cache: npm
 
       - run: npm ci
 
       # `npm test` builds first, so this also fails on a TypeScript error.
       - run: npm test
+        env:
+          PRIMO_TEST_OLD_NODE: ${{ steps.old-node.outputs.path }}
