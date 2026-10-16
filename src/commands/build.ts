@@ -5,7 +5,7 @@ import ora from 'ora'
 import { load as load_yaml } from 'js-yaml'
 import { compile } from 'svelte/compiler'
 import * as esbuild from 'esbuild'
-import { fileURLToPath } from 'url'
+import { createRequire } from 'node:module'
 import { read_site_config, type SiteConfig, SITE_CONFIG_FILE } from '../utils/site-config.js'
 import { validate_head_svelte_content } from '../utils/head-svelte.js'
 import { read_upload_paths } from '../utils/portable-uploads.js'
@@ -430,11 +430,11 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 			}
 		}
 
-		// Create a page component that renders all sections and the head. The
+		// Create a component for the page head; sections get separate roots. The
 		// head rides through <svelte:head> so its Svelte syntax ({expression},
 		// {@html}, {#if}) is actually evaluated — pasting the fragment into the
 		// output verbatim leaked raw template syntax into deployed pages.
-		const page_component = generate_page_component(section_slots, combined_head_content, head_keys)
+		const page_component = generate_page_component([], combined_head_content, head_keys)
 		const page_component_path = path.join(temp_dir, `page_${page_build_id}.svelte`)
 		await fs.writeFile(page_component_path, page_component)
 
@@ -456,7 +456,9 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 
 		// Write compiled JS and bundle with esbuild
 		const compiled_path = path.join(temp_dir, `page_${page_build_id}.js`)
-		await fs.writeFile(compiled_path, page_compiled.js.code)
+		await fs.writeFile(compiled_path, page_compiled.js.code + '\n' + sections.map((section, i) =>
+			`export { default as Section_${i} } from './${section.block}.compiled.js'`
+		).join('\n'))
 
 		// Copy all block compiled JS files to temp for bundling
 		for (const section of sections) {
@@ -485,19 +487,28 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 
 		// Import and render
 		const bundle_url = `file://${bundle_path}`
-		const { default: PageComponent } = await import(bundle_url)
+		const { default: PageComponent, ...components } = await import(bundle_url)
 
 		// Import render from svelte/server
 		const { render } = await import('svelte/server')
 
-		// Build props for all sections + the head fragment's field data
-		const props: Record<string, unknown> = {}
-		sections.forEach((section, i) => {
-			props[`section_${i}_props`] = section.content || {}
-		})
-		props.head_props = head_data
+		// Supply the head fragment's field data.
+		const props = { head_props: head_data }
 
-		const rendered = render(PageComponent, { props })
+		// Match the client's hydrate() boundary: each section gets its own render().
+		const page_head = render(PageComponent, { props })
+		const rendered = { head: page_head.head || '', body: '' }
+		const zones = new Map<string, string[]>()
+		for (const [i, slot] of section_slots.entries()) {
+			const section = render(components[`Section_${i}`], { props: slot.section.content || {} })
+			rendered.head += section.head || ''
+			const zone = zones.get(slot.zone) || []
+			zone.push(`<div data-section="${slot.dom_id}" id="section-${slot.dom_id}" data-symbol="${safe_temp_id(slot.section.block)}">${section.body}</div>`)
+			zones.set(slot.zone, zone)
+		}
+		rendered.body = (['header', 'main', 'footer'] as const)
+			.filter(zone => zone === 'main' || zones.has(zone))
+			.map(zone => `<${zone}>${(zones.get(zone) || []).join('')}</${zone}>`).join('')
 
 		// Interactive blocks get a client bundle and hydrate in place, as on
 		// server publish. Blocks without a script ship no JavaScript.
@@ -1293,24 +1304,7 @@ function svelte_resolver(svelte_base: string): esbuild.Plugin {
 }
 
 async function find_svelte_path(): Promise<string> {
-	// Try to find svelte in various locations
-	const possible_paths = [
-		// In primo-cli's node_modules (when npm linked or installed globally)
-		path.join(path.dirname(fileURLToPath(import.meta.url)), '../../node_modules/svelte'),
-		// In the current project's node_modules
-		path.join(process.cwd(), 'node_modules/svelte'),
-		// Try resolving from this file's location
-		path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../node_modules/svelte')
-	]
-
-	for (const p of possible_paths) {
-		try {
-			await fs.access(p)
-			return p
-		} catch {
-			// Continue to next path
-		}
-	}
-
-	throw new Error('Could not find svelte package. Make sure svelte is installed.')
+	// Resolve the same installed dependency used by this module's compiler
+	// imports. npm can hoist it above primo-cli; pnpm can place it elsewhere.
+	return path.dirname(createRequire(import.meta.url).resolve('svelte/package.json'))
 }
