@@ -10,7 +10,7 @@ import { requested_dev_port, select_dev_port, is_port_in_use } from '../utils/de
 import { claim_dev_runtime, read_dev_runtime, runtime_has_live_process, record_cms_process, describe_live_runtime, stop_runtime_processes } from '../utils/dev-runtime.js'
 import { spawn, execFileSync, type ChildProcess } from 'child_process'
 import archiver from 'archiver'
-import extract from 'extract-zip'
+import extract from '../utils/safe-extract.js'
 import { dump as dump_yaml, load as load_yaml } from 'js-yaml'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { ensure_binary, ensure_data_dir } from '../utils/binary.js'
