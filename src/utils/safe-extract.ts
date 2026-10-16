@@ -15,7 +15,7 @@ export default async function extract(archive: string, { dir }: { dir: string })
 			const name = entry.fileName
 			const directory = name.endsWith('/')
 			const parts = (directory ? name.slice(0, -1) : name).split('/')
-			if (parts.some(part => !part || part === '.' || part === '..' || /[\\:\x00-\x1f\x7f]/.test(part) || /[. ]$/.test(part) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part))) {
+			if (parts.some(part => !part || part === '.' || part === '..' || /[<>"\\:|?*\x00-\x1f\x7f]/.test(part) || /[. ]$/.test(part) || /^(con|prn|aux|nul|conin\$|conout\$|com[0-9¹²³]|lpt[0-9¹²³])(?:\.|$)/i.test(part))) {
 				throw new Error(`Unsafe ZIP path: ${name}`)
 			}
 			const kind = (entry.externalFileAttributes >>> 16) & 0xf000
