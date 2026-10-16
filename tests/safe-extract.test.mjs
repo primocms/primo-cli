@@ -30,7 +30,7 @@ test('link then file cannot overwrite a file outside extraction', async t=>{
  finally {console.log('outside sentinel:',await fs.readFile(outside,'utf8'))}
  assert.equal(await fs.readFile(outside,'utf8'),'original');assert.deepEqual(await fs.readdir(x.dir),[])
 })
-for(const name of ['../outside.txt','/absolute.txt','C:/drive.txt','C:\\drive.txt','a/../escape','a//b','a/./b','a/b:stream','a/trailing.','CON.txt','a\u0000b']) {
+for(const name of ['../outside.txt','/absolute.txt','C:/drive.txt','C:\\drive.txt','a/../escape','a//b','a/./b','a/b:stream','a/trailing.','CON.txt','COM¹.txt','CONIN$','a/question?','a/star*','a/pipe|','a/quote"','a/<name>','a\u0000b']) {
  test(`unsafe archive name is rejected before writes: ${JSON.stringify(name)}`,async t=>{
   const x=await setup(t,[{name:'safe.txt',body:'normal'},{name,body:'unsafe'}]);await assert.rejects(extract(x.archive,{dir:x.dir}));assert.deepEqual(await fs.readdir(x.dir),[])
  })
