@@ -5,7 +5,7 @@ import ora from 'ora'
 import { load as load_yaml } from 'js-yaml'
 import { compile } from 'svelte/compiler'
 import * as esbuild from 'esbuild'
-import { fileURLToPath } from 'url'
+import { createRequire } from 'node:module'
 import { read_site_config, type SiteConfig, SITE_CONFIG_FILE } from '../utils/site-config.js'
 import { validate_head_svelte_content } from '../utils/head-svelte.js'
 import { read_upload_paths } from '../utils/portable-uploads.js'
@@ -1304,24 +1304,7 @@ function svelte_resolver(svelte_base: string): esbuild.Plugin {
 }
 
 async function find_svelte_path(): Promise<string> {
-	// Try to find svelte in various locations
-	const possible_paths = [
-		// In primo-cli's node_modules (when npm linked or installed globally)
-		path.join(path.dirname(fileURLToPath(import.meta.url)), '../../node_modules/svelte'),
-		// In the current project's node_modules
-		path.join(process.cwd(), 'node_modules/svelte'),
-		// Try resolving from this file's location
-		path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../node_modules/svelte')
-	]
-
-	for (const p of possible_paths) {
-		try {
-			await fs.access(p)
-			return p
-		} catch {
-			// Continue to next path
-		}
-	}
-
-	throw new Error('Could not find svelte package. Make sure svelte is installed.')
+	// Resolve the same installed dependency used by this module's compiler
+	// imports. npm can hoist it above primo-cli; pnpm can place it elsewhere.
+	return path.dirname(createRequire(import.meta.url).resolve('svelte/package.json'))
 }
