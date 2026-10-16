@@ -39,12 +39,12 @@ export default async function extract(archive: string, { dir }: { dir: string })
 			let parent = root
 			for (const part of directory ? parts : parts.slice(0, -1)) {
 				parent = path.join(parent, part)
-				await fs.mkdir(parent, { mode: 0o700 }).catch(error => { if (error.code !== 'EEXIST') throw error })
+				await fs.mkdir(parent).catch(error => { if (error.code !== 'EEXIST') throw error })
 				await require_directory(parent)
 			}
 			if (!directory) {
 				// Exclusive creation refuses existing files and final-component links.
-				await pipeline(await zip.openReadStreamPromise(entry), createWriteStream(path.join(parent, parts.at(-1)!), { flags: 'wx', mode: 0o600 }))
+				await pipeline(await zip.openReadStreamPromise(entry), createWriteStream(path.join(parent, parts.at(-1)!), { flags: 'wx' }))
 			}
 		}
 	} finally {
