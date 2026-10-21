@@ -206,9 +206,13 @@ library
 
 program
 	.command('login [server]')
-	.description('Login to hosted CMS')
+	.description('Sign in to the hosted CMS through your browser')
 	.option('-s, --server <url>', 'Server URL (defaults to `server:` in server.yaml)')
-	.option('-e, --email <email>', 'Email')
+	.option('-e, --email <email>', 'Email for --password login')
+	.option('--password', 'Use an interactive terminal password prompt (older servers)')
+	.option('--no-browser', 'Print the approval URL without opening a browser')
+	.option('--timeout <seconds>', 'Maximum time to wait for browser approval (1–600)', '300')
+	.option('--reauth', 'Request browser approval even when a saved login is valid')
 	.action((server, options) => login({ ...options, server: server || options.server }))
 
 program

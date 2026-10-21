@@ -496,6 +496,7 @@ Without the MCP server, read \`sites/*/blocks/*/fields.yaml\` and \`sites/*/page
 
 ## Setup
 
+- \`primo login <server>\` — agents may start hosted sign-in through the browser. Keep the command running in a persistent terminal while the user signs in and approves the displayed link/code. Credentials are saved for future pull/push/publish commands. If authorization expires, run login again. Do not ask for passwords in chat or silently use \`--password\`.
 - \`primo dev\` — start the local CMS and dev server. Run from the workspace root. Agents may start it in the background or a persistent terminal. Check \`primo status --json\` or MCP \`get_dev_status\` first and reuse the workspace server. If a process is alive but not ready, inspect the logs and wait. Keep the PID and stop only a server you started; do not use \`--force\` to take over another session.
 - \`primo logs --follow\` — follow CLI messages and CMS stdout/stderr. Logs persist in the workspace \`.primo/dev.log\` and rotate at 5 MiB with one previous file, \`.primo/dev.log.1\`. MCP \`get_dev_logs\` reads recent output without starting a server.
 - \`primo new [name]\` — scaffold a new site under \`sites/\`. In an interactive terminal it then starts the CMS; add \`--skip-dev\` to only create files.

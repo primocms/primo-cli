@@ -222,12 +222,21 @@ Options:
 
 ### `primo login`
 
-Authenticate with a hosted Primo instance.
+Sign in to a hosted Primo instance through your browser. The CLI opens an approval page, waits for you to sign in if needed, then saves the approved session for later commands.
 
 ```bash
 primo login https://cms.example.com
-primo login https://cms.example.com -e user@example.com
+primo login                           # Use server: in server.yaml
+primo login --no-browser              # Print the approval link for an agent or remote session
+primo login --reauth                  # Request new approval even with a saved login
+primo login --password -e user@example.com # Explicit terminal login for older servers
 ```
+
+Check that the displayed code matches the browser page, then select **Allow access**. The CLI receives the browser session's existing account permissions and expiry. Saved tokens are written privately to `~/.primo/tokens.json` and reused by `pull`, `push`, and `publish`. Running `primo login` again verifies and refreshes a valid saved login without opening the browser.
+
+Browser requests expire after five minutes. `--timeout <seconds>` bounds the CLI wait (1–600 seconds; default 300); Ctrl+C cancels waiting. Expired or revoked sessions require browser approval again. Pending requests are held in server memory, so restarting the CMS cancels them. All login requests and polling must reach the same CMS process.
+
+This flow requires the corresponding CMS endpoints and frontend update. Older servers return an upgrade message; the CLI never silently falls back to password prompts. `--password` explicitly enables the previous email/password flow and requires an interactive terminal. Browser login requires HTTPS except on loopback addresses. `primo pull` also starts browser approval when no hosted token is saved.
 
 ### `primo deploy`
 

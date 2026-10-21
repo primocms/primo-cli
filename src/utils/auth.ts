@@ -1,6 +1,7 @@
 import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
+import { randomUUID } from 'node:crypto'
 
 const CONFIG_DIR = path.join(os.homedir(), '.primo')
 const TOKEN_FILE = path.join(CONFIG_DIR, 'tokens.json')
@@ -19,8 +20,11 @@ export async function get_auth_token(server: string): Promise<string | null> {
 	}
 }
 
-export async function save_auth_token(server: string, token: string): Promise<void> {
-	await fs.mkdir(CONFIG_DIR, { recursive: true })
+export async function save_auth_token(
+	server: string,
+	token: string
+): Promise<void> {
+	await fs.mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 })
 
 	let tokens: TokenStore = {}
 	try {
@@ -29,7 +33,16 @@ export async function save_auth_token(server: string, token: string): Promise<vo
 	} catch {}
 
 	tokens[normalize_server(server)] = token
-	await fs.writeFile(TOKEN_FILE, JSON.stringify(tokens, null, 2))
+	const temporary = `${TOKEN_FILE}.${randomUUID()}.tmp`
+	try {
+		await fs.writeFile(temporary, JSON.stringify(tokens, null, 2), {
+			mode: 0o600,
+			flag: 'wx'
+		})
+		await fs.rename(temporary, TOKEN_FILE)
+	} finally {
+		await fs.unlink(temporary).catch(() => {})
+	}
 }
 
 function normalize_server(server: string): string {
