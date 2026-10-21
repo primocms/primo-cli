@@ -1,4 +1,5 @@
 import { stripVTControlCharacters } from 'node:util'
+import { start_dev_logging } from '../utils/dev-logs.js'
 import fs from 'fs/promises'
 import path from 'path'
 import { createHash, randomInt } from 'crypto'
@@ -904,6 +905,8 @@ export async function dev_server(options: DevOptions) {
 			spinner.start()
 		}
 		const runtime = await claim_dev_runtime(base_dir, port)
+		const dev_log = start_dev_logging(base_dir)
+		console.log(chalk.dim(`  Logs: ${dev_log.file} (primo logs --follow)`))
 		const stop_startup_on_interrupt = () => process.exit(130)
 		const stop_startup_on_terminate = () => process.exit(143)
 		process.once('SIGINT', stop_startup_on_interrupt)
@@ -1010,8 +1013,13 @@ export async function dev_server(options: DevOptions) {
 
 		// Capture stderr for errors
 		let stderr_output = ''
+		cms_process.stdout?.on('data', dev_log.capture('stdout'))
+		cms_process.stderr?.on('data', dev_log.capture('stderr'))
 		cms_process.stderr?.on('data', (data) => {
-			stderr_output += data.toString()
+			stderr_output = (stderr_output + data.toString()).slice(-65536)
+		})
+		cms_process.on('exit', (code, signal) => {
+			console.log(chalk.dim(`  CMS exited (${signal ? `signal ${signal}` : `code ${code}`})`))
 		})
 
 		// Wait for CMS to be ready
