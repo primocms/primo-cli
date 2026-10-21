@@ -60,6 +60,24 @@ The port comes from `--port`, then `port:` in the workspace's `server.yaml`, the
 
 The selected port is saved in `.primo/dev-server.json`, leaving `server.yaml` unchanged. Status, previews (CLI and MCP), new-site handling, and local pull discovery use this session record. A second dev server for the same workspace is refused to avoid opening its database twice. `--force` explicitly stops processes on the requested ports; automatic fallback never stops them.
 
+Agents may start `primo dev --author files` from the workspace root in a background process or persistent terminal. Check `primo status --json` or MCP `get_dev_status` first and reuse the workspace server. If `process_alive` is true but `running` is false, inspect the logs and wait for startup or diagnose the existing process. Keep the PID and stop only a server you started.
+
+### `primo logs`
+
+Read persistent local CLI messages and CMS stdout/stderr, including startup failures. Logs remain readable after the server stops.
+
+```bash
+primo logs                          # Last 100 lines
+primo logs --follow                 # Follow new output until Ctrl+C
+primo logs --dir sites/my-site -n 50 # Resolve the enclosing workspace
+primo logs --previous               # Read the previous rotated log
+primo logs --json                   # Structured result for agents
+```
+
+The workspace stores `.primo/dev.log` and one rotated file, `.primo/dev.log.1`, with a 5 MiB limit per file. Entries identify their timestamp and source (`cli:stdout`, `cli:stderr`, `cms:stdout`, or `cms:stderr`). The underlying CMS output also appears in the terminal. Keep `.primo/` out of version control.
+
+CLI and MCP reads return at most 1000 lines and 256 KiB, with `truncated` indicating omitted history. Read the returned `log_file` directly for the full retained file, or use `--previous` for earlier output. MCP exposes the same output through `get_dev_logs`; `get_dev_status` reports import outcomes separately. These are local process logs; browser console messages are not included.
+
 ### `primo push`
 
 Save local changes to the editable hosted draft. Plain `push` does not publish
