@@ -2,12 +2,25 @@ import chalk from 'chalk'
 import ora from 'ora'
 import readline from 'readline'
 import fs from 'fs/promises'
-import { save_auth_token } from '../utils/auth.js'
-import { read_server_config, get_server_config_path, normalize_server_url } from '../utils/server-config.js'
+import {
+	authenticate_in_browser,
+	browser_login_origin,
+	type BrowserLoginOptions
+} from '../utils/browser-login.js'
+import { get_auth_token, save_auth_token } from '../utils/auth.js'
+import {
+	read_server_config,
+	get_server_config_path,
+	normalize_server_url
+} from '../utils/server-config.js'
 
 interface LoginOptions {
 	server?: string
 	email?: string
+	password?: boolean
+	browser?: boolean
+	timeout?: string
+	reauth?: boolean
 }
 
 export async function login(options: LoginOptions) {
@@ -26,34 +39,127 @@ export async function login(options: LoginOptions) {
 	if (!server_url) {
 		console.log('')
 		console.log(chalk.red('Server URL required.'))
-		console.log(chalk.dim('  Pass it as the first argument, use -s <url>, or run from a workspace whose server.yaml has a `server:` field.'))
+		console.log(
+			chalk.dim(
+				'  Pass it as the first argument, use -s <url>, or run from a workspace whose server.yaml has a `server:` field.'
+			)
+		)
 		console.log('')
 		process.exit(1)
 	}
 
 	const server = normalize_server_url(server_url)
+	if (!options.password) {
+		try {
+			browser_login_origin(server)
+		} catch (error) {
+			console.error(error instanceof Error ? error.message : String(error))
+			process.exitCode = 1
+			return
+		}
+	}
 
 	console.log('')
 	console.log(chalk.bold(`Logging in to ${server}`))
 	console.log('')
 
-	const token = await authenticate_interactively(server, options.email)
+	if (options.email && !options.password) {
+		console.error(
+			'Use --password with --email for terminal password login. Browser login uses the account signed in to your browser.'
+		)
+		process.exitCode = 1
+		return
+	}
+	if (!options.password && !options.reauth) {
+		const cached = await get_auth_token(server)
+		if (cached) {
+			try {
+				const response = await fetch(
+					`${server}/api/collections/users/auth-refresh`,
+					{
+						method: 'POST',
+						headers: { Authorization: `Bearer ${cached}` },
+						signal: AbortSignal.timeout(10000),
+						redirect: 'error'
+					}
+				)
+				if (response.ok) {
+					const data = (await response.json()) as {
+						token?: string
+						record?: { email?: string }
+					}
+					if (data.token && data.record?.email) {
+						await save_auth_token(server, data.token)
+						console.log(`Already logged in as ${data.record.email}`)
+						return
+					}
+				}
+				if (![401, 403, 404].includes(response.status))
+					throw new Error(
+						'Could not verify the saved login. Try again when the server is available.'
+					)
+			} catch (error) {
+				console.error(error instanceof Error ? error.message : String(error))
+				process.exitCode = 1
+				return
+			}
+		}
+	}
+	const token = options.password
+		? await authenticate_with_password(server, options.email)
+		: await authenticate_with_browser(server, {
+				noBrowser: options.browser === false,
+				timeout:
+					options.timeout === undefined ? undefined : Number(options.timeout)
+			})
 	if (!token) {
 		process.exit(1)
 	}
 	console.log('')
 	console.log(chalk.dim('  Token saved to ~/.primo/tokens.json'))
-	console.log(chalk.dim('  You can now use `primo pull`, `primo push`, and `primo publish` without --token'))
+	console.log(
+		chalk.dim(
+			'  You can now use `primo pull`, `primo push`, and `primo publish` without --token'
+		)
+	)
+}
+
+// Both explicit login and pull's first-login path use browser consent.
+export async function authenticate_with_browser(
+	server: string,
+	options: BrowserLoginOptions = {}
+): Promise<string | null> {
+	const controller = new AbortController()
+	const cancel = () => controller.abort()
+	process.once('SIGINT', cancel)
+	process.once('SIGTERM', cancel)
+	try {
+		return await authenticate_in_browser(server, {
+			...options,
+			signal: controller.signal
+		})
+	} catch (error) {
+		console.error(error instanceof Error ? error.message : String(error))
+		return null
+	} finally {
+		process.removeListener('SIGINT', cancel)
+		process.removeListener('SIGTERM', cancel)
+	}
 }
 
 // Prompt for credentials (email if not supplied, then password), authenticate
 // against the server, and persist the token on success. Returns the token, or
-// null if authentication failed. Shared by `login` and the auto-login prompt
-// that `pull`/`push` fall back to when no token is cached.
-export async function authenticate_interactively(
+// null if authentication failed. Available only through explicit --password.
+async function authenticate_with_password(
 	server: string,
 	email?: string
 ): Promise<string | null> {
+	if (!process.stdin.isTTY || !process.stdout.isTTY) {
+		console.error(
+			'Password login requires an interactive terminal. Use browser login or supply an existing --token to the command.'
+		)
+		return null
+	}
 	if (!email) {
 		email = await prompt('Email: ')
 	}
@@ -64,33 +170,46 @@ export async function authenticate_interactively(
 
 	try {
 		// Authenticate with PocketBase
-		const response = await fetch(`${server}/api/collections/users/auth-with-password`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify({
-				identity: email,
-				password: password
-			})
-		})
+		const response = await fetch(
+			`${server}/api/collections/users/auth-with-password`,
+			{
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				signal: AbortSignal.timeout(10000),
+				redirect: 'error',
+				body: JSON.stringify({
+					identity: email,
+					password: password
+				})
+			}
+		)
 
 		if (!response.ok) {
-			const error = await response.json().catch(() => ({ message: 'Authentication failed' })) as { message?: string }
+			const error = (await response
+				.json()
+				.catch(() => ({ message: 'Authentication failed' }))) as {
+				message?: string
+			}
 			spinner.fail(`Login failed: ${error.message || 'Invalid credentials'}`)
 			return null
 		}
 
-		const data = await response.json() as { token: string; record: { email: string } }
+		const data = (await response.json()) as {
+			token: string
+			record: { email: string }
+		}
 
 		// Save the token
 		await save_auth_token(server, data.token)
 
 		spinner.succeed(`Logged in as ${chalk.cyan(data.record.email)}`)
 		return data.token
-
 	} catch (error) {
-		spinner.fail(`Login failed: ${error instanceof Error ? error.message : error}`)
+		spinner.fail(
+			`Login failed: ${error instanceof Error ? error.message : error}`
+		)
 		return null
 	}
 }

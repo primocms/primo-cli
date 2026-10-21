@@ -496,6 +496,7 @@ Without the MCP server, read \`sites/*/blocks/*/fields.yaml\` and \`sites/*/page
 
 ## Setup
 
+- \`primo login <server>\` — agents may start hosted sign-in through the browser. Keep the command running in a persistent terminal while the user signs in and approves the displayed link/code. Credentials are saved for future pull/push/publish commands. If authorization expires, run login again. Do not ask for passwords in chat or silently use \`--password\`.
 - \`primo dev\` — start the local CMS and dev server. Run from the workspace root. It runs until stopped; from scripts or agents, run it in the background and stop it by PID.
 - \`primo new [name]\` — scaffold a new site under \`sites/\`. In an interactive terminal it then starts the CMS; add \`--skip-dev\` to only create files.
 - \`primo add <name>\` — register an existing \`sites/<name>\` folder with the CMS (mints its site_id and imports its records). Creating the folder alone doesn't register it. Stop \`primo dev\` first, then start it again afterwards. A folder copied from another site gets fresh ids automatically.
