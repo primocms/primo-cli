@@ -1,6 +1,6 @@
 {
   "name": "primo-cli",
-  "version": "0.3.0-rc.2",
+  "version": "0.3.0-rc.3",
   "description": "Local development CLI for Primo",
   "type": "module",
   "bin": {
@@ -44,11 +44,11 @@
     "esbuild": "^0.28.2",
     "inquirer": "^13.3.0",
     "js-yaml": "^4.3.2",
-    "markdown-it": "^14.3.2",
+    "markdown-it": "^14.3.3",
     "ora": "^8.0.1",
     "prettier": "^3.0.0",
     "prettier-plugin-svelte": "^3.0.0",
-    "primo-mcp": "0.1.11-rc.2",
+    "primo-mcp": "0.1.11-rc.3",
     "svelte": "^5.55.0",
     "yauzl": "^3.4.0"
   },
