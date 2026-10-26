@@ -20,20 +20,23 @@ export function start_dev_logging(workspace: string, max_bytes = DEV_LOG_MAX_BYT
 		const clean = stripVTControlCharacters(message).replace(/\r/g, '')
 		if (!enabled || !clean.trim()) return
 		try {
-			// Bound each write too, so an unusually long line cannot bypass rotation.
-			for (let offset = 0; offset < clean.length;) {
-				let end = Math.min(offset + 8192, clean.length)
-				// Do not split a surrogate pair when chunking long Unicode output.
-				if (end < clean.length && /[\uD800-\uDBFF]/.test(clean[end - 1])) end--
-				const text = `[${new Date().toISOString()}] [${source}] ${clean.slice(offset, end).replace(/\n$/, '')}\n`
-				offset = end
-				const bytes = Buffer.byteLength(text)
-				if (size && size + bytes > max_bytes) {
-					fs.renameSync(file, `${file}.1`)
-					size = 0
+			const stamp = new Date().toISOString()
+			for (const line of clean.split('\n')) {
+				if (!line.trim()) continue
+				// Bound each line too, without splitting a UTF-16 surrogate pair.
+				for (let offset = 0; offset < line.length;) {
+					let end = Math.min(offset + 8192, line.length)
+					if (end < line.length && /[\uD800-\uDBFF]/.test(line[end - 1])) end--
+					const text = `[${stamp}] [${source}] ${line.slice(offset, end)}\n`
+					offset = end
+					const bytes = Buffer.byteLength(text)
+					if (size && size + bytes > max_bytes) {
+						fs.renameSync(file, `${file}.1`)
+						size = 0
+					}
+					fs.appendFileSync(file, text, { mode: 0o600 })
+					size += bytes
 				}
-				fs.appendFileSync(file, text, { mode: 0o600 })
-				size += bytes
 			}
 		} catch (error) {
 			enabled = false

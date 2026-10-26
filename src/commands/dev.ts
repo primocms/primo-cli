@@ -1006,10 +1006,18 @@ export async function dev_server(options: DevOptions) {
 			env: { ...process.env, PRIMO_DEV_MODE: '1', PRIMO_AUTHOR_MODE: sync_policy.mode }
 		})
 
+		// Register before recording the PID: the child can exit during that await.
+		const starting_cms = cms_process
+		const cms_exited = new Promise<boolean>(resolve => {
+			const stop_waiting = () => resolve(false)
+			starting_cms.once('exit', stop_waiting)
+			starting_cms.once('error', stop_waiting)
+			if (starting_cms.exitCode !== null || starting_cms.signalCode !== null) stop_waiting()
+		})
+
 		let cms_start_error: Error | null = null
 		cms_process.on('error', error => { cms_start_error = error })
 		process.once('exit', () => { cms_process?.kill('SIGTERM') })
-		if (cms_process.pid) await record_cms_process(base_dir, runtime, cms_process.pid)
 
 		// Capture stderr for errors
 		let stderr_output = ''
@@ -1022,8 +1030,10 @@ export async function dev_server(options: DevOptions) {
 			console.log(chalk.dim(`  CMS exited (${signal ? `signal ${signal}` : `code ${code}`})`))
 		})
 
+		if (cms_process.pid) await record_cms_process(base_dir, runtime, cms_process.pid)
+
 		// Wait for CMS to be ready
-		const ready = await wait_for_ready(`http://127.0.0.1:${port}`, 30000)
+		const ready = await Promise.race([wait_for_ready(`http://127.0.0.1:${port}`, 30000), cms_exited])
 		if (!ready || cms_start_error || cms_process.exitCode !== null || cms_process.signalCode !== null) {
 			spinner.fail('CMS failed to start')
 			if (stderr_output) {

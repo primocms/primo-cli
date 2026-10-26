@@ -68,3 +68,17 @@ test('logs follow waits for creation, reads appended output and follows rotation
  child.kill('SIGTERM'); await once(child, 'exit')
  assert.equal(child.exitCode, 0)
 })
+
+
+test('every physical line identifies its source even for multiline chunks', async t => {
+ const workspace = await make_workspace(); t.after(workspace.cleanup)
+ const log = start_dev_logging(workspace.work)
+ try {
+  log.capture('stderr')(Buffer.from('first server line\nsecond server line\n'))
+  process.stdout.write('first CLI line\nsecond CLI line\n')
+ } finally { log.stop() }
+ const { text } = await read_dev_logs(workspace.work)
+ for (const line of text.trim().split('\n')) assert.match(line, /^\[\d{4}-[^\]]+\] \[(?:cli|cms)(?::stdout|:stderr)?\] /)
+ assert.match(text, /\[cms:stderr\] second server line/)
+ assert.match(text, /\[cli:stdout\] second CLI line/)
+})

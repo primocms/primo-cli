@@ -160,7 +160,7 @@ test('CMS startup failure retains both server streams for later inspection', asy
  const binary = path.join(workspace.root, 'failing-cms.mjs')
  await fs.writeFile(binary, `#!${process.execPath}\nconsole.log('startup context'); console.error('startup failure detail'); process.exit(1);\n`)
  await fs.chmod(binary, 0o755)
- const result = await run_cli(['dev'], { cwd: workspace.work, home: workspace.home, env: { PRIMO_BINARY: binary }, timeout_ms: 35000 })
+ const result = await run_cli(['dev'], { cwd: workspace.work, home: workspace.home, env: { PRIMO_BINARY: binary }, timeout_ms: 10000 })
  assert.notEqual(result.code, 0)
  const contents = await fs.readFile(path.join(workspace.work, '.primo/dev.log'), 'utf8')
  assert.match(contents, /\[cms:stdout\] startup context/)
