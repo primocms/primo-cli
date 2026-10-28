@@ -68,6 +68,7 @@ interface BlockField {
 }
 
 interface SiteField {
+	parent?: string
 	id?: string
 	_id?: string
 	name: string
@@ -1239,48 +1240,31 @@ async function resolve_site_fields(
 	// Load block field definitions to check for site-field types
 	const block_fields = await load_block_fields(site_dir, block_name)
 
-	// Create maps for site field lookup
-	const site_field_id_map = new Map<string, string>() // ID -> name
-	const site_field_name_set = new Set<string>() // names that exist
-	for (const site_field of site_data.fields) {
-		const site_field_id = get_field_id(site_field)
-		if (site_field_id) {
-			site_field_id_map.set(site_field_id, site_field.name)
-		}
-		site_field_name_set.add(site_field.name)
-	}
-
-	// Resolve site-field references in content
-	const resolved: Record<string, unknown> = { ...content }
-
-	// For each block field that is type site-field, resolve its value
-	for (const field of block_fields) {
-		if (field.type !== 'site-field') continue
-
-		const field_ref = field.config?.field
-
-		if (field_ref) {
-			// Field reference can be either a name or an ID
-			// Try as name first (new format)
-			if (site_field_name_set.has(field_ref) && site_data.content[field_ref] !== undefined) {
-				resolved[field.name] = site_data.content[field_ref]
-				continue
-			}
-			// Try as ID (old format)
-			const site_field_name = site_field_id_map.get(field_ref)
-			if (site_field_name && site_data.content[site_field_name] !== undefined) {
-				resolved[field.name] = site_data.content[site_field_name]
-				continue
+	const roots = site_data.fields.filter((field) => !field.parent)
+	const resolve = (fields: BlockField[], values: Record<string, unknown>, parent = ''): Record<string, unknown> => {
+		const resolved = { ...values }
+		for (const field of fields) {
+			const field_path = parent ? `${parent}.${field.name}` : field.name
+			if (field.type === 'site-field') {
+				const reference = field.config?.field ?? field.options?.field
+				const by_id = roots.find((candidate) => reference && get_field_id(candidate) === reference)
+				const by_key = roots.filter((candidate) => candidate.name === reference)
+				const source = by_id ?? (by_key.length === 1 ? by_key[0] : undefined)
+				if (!source) {
+					throw new Error(`Unresolved or ambiguous site-field reference ${JSON.stringify(reference ?? '')} in blocks/${block_name}/fields.yaml at ${field_path}.config.field. Use the ID or unique name of a top-level field in site/fields.yaml.`)
+				}
+				resolved[field.name] = site_data.content[source.name]
+			} else if (field.subfields?.length) {
+				const value = values[field.name]
+				if (field.type === 'group' && is_plain_object(value)) resolved[field.name] = resolve(field.subfields, value, field_path)
+				if (field.type === 'repeater' && Array.isArray(value)) {
+					resolved[field.name] = value.map((item) => is_plain_object(item) ? resolve(field.subfields!, item, `${field_path}[]`) : item)
+				}
 			}
 		}
-
-		// Fallback: if block field name matches a site field name, use that value
-		if (site_field_name_set.has(field.name) && site_data.content[field.name] !== undefined) {
-			resolved[field.name] = site_data.content[field.name]
-		}
+		return resolved
 	}
-
-	return resolved
+	return resolve(block_fields, content)
 }
 
 // Pin every `svelte` and `svelte/*` import (compiler output and block code
