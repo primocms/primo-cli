@@ -384,3 +384,25 @@ Full documentation: [docs.primo.build](https://docs.primo.build)
 ## Testing
 
 Run `npm ci`, `npx playwright install chromium`, then `npm test`. The suite builds the CLI and verifies its generated pages in Chromium, including preservation of server-rendered content during hydration. CI installs Chromium and its system dependencies before running the suite.
+
+### Large pushes through a reverse proxy
+
+With a CMS supporting `import_chunks_v1`, `primo push`, `primo push --preview`,
+first-instance bootstrap, workspace library pushes and `primo library push`
+send large archives in 1 MiB chunks. A proxy's HTTP 413 response reduces the
+chunk size automatically, down to 64 KiB. Identical chunks can be retried after
+a lost response. No extra flag or proxy-specific configuration is needed.
+
+Chunks are temporary staging only. The CMS verifies the complete archive and
+applies the normal import once, with the original revision and force/backup
+checks. An edit made during upload still rejects a stale push. A failed or
+interrupted upload leaves existing content unchanged; rerun the command to
+start a fresh upload. A lost response to the final import is reported without
+automatic replay, since the import may already have succeeded.
+
+The CMS retains its 512 MiB compressed/expanded archive budgets and normal
+per-file validation. The transport splits even an individual asset across
+requests; it sends the whole archive and the existing importer deduplicates
+unchanged assets. Staged files expire after one hour and are removed on
+completion/cancellation or server restart. Older servers use ordinary
+multipart imports; a 413 explains that a coordinated CMS/CLI upgrade is needed.

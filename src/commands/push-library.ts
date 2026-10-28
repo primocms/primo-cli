@@ -1,3 +1,4 @@
+import { post_import } from '../utils/import-upload.js'
 import fs from 'fs/promises'
 import path from 'path'
 import chalk from 'chalk'
@@ -63,16 +64,7 @@ export async function push_library(options: PushLibraryOptions) {
 		form_data.append('file', new Blob([zip_buffer]), 'library.zip')
 		append_push_guard(form_data, plan)
 
-		const headers: Record<string, string> = {}
-		if (token) {
-			headers.Authorization = `Bearer ${token}`
-		}
-
-		const response = await fetch(`${server}/api/primo/import-library`, {
-			method: 'POST',
-			headers,
-			body: form_data
-		})
+		const response = await post_import(`${server}/api/primo/import-library`, form_data, token)
 
 		if (response.status === 404) {
 			spinner.fail('Shared library sync is not supported by this primo server. Update the server before using `primo library push`.')
