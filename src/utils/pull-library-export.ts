@@ -1,6 +1,6 @@
 import fs from 'fs/promises'
 import path from 'path'
-import extract from 'extract-zip'
+import extract from './safe-extract.js'
 import { save_baseline } from './push-guard.js'
 
 // Install the exact exported library before recording its revision. Overlaying

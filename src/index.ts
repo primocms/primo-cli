@@ -20,6 +20,7 @@ import { deploy } from './commands/deploy.js'
 import { build_site } from './commands/build.js'
 import { status } from './commands/status.js'
 import { preview } from './commands/preview.js'
+import { logs } from './commands/logs.js'
 import { mcp_install, mcp_list, mcp_print, client_option, UNKNOWN_CLIENTS_HINT } from './commands/mcp.js'
 
 const pkg_path = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json')
@@ -93,6 +94,16 @@ program
 	.option('-f, --force', 'Kill existing processes on the port')
 	.option('--author <mode>', 'Who is authoring this session: "files" (push only; CMS UI is read-only — default), "cms" (CMS edits write to files; file edits revert), "both" (experimental bidirectional sync; conflicting edits can overwrite local files or CMS changes)', 'files')
 	.action(dev_server)
+
+program
+	.command('logs')
+	.description('Read local CLI and CMS logs, including server stdout and stderr')
+	.option('-d, --dir <dir>', 'Workspace or site directory', '.')
+	.option('-n, --lines <count>', 'Number of recent lines (1–1000)', '100')
+	.option('-f, --follow', 'Keep reading new output until stopped')
+	.option('--previous', 'Read the previous rotated log')
+	.option('--json', 'Machine-readable log result')
+	.action(logs)
 
 program
 	.command('deploy')
@@ -195,9 +206,13 @@ library
 
 program
 	.command('login [server]')
-	.description('Login to hosted CMS')
+	.description('Sign in to the hosted CMS through your browser')
 	.option('-s, --server <url>', 'Server URL (defaults to `server:` in server.yaml)')
-	.option('-e, --email <email>', 'Email')
+	.option('-e, --email <email>', 'Email for --password login')
+	.option('--password', 'Use an interactive terminal password prompt (older servers)')
+	.option('--no-browser', 'Print the approval URL without opening a browser')
+	.option('--timeout <seconds>', 'Maximum time to wait for browser approval (1–600)', '300')
+	.option('--reauth', 'Request browser approval even when a saved login is valid')
 	.action((server, options) => login({ ...options, server: server || options.server }))
 
 program

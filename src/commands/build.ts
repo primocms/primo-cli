@@ -5,7 +5,7 @@ import ora from 'ora'
 import { load as load_yaml } from 'js-yaml'
 import { compile } from 'svelte/compiler'
 import * as esbuild from 'esbuild'
-import { fileURLToPath } from 'url'
+import { createRequire } from 'node:module'
 import { read_site_config, type SiteConfig, SITE_CONFIG_FILE } from '../utils/site-config.js'
 import { validate_head_svelte_content } from '../utils/head-svelte.js'
 import { read_upload_paths } from '../utils/portable-uploads.js'
@@ -68,6 +68,7 @@ interface BlockField {
 }
 
 interface SiteField {
+	parent?: string
 	id?: string
 	_id?: string
 	name: string
@@ -430,11 +431,11 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 			}
 		}
 
-		// Create a page component that renders all sections and the head. The
+		// Create a component for the page head; sections get separate roots. The
 		// head rides through <svelte:head> so its Svelte syntax ({expression},
 		// {@html}, {#if}) is actually evaluated — pasting the fragment into the
 		// output verbatim leaked raw template syntax into deployed pages.
-		const page_component = generate_page_component(section_slots, combined_head_content, head_keys)
+		const page_component = generate_page_component([], combined_head_content, head_keys)
 		const page_component_path = path.join(temp_dir, `page_${page_build_id}.svelte`)
 		await fs.writeFile(page_component_path, page_component)
 
@@ -456,7 +457,9 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 
 		// Write compiled JS and bundle with esbuild
 		const compiled_path = path.join(temp_dir, `page_${page_build_id}.js`)
-		await fs.writeFile(compiled_path, page_compiled.js.code)
+		await fs.writeFile(compiled_path, page_compiled.js.code + '\n' + sections.map((section, i) =>
+			`export { default as Section_${i} } from './${section.block}.compiled.js'`
+		).join('\n'))
 
 		// Copy all block compiled JS files to temp for bundling
 		for (const section of sections) {
@@ -485,19 +488,28 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 
 		// Import and render
 		const bundle_url = `file://${bundle_path}`
-		const { default: PageComponent } = await import(bundle_url)
+		const { default: PageComponent, ...components } = await import(bundle_url)
 
 		// Import render from svelte/server
 		const { render } = await import('svelte/server')
 
-		// Build props for all sections + the head fragment's field data
-		const props: Record<string, unknown> = {}
-		sections.forEach((section, i) => {
-			props[`section_${i}_props`] = section.content || {}
-		})
-		props.head_props = head_data
+		// Supply the head fragment's field data.
+		const props = { head_props: head_data }
 
-		const rendered = render(PageComponent, { props })
+		// Match the client's hydrate() boundary: each section gets its own render().
+		const page_head = render(PageComponent, { props })
+		const rendered = { head: page_head.head || '', body: '' }
+		const zones = new Map<string, string[]>()
+		for (const [i, slot] of section_slots.entries()) {
+			const section = render(components[`Section_${i}`], { props: slot.section.content || {} })
+			rendered.head += section.head || ''
+			const zone = zones.get(slot.zone) || []
+			zone.push(`<div data-section="${slot.dom_id}" id="section-${slot.dom_id}" data-symbol="${safe_temp_id(slot.section.block)}">${section.body}</div>`)
+			zones.set(slot.zone, zone)
+		}
+		rendered.body = (['header', 'main', 'footer'] as const)
+			.filter(zone => zone === 'main' || zones.has(zone))
+			.map(zone => `<${zone}>${(zones.get(zone) || []).join('')}</${zone}>`).join('')
 
 		// Interactive blocks get a client bundle and hydrate in place, as on
 		// server publish. Blocks without a script ship no JavaScript.
@@ -1228,48 +1240,31 @@ async function resolve_site_fields(
 	// Load block field definitions to check for site-field types
 	const block_fields = await load_block_fields(site_dir, block_name)
 
-	// Create maps for site field lookup
-	const site_field_id_map = new Map<string, string>() // ID -> name
-	const site_field_name_set = new Set<string>() // names that exist
-	for (const site_field of site_data.fields) {
-		const site_field_id = get_field_id(site_field)
-		if (site_field_id) {
-			site_field_id_map.set(site_field_id, site_field.name)
-		}
-		site_field_name_set.add(site_field.name)
-	}
-
-	// Resolve site-field references in content
-	const resolved: Record<string, unknown> = { ...content }
-
-	// For each block field that is type site-field, resolve its value
-	for (const field of block_fields) {
-		if (field.type !== 'site-field') continue
-
-		const field_ref = field.config?.field
-
-		if (field_ref) {
-			// Field reference can be either a name or an ID
-			// Try as name first (new format)
-			if (site_field_name_set.has(field_ref) && site_data.content[field_ref] !== undefined) {
-				resolved[field.name] = site_data.content[field_ref]
-				continue
-			}
-			// Try as ID (old format)
-			const site_field_name = site_field_id_map.get(field_ref)
-			if (site_field_name && site_data.content[site_field_name] !== undefined) {
-				resolved[field.name] = site_data.content[site_field_name]
-				continue
+	const roots = site_data.fields.filter((field) => !field.parent)
+	const resolve = (fields: BlockField[], values: Record<string, unknown>, parent = ''): Record<string, unknown> => {
+		const resolved = { ...values }
+		for (const field of fields) {
+			const field_path = parent ? `${parent}.${field.name}` : field.name
+			if (field.type === 'site-field') {
+				const reference = field.config?.field ?? field.options?.field
+				const by_id = roots.find((candidate) => reference && get_field_id(candidate) === reference)
+				const by_key = roots.filter((candidate) => candidate.name === reference)
+				const source = by_id ?? (by_key.length === 1 ? by_key[0] : undefined)
+				if (!source) {
+					throw new Error(`Unresolved or ambiguous site-field reference ${JSON.stringify(reference ?? '')} in blocks/${block_name}/fields.yaml at ${field_path}.config.field. Use the ID or unique name of a top-level field in site/fields.yaml.`)
+				}
+				resolved[field.name] = site_data.content[source.name]
+			} else if (field.subfields?.length) {
+				const value = values[field.name]
+				if (field.type === 'group' && is_plain_object(value)) resolved[field.name] = resolve(field.subfields, value, field_path)
+				if (field.type === 'repeater' && Array.isArray(value)) {
+					resolved[field.name] = value.map((item) => is_plain_object(item) ? resolve(field.subfields!, item, `${field_path}[]`) : item)
+				}
 			}
 		}
-
-		// Fallback: if block field name matches a site field name, use that value
-		if (site_field_name_set.has(field.name) && site_data.content[field.name] !== undefined) {
-			resolved[field.name] = site_data.content[field.name]
-		}
+		return resolved
 	}
-
-	return resolved
+	return resolve(block_fields, content)
 }
 
 // Pin every `svelte` and `svelte/*` import (compiler output and block code
@@ -1293,24 +1288,7 @@ function svelte_resolver(svelte_base: string): esbuild.Plugin {
 }
 
 async function find_svelte_path(): Promise<string> {
-	// Try to find svelte in various locations
-	const possible_paths = [
-		// In primo-cli's node_modules (when npm linked or installed globally)
-		path.join(path.dirname(fileURLToPath(import.meta.url)), '../../node_modules/svelte'),
-		// In the current project's node_modules
-		path.join(process.cwd(), 'node_modules/svelte'),
-		// Try resolving from this file's location
-		path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../node_modules/svelte')
-	]
-
-	for (const p of possible_paths) {
-		try {
-			await fs.access(p)
-			return p
-		} catch {
-			// Continue to next path
-		}
-	}
-
-	throw new Error('Could not find svelte package. Make sure svelte is installed.')
+	// Resolve the same installed dependency used by this module's compiler
+	// imports. npm can hoist it above primo-cli; pnpm can place it elsewhere.
+	return path.dirname(createRequire(import.meta.url).resolve('svelte/package.json'))
 }

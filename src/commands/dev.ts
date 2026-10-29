@@ -1,4 +1,5 @@
 import { stripVTControlCharacters } from 'node:util'
+import { start_dev_logging } from '../utils/dev-logs.js'
 import fs from 'fs/promises'
 import path from 'path'
 import { createHash, randomInt } from 'crypto'
@@ -10,7 +11,7 @@ import { requested_dev_port, select_dev_port, is_port_in_use } from '../utils/de
 import { claim_dev_runtime, read_dev_runtime, runtime_has_live_process, record_cms_process, describe_live_runtime, stop_runtime_processes } from '../utils/dev-runtime.js'
 import { spawn, execFileSync, type ChildProcess } from 'child_process'
 import archiver from 'archiver'
-import extract from 'extract-zip'
+import extract from '../utils/safe-extract.js'
 import { dump as dump_yaml, load as load_yaml } from 'js-yaml'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { ensure_binary, ensure_data_dir } from '../utils/binary.js'
@@ -65,6 +66,7 @@ const blocked_site_keys = new Set<string>()
 let is_importing_library = false
 let has_pending_library_local_changes = false
 let site_sync_baselines = new Map<string, ContentSnapshot>()
+const site_sync_revisions = new Map<string, string>()
 // Tracks the last set of conflict paths logged per site so we don't reprint
 // the same conflict block every pull cycle when primo's serialization
 // keeps producing the same divergence (e.g. data-key mangling, key reorder).
@@ -440,6 +442,18 @@ async function prune_old_trash(workspace_dir: string): Promise<void> {
 
 function get_site_sync_key(site_dir: string, config: SiteConfig): string {
 	return config.site_id || site_dir
+}
+
+function remember_site_revision(site_dir: string, config: SiteConfig, revision: unknown) {
+	const key = get_site_sync_key(site_dir, config)
+	if (typeof revision === 'string' && /^v1:[a-f0-9]{64}$/.test(revision)) site_sync_revisions.set(key, revision)
+	else site_sync_revisions.delete(key)
+}
+
+function required_site_revision(site: SiteInfo): string {
+	const revision = site_sync_revisions.get(get_site_sync_key(site.dir, site.config))
+	if (!revision) throw new Error('Two-way sync has no verified CMS revision. Restart with --author files or --author cms to resolve the pending changes.')
+	return revision
 }
 
 function resolve_sync_policy(options: DevOptions): SyncPolicy {
@@ -840,6 +854,7 @@ export async function dev_server(options: DevOptions) {
 			console.log(chalk.yellow('    Commit or back up your workspace first. Prefer --author files or --author cms, using one authoring mode at a time.'))
 		}
 		site_sync_baselines = new Map()
+		site_sync_revisions.clear()
 		const base_dir = path.resolve(options.dir)
 		await prune_old_trash(base_dir)
 		const mcp_registration_path = await register_primo_mcp_server(base_dir)
@@ -890,6 +905,8 @@ export async function dev_server(options: DevOptions) {
 			spinner.start()
 		}
 		const runtime = await claim_dev_runtime(base_dir, port)
+		const dev_log = start_dev_logging(base_dir)
+		console.log(chalk.dim(`  Logs: ${dev_log.file} (primo logs --follow)`))
 		const stop_startup_on_interrupt = () => process.exit(130)
 		const stop_startup_on_terminate = () => process.exit(143)
 		process.once('SIGINT', stop_startup_on_interrupt)
@@ -989,19 +1006,34 @@ export async function dev_server(options: DevOptions) {
 			env: { ...process.env, PRIMO_DEV_MODE: '1', PRIMO_AUTHOR_MODE: sync_policy.mode }
 		})
 
+		// Register before recording the PID: the child can exit during that await.
+		const starting_cms = cms_process
+		const cms_exited = new Promise<boolean>(resolve => {
+			const stop_waiting = () => resolve(false)
+			starting_cms.once('exit', stop_waiting)
+			starting_cms.once('error', stop_waiting)
+			if (starting_cms.exitCode !== null || starting_cms.signalCode !== null) stop_waiting()
+		})
+
 		let cms_start_error: Error | null = null
 		cms_process.on('error', error => { cms_start_error = error })
 		process.once('exit', () => { cms_process?.kill('SIGTERM') })
-		if (cms_process.pid) await record_cms_process(base_dir, runtime, cms_process.pid)
 
 		// Capture stderr for errors
 		let stderr_output = ''
+		cms_process.stdout?.on('data', dev_log.capture('stdout'))
+		cms_process.stderr?.on('data', dev_log.capture('stderr'))
 		cms_process.stderr?.on('data', (data) => {
-			stderr_output += data.toString()
+			stderr_output = (stderr_output + data.toString()).slice(-65536)
+		})
+		cms_process.on('exit', (code, signal) => {
+			console.log(chalk.dim(`  CMS exited (${signal ? `signal ${signal}` : `code ${code}`})`))
 		})
 
+		if (cms_process.pid) await record_cms_process(base_dir, runtime, cms_process.pid)
+
 		// Wait for CMS to be ready
-		const ready = await wait_for_ready(`http://127.0.0.1:${port}`, 30000)
+		const ready = await Promise.race([wait_for_ready(`http://127.0.0.1:${port}`, 30000), cms_exited])
 		if (!ready || cms_start_error || cms_process.exitCode !== null || cms_process.signalCode !== null) {
 			spinner.fail('CMS failed to start')
 			if (stderr_output) {
@@ -1286,7 +1318,7 @@ export async function dev_server(options: DevOptions) {
 							const retry_needs_bootstrap = blocked_site_keys.has(get_site_sync_key(site.dir, site.config))
 								? !await site_exists(api_url, site.config.site_id)
 								: false
-							const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, retry_needs_bootstrap, base_dir))
+							const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, retry_needs_bootstrap, base_dir, sync_policy.mode === 'both' && !retry_needs_bootstrap ? required_site_revision(site) : undefined))
 							if (import_timings === null) {
 								// Duplicate _ids — import_site_files already printed the
 								// error and wrote sync_status; nothing was pushed. Keep
@@ -1453,7 +1485,7 @@ export async function dev_server(options: DevOptions) {
 							await sync_from_cms(site.dir, api_url, site.config, server_config, base_dir, sync_policy)
 						} else {
 							await normalize_site(site.dir)
-							const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap, base_dir))
+							const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap, base_dir, sync_policy.mode === 'both' && !use_bootstrap ? required_site_revision(site) : undefined))
 							if (import_timings === null) {
 								// Duplicate _ids on a freshly discovered site — quarantine
 								// it from CMS→file polling until a later import succeeds.
@@ -2768,7 +2800,7 @@ function print_import_warnings(site_name: string, warnings: unknown): number {
 	return list.length
 }
 
-export async function import_site_files(site_dir: string, api_url: string, config: SiteConfig, port: number, server_config: ServerConfig, use_bootstrap = true, workspace_dir: string = path.dirname(path.dirname(site_dir))): Promise<ImportTimings | null> {
+export async function import_site_files(site_dir: string, api_url: string, config: SiteConfig, port: number, server_config: ServerConfig, use_bootstrap = true, workspace_dir: string = path.dirname(path.dirname(site_dir)), expected_revision?: string): Promise<ImportTimings | null> {
 	const site_name = config.name || 'My Site'
 	const site_id = config.site_id
 	const site_group = resolve_site_group(config, server_config)
@@ -2814,6 +2846,7 @@ export async function import_site_files(site_dir: string, api_url: string, confi
 	if (!use_bootstrap) {
 		const import_form = new FormData()
 		import_form.append('file', new Blob([zip_buffer]), 'site.zip')
+		if (expected_revision) import_form.append('expected_revision', expected_revision)
 
 		const request_started = Date.now()
 		const import_response = await fetch_with_timeout(`${api_url}/api/primo/import/${site_id}`, {
@@ -2832,7 +2865,8 @@ export async function import_site_files(site_dir: string, api_url: string, confi
 		let dropped_field_count = 0
 		let warning_details: ImportWarning[] = []
 		try {
-			const result = await import_response.json() as { created_ids?: Record<string, Record<string, unknown>>, warnings?: ImportWarning[] }
+			const result = await import_response.json() as { created_ids?: Record<string, Record<string, unknown>>, warnings?: ImportWarning[], revision?: string }
+			remember_site_revision(site_dir, config, result.revision)
 			if (result.created_ids) {
 				await write_created_ids(site_dir, result.created_ids, server_config, workspace_dir)
 			}
@@ -2880,7 +2914,8 @@ export async function import_site_files(site_dir: string, api_url: string, confi
 			let warning_details: ImportWarning[] = []
 			if (bootstrap_response.ok) {
 				try {
-					const result = await bootstrap_response.json() as { created_ids?: Record<string, Record<string, unknown>>, warnings?: ImportWarning[], group_id?: string }
+					const result = await bootstrap_response.json() as { created_ids?: Record<string, Record<string, unknown>>, warnings?: ImportWarning[], group_id?: string, revision?: string }
+					remember_site_revision(site_dir, config, result.revision)
 					// Bootstrap writes back content IDs and recovers legacy upload
 					// refs while preserving authored upload paths and filenames.
 					if (result.created_ids) {
@@ -2917,6 +2952,7 @@ export async function import_site_files(site_dir: string, api_url: string, confi
 			// Bootstrap failed, try regular import
 			const import_form = new FormData()
 			import_form.append('file', new Blob([zip_buffer]), 'site.zip')
+			if (expected_revision) import_form.append('expected_revision', expected_revision)
 
 			const import_started = Date.now()
 			const import_response = await fetch_with_timeout(`${api_url}/api/primo/import/${site_id}`, {
@@ -2931,7 +2967,8 @@ export async function import_site_files(site_dir: string, api_url: string, confi
 			} else {
 				// Write created IDs back to files
 				try {
-					const result = await import_response.json() as { created_ids?: Record<string, Record<string, unknown>>, warnings?: ImportWarning[] }
+					const result = await import_response.json() as { created_ids?: Record<string, Record<string, unknown>>, warnings?: ImportWarning[], revision?: string }
+					remember_site_revision(site_dir, config, result.revision)
 					if (result.created_ids) {
 						await write_created_ids(site_dir, result.created_ids, server_config, workspace_dir)
 					}
@@ -3140,6 +3177,11 @@ async function create_site_zip(dir: string, excluded_paths: Set<string> = new Se
 export async function sync_from_cms(site_dir: string, api_url: string, config: SiteConfig, server_config: ServerConfig, workspace_dir: string, sync_policy: SyncPolicy = { mode: 'both' }): Promise<void> {
 	const response = await fetch_with_timeout(`${api_url}/api/primo/export/${config.site_id}`, {}, 15000)
 	if (!response.ok) return
+	// The server binds this receipt and the ZIP to one database transaction.
+	const export_revision = response.headers.get('X-Primo-Revision')
+	if (sync_policy.mode === 'both' && site_sync_revisions.has(get_site_sync_key(site_dir, config)) && !/^v1:[a-f0-9]{64}$/.test(export_revision || '')) {
+		throw new Error('CMS export has no verified revision; two-way sync paused without changing files.')
+	}
 
 	const zip_data = await response.arrayBuffer()
 
@@ -3219,6 +3261,7 @@ export async function sync_from_cms(site_dir: string, api_url: string, config: S
 	// CMS snapshot so the conflict stays protected on every pull until the
 	// CMS and local file agree. Warning deduplication happens below.
 	site_sync_baselines.set(site_key, new Map(remote_snapshot))
+	if (export_revision && conflict_paths.length === 0) remember_site_revision(site_dir, config, export_revision)
 
 	if (conflict_paths.length > 0) {
 		const conflict_signature = conflict_paths.join('|')

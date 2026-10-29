@@ -1,3 +1,4 @@
+import { post_import } from '../utils/import-upload.js'
 import fs from 'fs/promises'
 import path from 'path'
 import chalk from 'chalk'
@@ -478,11 +479,7 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 	append_push_guard(form_data, plan)
 
 	if (!options.preview) outcome.push = { state: 'unknown', error_code: 'push_outcome_unknown' }
-	const response = await fetch(endpoint, {
-		method: 'POST',
-		headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-		body: form_data
-	})
+	const response = await post_import(endpoint, form_data, token)
 
 
 	if (!response.ok) {
@@ -535,14 +532,7 @@ async function try_bootstrap_site(
 	// deploy URL's host so that instance's front door resolves immediately.
 	form.append('file', new Blob([zip_buffer]), 'site.zip')
 
-	const headers: Record<string, string> = {}
-	if (token) headers['Authorization'] = `Bearer ${token}`
-
-	const response = await fetch(`${server}/api/primo/bootstrap`, {
-		method: 'POST',
-		headers,
-		body: form
-	})
+	const response = await post_import(`${server}/api/primo/bootstrap`, form, token)
 
 	if (response.ok) {
 		const body = await response.json().catch(() => ({})) as { created_ids?: CreatedIDs; revision?: string }
@@ -582,11 +572,7 @@ async function push_library_dir(root_dir: string, options: PushOptions, spinner:
 	append_push_guard(form_data, plan)
 
 	push_result(options, plan.label, plan).push = { state: 'unknown', error_code: 'push_outcome_unknown' }
-	const response = await fetch(`${server}/api/primo/import-library`, {
-		method: 'POST',
-		headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-		body: form_data
-	})
+	const response = await post_import(`${server}/api/primo/import-library`, form_data, token)
 
 	if (response.status === 404) {
 		push_result(options, plan.label, plan).push = { state: 'failed', error_code: 'push_failed' }
