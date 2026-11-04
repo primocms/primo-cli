@@ -62,7 +62,7 @@ async function request(
 	}
 }
 
-async function open_browser(url: string): Promise<boolean> {
+async function open_browser(url: string, signal?: AbortSignal): Promise<boolean> {
 	const [command, args] =
 		process.platform === 'darwin'
 			? ['open', [url]]
@@ -70,7 +70,7 @@ async function open_browser(url: string): Promise<boolean> {
 				? ['rundll32.exe', ['url.dll,FileProtocolHandler', url]]
 				: ['xdg-open', [url]]
 	return new Promise((resolve) => {
-		const child = spawn(command, args, { stdio: 'ignore' })
+		const child = spawn(command, args, { stdio: 'ignore', signal })
 		const timer = setTimeout(() => {
 			child.kill()
 			resolve(false)
@@ -164,7 +164,7 @@ export async function authenticate_in_browser(
 		deadline = Math.min(deadline, Date.now() + Number(data.expires_in) * 1000)
 		console.log(`Approve access in your browser. Check code: ${data.user_code}`)
 		console.log(`  ${verification.href}`)
-		if (!options.noBrowser && !(await open_browser(verification.href)))
+		if (!options.noBrowser && !(await open_browser(verification.href, options.signal)))
 			console.log(
 				'Could not open a browser automatically. Open the approval link above to continue.'
 			)

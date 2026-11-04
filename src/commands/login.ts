@@ -91,7 +91,7 @@ export async function login(options: LoginOptions) {
 						token?: string
 						record?: { email?: string }
 					}
-					if (data.token && data.record?.email) {
+					if (typeof data.token === 'string' && data.token && typeof data.record?.email === 'string' && data.record.email) {
 						await save_auth_token(server, data.token)
 						console.log(`Already logged in as ${data.record.email}`)
 						return

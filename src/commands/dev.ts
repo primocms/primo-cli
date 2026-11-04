@@ -1075,7 +1075,10 @@ export async function dev_server(options: DevOptions) {
 
 				await normalize_site(site.dir)
 				const site_key = get_site_sync_key(site.dir, site.config)
-				const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap, base_dir))
+				const initial_revision = sync_policy.mode === 'both' && !use_bootstrap
+					? await verify_initial_two_way_import(site.dir, api_url, site.config, server_config, base_dir)
+					: undefined
+				const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap, base_dir, initial_revision))
 				if (import_timings === null) {
 					// Duplicate _ids — nothing was pushed; the watcher retries
 					// once the user removes a conflicting file. Quarantine it so
@@ -3174,12 +3177,19 @@ async function create_site_zip(dir: string, excluded_paths: Set<string> = new Se
 	})
 }
 
-export async function sync_from_cms(site_dir: string, api_url: string, config: SiteConfig, server_config: ServerConfig, workspace_dir: string, sync_policy: SyncPolicy = { mode: 'both' }): Promise<void> {
+// Startup must establish an exact conflict-free snapshot before its first
+// two-way import, just like reconnect and watcher imports already do.
+export async function verify_initial_two_way_import(site_dir: string, api_url: string, config: SiteConfig, server_config: ServerConfig, workspace_dir: string): Promise<string> {
+	await sync_from_cms(site_dir, api_url, config, server_config, workspace_dir, { mode: 'both' }, true)
+	return required_site_revision({ dir: site_dir, config })
+}
+
+export async function sync_from_cms(site_dir: string, api_url: string, config: SiteConfig, server_config: ServerConfig, workspace_dir: string, sync_policy: SyncPolicy = { mode: 'both' }, require_revision = false): Promise<void> {
 	const response = await fetch_with_timeout(`${api_url}/api/primo/export/${config.site_id}`, {}, 15000)
 	if (!response.ok) return
 	// The server binds this receipt and the ZIP to one database transaction.
 	const export_revision = response.headers.get('X-Primo-Revision')
-	if (sync_policy.mode === 'both' && site_sync_revisions.has(get_site_sync_key(site_dir, config)) && !/^v1:[a-f0-9]{64}$/.test(export_revision || '')) {
+	if (sync_policy.mode === 'both' && (require_revision || site_sync_revisions.has(get_site_sync_key(site_dir, config))) && !/^v1:[a-f0-9]{64}$/.test(export_revision || '')) {
 		throw new Error('CMS export has no verified revision; two-way sync paused without changing files.')
 	}
 

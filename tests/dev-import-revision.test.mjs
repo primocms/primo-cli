@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { import_site_files, sync_from_cms } from '../dist/commands/dev.js'
+import { import_site_files, sync_from_cms, verify_initial_two_way_import } from '../dist/commands/dev.js'
 import { make_workspace } from './helpers/run-cli.mjs'
 import { start_mock_server } from './helpers/mock-server.mjs'
 
@@ -123,4 +123,21 @@ test('two-way pulls fail closed when a previously verified server omits its expo
 		await fs.readFile(path.join(f.site, 'pages/index.yaml'), 'utf8'),
 		original,
 	)
+})
+
+
+test('startup two-way import uses the exact exported revision and rejects unseen later CMS edits', async t => {
+ const f=await fixture(t)
+ const before=await verify_initial_two_way_import(f.site,f.server.url,f.config,{format:{enabled:false}},f.workspace.work)
+ assert.equal(before,f.revisions[f.config.site_id])
+ f.revisions[f.config.site_id]='v1:'+'c'.repeat(64)
+ await assert.rejects(f.importFiles(before),/409/)
+ assert.equal(f.revisions[f.config.site_id],'v1:'+'c'.repeat(64))
+})
+
+test('startup two-way verification stops on local/CMS conflicts without importing', async t => {
+ const f=await fixture(t)
+ await fs.writeFile(path.join(f.site,'blocks/hero/component.svelte'),'<h1>Unsynced local</h1>')
+ await assert.rejects(verify_initial_two_way_import(f.site,f.server.url,f.config,{format:{enabled:false}},f.workspace.work),/no verified CMS revision/)
+ assert.equal(f.server.requests.filter(r=>r.path.includes('/api/primo/import/')).length,0)
 })
