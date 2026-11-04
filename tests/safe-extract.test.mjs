@@ -23,6 +23,23 @@ async function setup(t, entries) {
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'primo-zip-security-'));t.after(()=>fs.rm(root,{recursive:true,force:true}))
  const archive=path.join(root,'export.zip'), dir=path.join(root,'output');await fs.mkdir(dir);await fs.writeFile(archive,zip(entries));return {root,archive,dir}
 }
+test('excessive ZIP path depth is rejected before creating entries', async t => {
+ const x=await setup(t,[{name:'a/'.repeat(129)+'file'}])
+ await assert.rejects(extract(x.archive,{dir:x.dir}),/maximum depth/)
+ assert.deepEqual(await fs.readdir(x.dir),[])
+})
+test('declared decompressed bytes are bounded before writing', async t => {
+ const x=await setup(t,[{name:'one',body:'123456'},{name:'two',body:'123456'}])
+ await assert.rejects(extract(x.archive,{dir:x.dir,maxBytes:10}),/byte budget/)
+ assert.deepEqual(await fs.readdir(x.dir),[])
+})
+test('a symlinked .primo ancestor cannot redirect extraction', async t => {
+ const x=await setup(t,[{name:'file',body:'blocked'}])
+ const outside=path.join(x.root,'outside');await fs.mkdir(outside)
+ await fs.symlink(outside,path.join(x.dir,'.primo'),'junction')
+ await assert.rejects(extract(x.archive,{dir:path.join(x.dir,'.primo/import')}),/Unsafe extraction directory/)
+ assert.deepEqual(await fs.readdir(outside),[])
+})
 test('link then file cannot overwrite a file outside extraction', async t=>{
  const x=await setup(t,[{name:'safe.txt',body:'normal'},{name:'escape',mode:0o120777,body:'../outside.txt'},{name:'escape',body:'attacker overwrite'}])
  const outside=path.join(x.root,'outside.txt');await fs.writeFile(outside,'original')

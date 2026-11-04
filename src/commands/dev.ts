@@ -1021,8 +1021,8 @@ export async function dev_server(options: DevOptions) {
 
 		// Capture stderr for errors
 		let stderr_output = ''
-		cms_process.stdout?.on('data', dev_log.capture('stdout'))
-		cms_process.stderr?.on('data', dev_log.capture('stderr'))
+		cms_process.stdout?.on('data', dev_log.capture('stdout', cms_process.stdout))
+		cms_process.stderr?.on('data', dev_log.capture('stderr', cms_process.stderr))
 		cms_process.stderr?.on('data', (data) => {
 			stderr_output = (stderr_output + data.toString()).slice(-65536)
 		})

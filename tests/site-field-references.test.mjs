@@ -80,6 +80,17 @@ enabled: false
   }
   assert.equal(await fs.readFile(path.join(site,'site/content.yaml'),'utf8'), content)
   assert.equal(await fs.readFile(path.join(site,'blocks/shared/fields.yaml'),'utf8'), fields)
+  // Missing groups still receive nested shared values, and empty legacy config
+  // does not hide a valid options.field reference.
+  await write('blocks/shared/content.yaml', '{}\n')
+  const absentGroup = await build()
+  assert.equal(absentGroup.code, 0, absentGroup.output)
+  assert.match(await fs.readFile(path.join(output,'index.html'),'utf8'), /<span[^>]*>Shared copyright<\/span>/)
+  await write('blocks/shared/fields.yaml', fields.replace(/^  config: \{ field: notice \}$/gm, "  config: { field: '' }\n  options: { field: notice }"))
+  if (mode === 'key') {
+   const legacyOptions = await build()
+   assert.equal(legacyOptions.code, 0, legacyOptions.output)
+  }
   // A same-named local fallback must never conceal a bad explicit reference.
   await write('blocks/shared/fields.yaml', '- name: nav_links\n  type: site-field\n  config: { field: missing-nav }\n')
   const failed = await build()

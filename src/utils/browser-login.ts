@@ -190,7 +190,7 @@ export async function authenticate_in_browser(
 					typeof record?.email !== 'string'
 				)
 					throw new Error('The server returned an invalid login result.')
-				await save_auth_token(origin.origin, polled.data.token)
+				await save_auth_token(server, polled.data.token)
 				console.log(`Logged in as ${record.email}`)
 				return polled.data.token
 			}
@@ -200,13 +200,8 @@ export async function authenticate_in_browser(
 			)
 				continue
 			if (polled.data.error === 'slow_down' && polled.response.status === 429) {
-				interval = Math.max(
-					interval + 5000,
-					Math.min(
-						30000,
-						Number(polled.response.headers.get('Retry-After')) * 1000 || 5000
-					)
-				)
+				interval = Math.min(30000, Math.max(interval + 5000,
+					retry_after_delay_ms(polled.response.headers.get('Retry-After')) || 5000))
 				continue
 			}
 			if (polled.data.error === 'access_denied')
@@ -226,4 +221,11 @@ export async function authenticate_in_browser(
 			throw new Error('Login request expired. Start primo login again.')
 		throw error
 	}
+}
+
+function retry_after_delay_ms(value: string | null): number {
+	if (value === null) return 0
+	const seconds = Number(value)
+	const delay = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(value) - Date.now()
+	return Number.isFinite(delay) ? Math.max(0, Math.min(30000, delay)) : 0
 }

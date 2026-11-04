@@ -478,8 +478,10 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 	if (group_name) form_data.append('group_name', group_name)
 	append_push_guard(form_data, plan)
 
-	if (!options.preview) outcome.push = { state: 'unknown', error_code: 'push_outcome_unknown' }
-	const response = await post_import(endpoint, form_data, token)
+	if (!options.preview) outcome.push = { state: 'failed', error_code: 'push_failed' }
+	const response = await post_import(endpoint, form_data, token, started => {
+		if (!options.preview) outcome.push = started ? { state: 'unknown', error_code: 'push_outcome_unknown' } : { state: 'failed', error_code: 'push_failed' }
+	})
 
 
 	if (!response.ok) {
@@ -571,8 +573,10 @@ async function push_library_dir(root_dir: string, options: PushOptions, spinner:
 	form_data.append('file', new Blob([zip_buffer]), 'library.zip')
 	append_push_guard(form_data, plan)
 
-	push_result(options, plan.label, plan).push = { state: 'unknown', error_code: 'push_outcome_unknown' }
-	const response = await post_import(`${server}/api/primo/import-library`, form_data, token)
+	push_result(options, plan.label, plan).push = { state: 'failed', error_code: 'push_failed' }
+	const response = await post_import(`${server}/api/primo/import-library`, form_data, token, started => {
+		push_result(options, plan.label, plan).push = started ? { state: 'unknown', error_code: 'push_outcome_unknown' } : { state: 'failed', error_code: 'push_failed' }
+	})
 
 	if (response.status === 404) {
 		push_result(options, plan.label, plan).push = { state: 'failed', error_code: 'push_failed' }

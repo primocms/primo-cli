@@ -1241,12 +1241,13 @@ async function resolve_site_fields(
 	const block_fields = await load_block_fields(site_dir, block_name)
 
 	const roots = site_data.fields.filter((field) => !field.parent)
+	const contains_site_field = (fields: BlockField[]): boolean => fields.some(field => field.type === 'site-field' || (field.subfields ? contains_site_field(field.subfields) : false))
 	const resolve = (fields: BlockField[], values: Record<string, unknown>, parent = ''): Record<string, unknown> => {
 		const resolved = { ...values }
 		for (const field of fields) {
 			const field_path = parent ? `${parent}.${field.name}` : field.name
 			if (field.type === 'site-field') {
-				const reference = field.config?.field ?? field.options?.field
+				const reference = field.config?.field || field.options?.field
 				const by_id = roots.find((candidate) => reference && get_field_id(candidate) === reference)
 				const by_key = roots.filter((candidate) => candidate.name === reference)
 				const source = by_id ?? (by_key.length === 1 ? by_key[0] : undefined)
@@ -1256,7 +1257,7 @@ async function resolve_site_fields(
 				resolved[field.name] = site_data.content[source.name]
 			} else if (field.subfields?.length) {
 				const value = values[field.name]
-				if (field.type === 'group' && is_plain_object(value)) resolved[field.name] = resolve(field.subfields, value, field_path)
+				if (field.type === 'group' && ((value === undefined && contains_site_field(field.subfields)) || is_plain_object(value))) resolved[field.name] = resolve(field.subfields, is_plain_object(value) ? value : {}, field_path)
 				if (field.type === 'repeater' && Array.isArray(value)) {
 					resolved[field.name] = value.map((item) => is_plain_object(item) ? resolve(field.subfields!, item, `${field_path}[]`) : item)
 				}

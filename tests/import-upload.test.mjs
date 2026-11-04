@@ -115,3 +115,38 @@ test('minimum chunk bound reports an actionable proxy error', async t => {
 	await assert.rejects(post_import(endpoint, form(randomBytes(1024 * 1024 + 1))), /Increase its request-body limit/)
 	assert.equal(attempts, 5); assert.equal(commits, 0)
 })
+
+
+test('staging rejection can use one compatible direct request', async t => {
+ let commits = 0
+ t.mock.method(globalThis, 'fetch', async (url, options) => {
+  if (String(url).endsWith('/import-uploads')) return json({}, 503)
+  commits++; assert(options.body.get('file') instanceof Blob); return json({ success: true })
+ })
+ assert.equal((await post_import(endpoint, form(randomBytes(1024 * 1024 + 1)))).status, 200)
+ assert.equal(commits, 1)
+})
+
+test('invalid allocated staging sessions are deleted before rejection', async t => {
+ let deletions = 0
+ const phases = []
+ t.mock.method(globalThis, 'fetch', async (_url, options) => {
+  if (options.method === 'DELETE') { deletions++; return new Response(null, { status: 204 }) }
+  return json({ protocol: 2, upload_id: sessionID, chunk_bytes: 1024 * 1024 })
+ })
+ await assert.rejects(post_import(endpoint, form(randomBytes(1024 * 1024 + 1)), null, started => phases.push(started)), /invalid batched-upload session/)
+ assert.equal(deletions, 1)
+ assert(!phases.includes(true), 'a precommit failure cannot report an unknown committed outcome')
+})
+
+test('only an actual commit attempt marks its outcome unknown', async t => {
+ const phases = []
+ t.mock.method(globalThis, 'fetch', async (_url, options) => {
+  if (options.method === 'DELETE') return new Response(null, { status: 204 })
+  if (options.method === 'PUT') return json({ received: options.body.length })
+  if (typeof options.body === 'string') return json({ protocol: 1, upload_id: sessionID, chunk_bytes: 1024 * 1024 })
+  throw new TypeError('Commit connection lost')
+ })
+ await assert.rejects(post_import(endpoint, form(Buffer.from('small')), null, started => phases.push(started)), /Commit connection lost/)
+ assert.equal(phases.at(-1), true)
+})

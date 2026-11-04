@@ -8,6 +8,55 @@ import { start_dev_logging } from '../dist/utils/dev-logs.js'
 import { read_dev_logs, LOG_READ_LIMIT } from '../dist/utils/read-dev-logs.js'
 import { CLI_ENTRY, make_workspace, run_cli } from './helpers/run-cli.mjs'
 
+test('CMS log capture joins split ANSI sequences before stripping them', async t => {
+ const workspace = await make_workspace(); t.after(workspace.cleanup)
+ const log = start_dev_logging(workspace.work)
+ try {
+  const capture = log.capture('stdout')
+  capture(Buffer.from('\x1b[')); capture(Buffer.from('31mcolored')); capture(Buffer.from('\x1b[0m\n'))
+ } finally { log.stop() }
+ const result = await read_dev_logs(workspace.work)
+ assert.match(result.text, /colored/)
+ assert.doesNotMatch(result.text, /\x1b|31m|0m/)
+})
+
+test('a symlinked log cannot change its target and does not prevent startup', async t => {
+ const workspace = await make_workspace(); t.after(workspace.cleanup)
+ await fs.mkdir(path.join(workspace.work, '.primo'))
+ const target = path.join(workspace.work, 'kept.txt')
+ await fs.writeFile(target, 'kept', { mode: 0o644 })
+ await fs.symlink(target, path.join(workspace.work, '.primo/dev.log'))
+ const log = start_dev_logging(workspace.work)
+ log.capture('stdout')(Buffer.from('must not reach target\n')); log.stop()
+ assert.equal(await fs.readFile(target, 'utf8'), 'kept')
+ if (process.platform !== 'win32') assert.equal((await fs.stat(target)).mode & 0o777, 0o644)
+})
+
+test('CMS capture pauses its source until the output drains', async t => {
+ const workspace = await make_workspace(); t.after(workspace.cleanup)
+ const original = process.stdout.write
+ let paused = false, resumed = false
+ process.stdout.write = () => false
+ const log = start_dev_logging(workspace.work)
+ try {
+  const source = { pause() { paused = true }, resume() { resumed = true } }
+  log.capture('stdout', source)(Buffer.from('bounded output\n'))
+  assert.equal(paused, true)
+  assert.equal(resumed, false)
+  process.stdout.emit('drain')
+  assert.equal(resumed, true)
+ } finally { log.stop(); process.stdout.write = original }
+})
+
+test('a single-site session nested in a workspace reads its own log', async t => {
+ const workspace = await make_workspace(); t.after(workspace.cleanup)
+ await fs.writeFile(path.join(workspace.work, 'server.yaml'), '{}\n')
+ const site = path.join(workspace.work, 'sites/standalone')
+ await fs.mkdir(path.join(site, '.primo'), { recursive: true })
+ await fs.writeFile(path.join(site, '.primo/dev.log'), 'standalone session\n')
+ assert.equal((await read_dev_logs(site)).text, 'standalone session\n')
+})
+
 test('log rotation retains the previous file, strips ANSI, and preserves split UTF-8', async t => {
  const workspace = await make_workspace(); t.after(workspace.cleanup)
  const log = start_dev_logging(workspace.work, 250)

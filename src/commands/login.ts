@@ -52,6 +52,9 @@ export async function login(options: LoginOptions) {
 	if (!options.password) {
 		try {
 			browser_login_origin(server)
+			if (options.timeout !== undefined && (!Number.isInteger(Number(options.timeout)) || Number(options.timeout) < 1 || Number(options.timeout) > 600)) {
+				throw new Error('--timeout must be an integer from 1 to 600 seconds.')
+			}
 		} catch (error) {
 			console.error(error instanceof Error ? error.message : String(error))
 			process.exitCode = 1

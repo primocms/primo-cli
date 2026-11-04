@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import type { Readable } from 'node:stream'
 import { StringDecoder } from 'node:string_decoder'
 import { stripVTControlCharacters } from 'node:util'
 
@@ -10,12 +11,22 @@ export const DEV_LOG_MAX_BYTES = 5 * 1024 * 1024
 // retain startup failures and the last messages even when the CLI exits at once.
 export function start_dev_logging(workspace: string, max_bytes = DEV_LOG_MAX_BYTES) {
 	const file = path.join(workspace, DEV_LOG_FILE)
-	fs.mkdirSync(path.dirname(file), { recursive: true })
-	fs.closeSync(fs.openSync(file, 'a', 0o600))
-	fs.chmodSync(file, 0o600)
-	let size = fs.statSync(file).size
 	const originals = { stdout: process.stdout.write, stderr: process.stderr.write }
 	let enabled = true
+	let size = 0
+	try {
+		fs.mkdirSync(path.dirname(file), { recursive: true })
+		try { if (fs.lstatSync(file).isSymbolicLink()) throw new Error('Log path is a symbolic link') } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+		const descriptor = fs.openSync(file, fs.constants.O_APPEND | fs.constants.O_CREAT | fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW ?? 0), 0o600)
+		try {
+			if (!fs.fstatSync(descriptor).isFile()) throw new Error('Log path is not a regular file')
+			fs.fchmodSync(descriptor, 0o600)
+			size = fs.fstatSync(descriptor).size
+		} finally { fs.closeSync(descriptor) }
+	} catch (error) {
+		enabled = false
+		originals.stderr.call(process.stderr, `Primo could not open ${file}; continuing without file logging: ${String(error)}\n`)
+	}
 	const append = (source: string, message: string) => {
 		const clean = stripVTControlCharacters(message).replace(/\r/g, '')
 		if (!enabled || !clean.trim()) return
@@ -52,18 +63,37 @@ export function start_dev_logging(workspace: string, max_bytes = DEV_LOG_MAX_BYT
 		} as typeof target.write
 	}
 	append('cli', `Session started (pid ${process.pid})`)
+	const flushers: (() => void)[] = []
 	return {
 		file,
 		// Forward CMS output through the original writers, avoiding duplicate CLI
 		// entries. StringDecoder preserves UTF-8 split across pipe chunks.
-		capture(stream: 'stdout' | 'stderr') {
+		capture(stream: 'stdout' | 'stderr', source?: Readable) {
 			const decoder = new StringDecoder('utf8')
+			let pending = ''
+			flushers.push(() => { append(`cms:${stream}`, pending + decoder.end()); pending = '' })
 			return (chunk: Buffer) => {
-				append(`cms:${stream}`, decoder.write(chunk))
-				originals[stream].call(process[stream], chunk)
+				pending += decoder.write(chunk)
+				const lastNewline = pending.lastIndexOf('\n')
+				if (lastNewline >= 0) {
+					append(`cms:${stream}`, pending.slice(0, lastNewline + 1))
+					pending = pending.slice(lastNewline + 1)
+				}
+				// Bound unterminated lines while retaining a possibly split VT suffix.
+				if (pending.length > 16384) {
+					const boundary = Math.max(8192, pending.lastIndexOf('\x1b'))
+					append(`cms:${stream}`, pending.slice(0, boundary))
+					pending = pending.slice(boundary)
+				}
+				if (!originals[stream].call(process[stream], chunk) && source) {
+					source.pause()
+					process[stream].once('drain', () => source.resume())
+				}
 			}
+
 		},
 		stop() {
+			for (const flush of flushers) flush()
 			process.stdout.write = originals.stdout
 			process.stderr.write = originals.stderr
 		}
