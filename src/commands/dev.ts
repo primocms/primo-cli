@@ -1010,6 +1010,7 @@ export async function dev_server(options: DevOptions) {
 
 		// Register before recording the PID: the child can exit during that await.
 		const starting_cms = cms_process
+		const cms_closed = new Promise<void>(resolve => starting_cms.once('close', () => resolve()))
 		const cms_exited = new Promise<boolean>(resolve => {
 			const stop_waiting = () => resolve(false)
 			starting_cms.once('exit', stop_waiting)
@@ -1037,6 +1038,8 @@ export async function dev_server(options: DevOptions) {
 		// Wait for CMS to be ready
 		const ready = await Promise.race([wait_for_ready(`http://127.0.0.1:${port}`, 30000), cms_exited])
 		if (!ready || cms_start_error || cms_process.exitCode !== null || cms_process.signalCode !== null) {
+			// exit precedes close; drain both pipes before finalizing diagnostics.
+			if (cms_start_error || starting_cms.exitCode !== null || starting_cms.signalCode !== null) await cms_closed
 			const stderr_output = stderr_tail.end()
 			spinner.fail('CMS failed to start')
 			if (stderr_output) {

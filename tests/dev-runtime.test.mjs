@@ -215,3 +215,15 @@ test('CLI --port actually controls the server despite a different configured por
  assert.equal((await fetch(`http://127.0.0.1:${port}/api/health`)).ok, true)
  assert.equal(await fs.readFile(path.join(workspace.work, 'server.yaml'), 'utf8'), 'port: 2\n')
 })
+
+test('early CMS exit drains inherited stderr before final startup diagnostics',async t=>{
+ const workspace=await empty_workspace(t),binary=path.join(workspace.root,'late-stderr-cms.mjs')
+ const writer="setTimeout(()=>process.stderr.write('late drained diagnostic 🚀',()=>process.exit(0)),80)"
+ await fs.writeFile(binary,`#!${process.execPath}\nimport {spawn} from 'node:child_process';console.log('startup context');spawn(process.execPath,['-e',${JSON.stringify(writer)}],{stdio:['ignore','ignore',2]}).unref();process.exit(1);\n`)
+ await fs.chmod(binary,0o755)
+ const result=await run_cli(['dev'],{cwd:workspace.work,home:workspace.home,env:{PRIMO_BINARY:binary},timeout_ms:10000})
+ assert.notEqual(result.code,0)
+ assert.match(result.stdout,/late drained diagnostic 🚀/)
+ const log=await fs.readFile(path.join(workspace.work,'.primo/dev.log'),'utf8')
+ assert.match(log,/\[cms:stderr\] late drained diagnostic 🚀/)
+})

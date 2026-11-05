@@ -501,7 +501,7 @@ async function build_page(options: BuildPageOptions): Promise<{ html: string; er
 		const rendered = { head: page_head.head || '', body: '' }
 		const zones = new Map<string, string[]>()
 		for (const [i, slot] of section_slots.entries()) {
-			const section = render(components[`Section_${i}`], { props: slot.section.content || {} })
+			const section = render(components[`Section_${i}`], { props: slot.section.content || {}, idPrefix: `section${i}` })
 			rendered.head += section.head || ''
 			const zone = zones.get(slot.zone) || []
 			zone.push(`<div data-section="${slot.dom_id}" id="section-${slot.dom_id}" data-symbol="${safe_temp_id(slot.section.block)}">${section.body}</div>`)

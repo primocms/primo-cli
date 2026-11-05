@@ -19,8 +19,8 @@ test(
 			'site.yaml': 'name: Hydration fixture\n',
 			'site/head.svelte': '<title>Client site</title>',
 			'page-types/default/config.yaml': 'name: Default\n',
-			'blocks/hero/component.svelte': `<script>let count = $state(0); $effect(() => { window.hydrated = (window.hydrated || 0) + 1 })</script><svelte:head><link rel="canonical" href="https://client.test/" /></svelte:head><h1>Client headline</h1><button onclick={() => count++}>{count}</button><style>h1 { color: red }</style>`,
-			'blocks/list/component.svelte': `<script>let items = ['one','two']; $effect(() => { window.hydrated = (window.hydrated || 0) + 1 })</script><svelte:head><meta name="list-head" content="one" /></svelte:head><section>List</section>{#each items as item}<p>{item}</p>{/each}`,
+			'blocks/hero/component.svelte': `<script>let count = $state(0); const uid = $props.id(); $effect(() => { window.hydrated = (window.hydrated || 0) + 1 })</script><svelte:head><link rel="canonical" href="https://client.test/" /></svelte:head><label for={uid}>Hero name</label><input id={uid} /><h1>Client headline</h1><button onclick={() => count++}>{count}</button><style>h1 { color: red }</style>`,
+			'blocks/list/component.svelte': `<script>let items = ['one','two']; const uid = $props.id(); $effect(() => { window.hydrated = (window.hydrated || 0) + 1 })</script><svelte:head><meta name="list-head" content="one" /></svelte:head><label for={uid}>List name</label><input id={uid} /><section>List</section>{#each items as item}<p>{item}</p>{/each}`,
 			'blocks/seo/component.svelte': `<script>$effect(() => { window.hydrated = (window.hydrated || 0) + 1 })</script><svelte:head><meta name="seo-only" content="yes" /></svelte:head>`,
 			'pages/index.yaml':
 				'name: Home\npage_type: default\nsections:\n  - block: hero\n  - block: list\n  - block: seo\n',
@@ -36,6 +36,10 @@ test(
 			options,
 		)
 		assert.equal(built.code, 0, built.output)
+		const html = await fs.readFile(path.join(output, 'index.html'), 'utf8')
+		const ids = [...html.matchAll(/<input[^>]+id="([^"]+)"/g)].map(match => match[1])
+		assert.equal(ids.length, 2)
+		assert.equal(new Set(ids).size, 2, 'separate SSR sections must not duplicate $props.id()')
 		const server = http.createServer(async (req, res) => {
 			try {
 				const pathname = new URL(req.url, 'http://local').pathname
@@ -87,6 +91,9 @@ test(
 		})
 		await page.goto(`http://127.0.0.1:${server.address().port}/`)
 		await page.waitForFunction(() => window.hydrated === 3)
+		assert.equal(await page.locator('[data-section] input').evaluateAll(inputs =>
+			new Set(inputs.map(input => input.id)).size === inputs.length &&
+			inputs.every(input => input.labels?.length === 1 && input.labels[0].control === input)), true)
 		assert.equal(
 			await page.evaluate(() =>
 				window.originals.every((nodes, i) =>
