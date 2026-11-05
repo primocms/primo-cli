@@ -1248,6 +1248,10 @@ async function resolve_site_fields(
 			const field_path = parent ? `${parent}.${field.name}` : field.name
 			if (field.type === 'site-field') {
 				const reference = field.config?.field || field.options?.field
+				if (!reference && roots.filter(candidate => candidate.name === field.name).length === 1 && site_data.content[field.name] !== undefined) {
+					resolved[field.name] = site_data.content[field.name]
+					continue
+				}
 				const by_id = roots.find((candidate) => reference && get_field_id(candidate) === reference)
 				const by_key = roots.filter((candidate) => candidate.name === reference)
 				const source = by_id ?? (by_key.length === 1 ? by_key[0] : undefined)

@@ -16,7 +16,8 @@ async function fixture(
 	{
 		polls = ['authorization_pending', 'approved'],
 		verification_uri,
-		supported = true
+		supported = true,
+        retry_after = '1'
 	} = {}
 ) {
 	const workspace = await make_workspace()
@@ -56,7 +57,7 @@ async function fixture(
 				if (result === 'authorization_pending')
 					return json(202, { error: result })
 				if (result === 'slow_down') {
-					res.setHeader('Retry-After', '1')
+					res.setHeader('Retry-After', retry_after)
 					return json(429, { error: result })
 				}
 				return json(result === 'expired_token' ? 410 : 403, { error: result })
@@ -266,3 +267,30 @@ test(
 		)
 	}
 )
+
+// The server interval is deliberately longer than the remaining client deadline.
+// The client must expire rather than issuing an early poll at the old 30s cap.
+test('a long Retry-After is bounded by the login deadline', async t => {
+ const {server,options}=await fixture(t,{polls:['slow_down','approved'],retry_after:'45'})
+ const result=await run_cli(['login',server.url,'--no-browser','--timeout','3'],options)
+ assert.notEqual(result.code,0)
+ assert.match(result.output,/expired/)
+ assert.equal(server.matching('/api/primo/cli-login/token').length,1)
+})
+
+test('cancelling an approved login while the token store is locked leaves it unsaved',async t=>{
+ const {server,options,token_file}=await fixture(t,{polls:['approved']})
+ await fs.mkdir(path.dirname(token_file),{recursive:true})
+ await fs.writeFile(token_file,JSON.stringify({'https://other.test':'keep'}))
+ await fs.writeFile(token_file+'.lock','held')
+ const child=spawn(process.execPath,[CLI_ENTRY,'login',server.url,'--no-browser'],{cwd:options.cwd,env:{...process.env,HOME:options.home,USERPROFILE:options.home,NO_COLOR:'1'}})
+ t.after(()=>child.kill('SIGKILL'))
+ let output='';child.stdout.on('data',data=>output+=data);child.stderr.on('data',data=>output+=data)
+ for(let i=0;i<300 && server.matching('/api/primo/cli-login/token').length===0;i++) await new Promise(resolve=>setTimeout(resolve,10))
+ assert.equal(server.matching('/api/primo/cli-login/token').length,1)
+ child.kill('SIGINT')
+ const [code]=await once(child,'close')
+ assert.notEqual(code,0)
+ assert.doesNotMatch(output,/Logged in as/)
+ assert.deepEqual(JSON.parse(await fs.readFile(token_file,'utf8')),{'https://other.test':'keep'})
+})

@@ -54,6 +54,9 @@ test('a single-site session nested in a workspace reads its own log', async t =>
  const site = path.join(workspace.work, 'sites/standalone')
  await fs.mkdir(path.join(site, '.primo'), { recursive: true })
  await fs.writeFile(path.join(site, '.primo/dev.log'), 'standalone session\n')
+ const runtime={version:1,workspace:await fs.realpath(site),pid:process.pid,port:43002,instance:'standalone'}
+ await fs.writeFile(path.join(site,'.primo/dev-server.json'),JSON.stringify(runtime))
+ t.mock.method(globalThis,'fetch',async()=>Response.json(runtime))
  assert.equal((await read_dev_logs(site)).text, 'standalone session\n')
 })
 
@@ -131,3 +134,19 @@ test('every physical line identifies its source even for multiline chunks', asyn
  assert.match(text, /\[cms:stderr\] second server line/)
  assert.match(text, /\[cli:stdout\] second CLI line/)
 })
+
+ test('log controls crossing the old line cut and long OSC payloads stay stripped',async t=>{
+ const workspace=await make_workspace();t.after(workspace.cleanup)
+ const original=process.stdout.write;process.stdout.write=()=>true
+ const log=start_dev_logging(workspace.work,1024*1024)
+ try {
+ const capture=log.capture('stdout')
+ capture(Buffer.from('x'.repeat(8191)+'\x1b[31'))
+ capture(Buffer.from('m'+'y'.repeat(9000)+'\x1b[0m\n'))
+ capture(Buffer.from('\x1b]0;'+'hidden-title'.repeat(4000)))
+ capture(Buffer.from('\x07visible-after-title\n'))
+ }finally{log.stop();process.stdout.write=original}
+ const result=await read_dev_logs(workspace.work,1000)
+ assert.match(result.text,/visible-after-title/)
+ assert.doesNotMatch(result.text,/\x1b|31m|hidden-title|0m/)
+ })

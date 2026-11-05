@@ -7,7 +7,7 @@ if (!((major === 22 && minor >= 13) || major >= 24)) {
 	process.exit(1)
 }
 import('./index.js').catch(error => {
-	console.error(error instanceof Error ? error.message : String(error))
+	console.error(error instanceof Error ? error.stack ?? error.message : String(error))
 	process.exitCode = 1
 })
 export {}

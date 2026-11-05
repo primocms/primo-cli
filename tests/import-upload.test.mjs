@@ -150,3 +150,20 @@ test('only an actual commit attempt marks its outcome unknown', async t => {
  await assert.rejects(post_import(endpoint, form(Buffer.from('small')), null, started => phases.push(started)), /Commit connection lost/)
  assert.equal(phases.at(-1), true)
 })
+
+test('a 503 Retry-After delays chunk retry before the import commit', async t => {
+ let attempts=0,first=0
+ t.mock.method(globalThis,'fetch',async(url,options)=>{
+  if(options.method==='DELETE')return new Response(null,{status:204})
+  if(String(url).endsWith('/import-uploads'))return json({protocol:1,upload_id:sessionID,chunk_bytes:4*1024*1024},201)
+  if(options.method==='PUT'){
+   attempts++
+   if(attempts===1){first=Date.now();return new Response('{}',{status:503,headers:{'Retry-After':'1'}})}
+   assert(Date.now()-first>=950,'retried before provider delay')
+   return json({received:Number(new URL(url).searchParams.get('offset'))+options.body.length})
+  }
+  return json({success:true})
+ })
+ assert.equal((await post_import(endpoint,form(randomBytes(1024*1024+1)))).status,200)
+ assert.equal(attempts,3)
+})

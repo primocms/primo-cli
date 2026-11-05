@@ -91,6 +91,12 @@ enabled: false
    const legacyOptions = await build()
    assert.equal(legacyOptions.code, 0, legacyOptions.output)
   }
+  const legacyFields = names.map(name => `- name: ${name}\n  type: site-field\n`).join('')
+  await write('blocks/shared/fields.yaml', legacyFields)
+  await write('blocks/shared/component.svelte', `<p>{notice}:{count}:{enabled}</p>`)
+  const legacyBuild=await build()
+  assert.equal(legacyBuild.code,0,legacyBuild.output)
+  assert.match(await fs.readFile(path.join(output,'index.html'),'utf8'),/Shared copyright:0:false/)
   // A same-named local fallback must never conceal a bad explicit reference.
   await write('blocks/shared/fields.yaml', '- name: nav_links\n  type: site-field\n  config: { field: missing-nav }\n')
   const failed = await build()

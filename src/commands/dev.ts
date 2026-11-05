@@ -906,6 +906,8 @@ export async function dev_server(options: DevOptions) {
 		}
 		const runtime = await claim_dev_runtime(base_dir, port)
 		const dev_log = start_dev_logging(base_dir)
+		// Synchronous exit hooks also cover startup errors and forced shutdown.
+		process.once('exit', () => dev_log.stop())
 		console.log(chalk.dim(`  Logs: ${dev_log.file} (primo logs --follow)`))
 		const stop_startup_on_interrupt = () => process.exit(130)
 		const stop_startup_on_terminate = () => process.exit(143)

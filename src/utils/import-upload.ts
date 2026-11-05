@@ -63,7 +63,7 @@ export async function post_import(endpoint: string, form: FormData, token?: stri
 							body: chunk, signal: AbortSignal.timeout(30000), redirect: 'error'
 						})
 						if (![408, 429, 500, 502, 503, 504].includes(response.status) || attempt === 2) break
-						const retryAfter = response.status === 429 ? retry_after_delay(response.headers.get('Retry-After')) : 0
+						const retryAfter = response.status === 429 || response.status === 503 ? retry_after_delay(response.headers.get('Retry-After')) : 0
 						await response.body?.cancel()
 						if (retryAfter > 0) { await delay(Math.max(250 * 2 ** attempt, retryAfter)); continue }
 					} catch (error) {
