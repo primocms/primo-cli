@@ -39,6 +39,8 @@ test(
 		const server = http.createServer(async (req, res) => {
 			try {
 				const pathname = new URL(req.url, 'http://local').pathname
+				// Full Chrome requests its default icon; it is outside this hydration fixture.
+				if (pathname === '/favicon.ico') { res.writeHead(204); res.end(); return }
 				const file = path.join(
 					output,
 					pathname === '/' ? 'index.html' : pathname,

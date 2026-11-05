@@ -54,7 +54,13 @@ export function start_dev_logging(workspace: string, max_bytes = DEV_LOG_MAX_BYT
 						fs.renameSync(file, `${file}.1`)
 						size = 0
 					}
-					fs.appendFileSync(file, text, { mode: 0o600 })
+					const descriptor = fs.openSync(file, fs.constants.O_APPEND | fs.constants.O_CREAT | fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW ?? 0), 0o600)
+					try {
+						const opened = fs.fstatSync(descriptor), current = fs.lstatSync(file)
+						// Verify before writing, also on platforms without O_NOFOLLOW.
+						if (!opened.isFile() || !current.isFile() || current.isSymbolicLink() || opened.dev !== current.dev || opened.ino !== current.ino) throw new Error('Log path changed or is not a regular file')
+						fs.writeSync(descriptor, text)
+					} finally { fs.closeSync(descriptor) }
 					size += bytes
 				}
 			}
@@ -141,4 +147,15 @@ export function start_dev_logging(workspace: string, max_bytes = DEV_LOG_MAX_BYT
 			process.stderr.write = originals.stderr
 		}
 	}
+}
+
+/** Keep startup diagnostics bounded without splitting UTF-8 or surrogate pairs. */
+export function create_utf8_tail(limit = 65536) {
+ const decoder = new StringDecoder('utf8')
+ let text = ''
+ const append = (chunk: string) => {
+  text = (text + chunk).slice(-limit)
+  if (text.length && /[\uDC00-\uDFFF]/.test(text[0])) text = text.slice(1)
+ }
+ return { write(chunk: Buffer) { append(decoder.write(chunk)) }, end() { append(decoder.end()); return text } }
 }

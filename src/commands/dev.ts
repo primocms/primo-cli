@@ -1,5 +1,5 @@
 import { stripVTControlCharacters } from 'node:util'
-import { start_dev_logging } from '../utils/dev-logs.js'
+import { start_dev_logging, create_utf8_tail } from '../utils/dev-logs.js'
 import fs from 'fs/promises'
 import path from 'path'
 import { createHash, randomInt } from 'crypto'
@@ -1022,11 +1022,11 @@ export async function dev_server(options: DevOptions) {
 		process.once('exit', () => { cms_process?.kill('SIGTERM') })
 
 		// Capture stderr for errors
-		let stderr_output = ''
+		const stderr_tail = create_utf8_tail()
 		cms_process.stdout?.on('data', dev_log.capture('stdout', cms_process.stdout))
 		cms_process.stderr?.on('data', dev_log.capture('stderr', cms_process.stderr))
 		cms_process.stderr?.on('data', (data) => {
-			stderr_output = (stderr_output + data.toString()).slice(-65536)
+			stderr_tail.write(data)
 		})
 		cms_process.on('exit', (code, signal) => {
 			console.log(chalk.dim(`  CMS exited (${signal ? `signal ${signal}` : `code ${code}`})`))
@@ -1037,6 +1037,7 @@ export async function dev_server(options: DevOptions) {
 		// Wait for CMS to be ready
 		const ready = await Promise.race([wait_for_ready(`http://127.0.0.1:${port}`, 30000), cms_exited])
 		if (!ready || cms_start_error || cms_process.exitCode !== null || cms_process.signalCode !== null) {
+			const stderr_output = stderr_tail.end()
 			spinner.fail('CMS failed to start')
 			if (stderr_output) {
 				console.log(chalk.red(stderr_output))

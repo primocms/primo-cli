@@ -4,7 +4,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { start_dev_logging } from '../dist/utils/dev-logs.js'
+import { create_utf8_tail, start_dev_logging } from '../dist/utils/dev-logs.js'
 import { read_dev_logs, LOG_READ_LIMIT } from '../dist/utils/read-dev-logs.js'
 import { CLI_ENTRY, make_workspace, run_cli } from './helpers/run-cli.mjs'
 
@@ -169,4 +169,24 @@ test('a bounded log window retains its first complete line',async t=>{
  const tail='first complete\n'+'x'.repeat(256*1024-'first complete\n'.length-1)+'\n'
  await fs.writeFile(path.join(workspace.work,'.primo/dev.log'),'prefix\n'+tail)
  assert((await read_dev_logs(workspace.work,1000)).text.startsWith('first complete\n'))
+})
+
+
+test('startup diagnostic tail preserves split UTF-8 and trims whole code points',()=>{
+ const tail=create_utf8_tail(5),bytes=Buffer.from('🙂')
+ tail.write(bytes.subarray(0,2));tail.write(bytes.subarray(2));tail.write(Buffer.from('abc'))
+ assert.equal(tail.end(),'🙂abc')
+ const cut=create_utf8_tail(4);cut.write(Buffer.from('🙂abc'));assert.equal(cut.end(),'abc')
+})
+
+test('a log symlink substituted after startup cannot redirect appends',async t=>{
+ const workspace=await make_workspace();t.after(workspace.cleanup)
+ const original=process.stdout.write;process.stdout.write=()=>true
+ const log=start_dev_logging(workspace.work),outside=path.join(workspace.root,'outside')
+ try {
+  await fs.writeFile(outside,'preserve')
+  await fs.unlink(log.file);await fs.symlink(outside,log.file)
+  log.capture('stdout')(Buffer.from('must not redirect\n'))
+  assert.equal(await fs.readFile(outside,'utf8'),'preserve')
+ } finally {log.stop();process.stdout.write=original}
 })
