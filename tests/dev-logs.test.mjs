@@ -4,10 +4,22 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
+import { fileURLToPath } from 'node:url'
 import { create_utf8_tail, start_dev_logging } from '../dist/utils/dev-logs.js'
 import { read_dev_logs, LOG_READ_LIMIT } from '../dist/utils/read-dev-logs.js'
 import { CLI_ENTRY, make_workspace, run_cli } from './helpers/run-cli.mjs'
 
+// The logger deliberately replaces stdout/stderr. Run these assertions outside
+// node --test's child-v8 binary transport, which Node 22 can corrupt when raw
+// split UTF-8 and test records share an intercepted stream.
+if (process.env.PRIMO_LOG_TEST_CHILD !== '1') {
+ test('developer log regressions run with isolated process streams',async()=>{
+  const env={...process.env,PRIMO_LOG_TEST_CHILD:'1'};delete env.NODE_TEST_CONTEXT
+  const child=spawn(process.execPath,[fileURLToPath(import.meta.url)],{env})
+  let output='';child.stdout.on('data',chunk=>{output+=chunk});child.stderr.on('data',chunk=>{output+=chunk})
+  const [code]=await once(child,'close');assert.equal(code,0,output)
+ })
+} else {
 test('CMS log capture joins split ANSI sequences before stripping them', async t => {
  const workspace = await make_workspace(); t.after(workspace.cleanup)
  const log = start_dev_logging(workspace.work)
@@ -190,3 +202,5 @@ test('a log symlink substituted after startup cannot redirect appends',async t=>
   assert.equal(await fs.readFile(outside,'utf8'),'preserve')
  } finally {log.stop();process.stdout.write=original}
 })
+
+}
