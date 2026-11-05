@@ -150,3 +150,23 @@ test('every physical line identifies its source even for multiline chunks', asyn
  assert.match(result.text,/visible-after-title/)
  assert.doesNotMatch(result.text,/\x1b|31m|hidden-title|0m/)
  })
+
+test('logs from a child folder find the live single-site session', async t => {
+ const workspace=await make_workspace();t.after(workspace.cleanup)
+ const site=path.join(workspace.work,'sites/demo'),child=path.join(site,'pages')
+ await fs.mkdir(path.join(site,'.primo'),{recursive:true});await fs.mkdir(child)
+ await fs.writeFile(path.join(workspace.work,'server.yaml'),'port: 3000\n')
+ const runtime={version:1,workspace:await fs.realpath(site),pid:process.pid,port:43002,instance:'nested'}
+ await fs.writeFile(path.join(site,'.primo/dev-server.json'),JSON.stringify(runtime))
+ await fs.writeFile(path.join(site,'.primo/dev.log'),'nested session\n')
+ t.mock.method(globalThis,'fetch',async()=>Response.json(runtime))
+ assert.equal((await read_dev_logs(child)).text,'nested session\n')
+})
+
+test('a bounded log window retains its first complete line',async t=>{
+ const workspace=await make_workspace();t.after(workspace.cleanup)
+ await fs.mkdir(path.join(workspace.work,'.primo'))
+ const tail='first complete\n'+'x'.repeat(256*1024-'first complete\n'.length-1)+'\n'
+ await fs.writeFile(path.join(workspace.work,'.primo/dev.log'),'prefix\n'+tail)
+ assert((await read_dev_logs(workspace.work,1000)).text.startsWith('first complete\n'))
+})

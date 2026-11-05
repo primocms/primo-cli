@@ -24,6 +24,15 @@ export async function get_auth_token(server: string): Promise<string | null> {
 }
 
 export async function save_auth_token(server: string, token: string, signal?: AbortSignal): Promise<void> {
+	return update_auth_token(server, token, signal)
+}
+
+// Remove only the rejected credential; a concurrent refreshed login must survive.
+export async function remove_auth_token(server: string, rejected: string): Promise<void> {
+	return update_auth_token(server, null, undefined, rejected)
+}
+
+async function update_auth_token(server: string, token: string | null, signal?: AbortSignal, rejected?: string): Promise<void> {
 	signal?.throwIfAborted()
 	await fs.mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 })
 
@@ -37,8 +46,10 @@ export async function save_auth_token(server: string, token: string, signal?: Ab
 
 		signal?.throwIfAborted()
 		const canonical = normalize_server(server)
-		for (const key of Object.keys(tokens)) if (key !== canonical && normalize_server(key) === canonical) delete tokens[key]
-		tokens[canonical] = token
+		for (const key of Object.keys(tokens)) {
+			if (normalize_server(key) === canonical && (token !== null || tokens[key] === rejected)) delete tokens[key]
+		}
+		if (token !== null) tokens[canonical] = token
 		const temporary = `${TOKEN_FILE}.${randomUUID()}.tmp`
 		try {
 			await fs.writeFile(temporary, JSON.stringify(tokens, null, 2), {

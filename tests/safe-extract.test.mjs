@@ -68,3 +68,9 @@ test('regular nested files, explicit directories, empty files and binary bytes r
  await extract(x.archive,{dir:x.dir});assert.equal(await fs.readFile(path.join(x.dir,'blocks/hero.svelte'),'utf8'),'<h1>Client</h1>');assert.deepEqual(await fs.readFile(path.join(x.dir,'uploads/image.bin')),bytes);assert.equal((await fs.stat(path.join(x.dir,'pages/empty.yaml'))).size,0)
  if(process.platform!=='win32'){assert.equal((await fs.stat(path.join(x.dir,'uploads/image.bin'))).mode&0o777,0o666&~process.umask());assert.equal((await fs.stat(path.join(x.dir,'uploads'))).mode&0o777,0o777&~process.umask())}
 })
+
+test('ZIP filename work is bounded before extraction creates any files',async t=>{
+ const x=await setup(t,[{name:'a/'.repeat(30)+'b'.repeat(4096)}])
+ await assert.rejects(extract(x.archive,{dir:x.dir}),/filename byte budget/)
+ assert.deepEqual(await fs.readdir(x.dir),[])
+})

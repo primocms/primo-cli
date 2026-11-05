@@ -12,10 +12,12 @@ export default async function extract(archive: string, { dir, maxBytes = 512 * 1
 	const zip = await yauzl.openPromise(archive, { lazyEntries: true, autoClose: false, strictFileNames: true })
 	try {
 		const entries: { entry: Entry; parts: string[]; directory: boolean }[] = []
-		let declaredBytes = 0, writtenBytes = 0
+		let declaredBytes = 0, writtenBytes = 0, filenameBytes = 0
 		const names = new Map<string, boolean>()
 		for await (const entry of zip.eachEntry()) {
 			const name = entry.fileName
+			filenameBytes += Buffer.byteLength(name)
+			if (Buffer.byteLength(name) > 4096 || filenameBytes > 16 * 1024 * 1024) throw new Error('ZIP filename byte budget exceeded')
 			const directory = name.endsWith('/')
 			const parts = (directory ? name.slice(0, -1) : name).split('/')
 			if (parts.length > 128) throw new Error('ZIP path exceeds maximum depth of 128')

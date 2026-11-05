@@ -187,7 +187,7 @@ export async function authenticate_in_browser(
 				if (
 					typeof polled.data.token !== 'string' ||
 					!polled.data.token ||
-					typeof record?.email !== 'string'
+					typeof record?.email !== 'string' || !record.email
 				)
 					throw new Error('The server returned an invalid login result.')
 				await save_auth_token(server, polled.data.token, options.signal)

@@ -26,7 +26,7 @@ test('concurrent logins preserve every server session in the private token store
 async function run_auth_code(workspace, body) {
  const module=pathToFileURL(path.resolve('dist/utils/auth.js')).href
  return new Promise((resolve,reject)=>{
-  const child=spawn(process.execPath,['--input-type=module','-e',`import assert from 'node:assert/strict';import fs from 'node:fs/promises';import {get_auth_token,save_auth_token} from ${JSON.stringify(module)};${body}`],{env:{...process.env,HOME:workspace.home,USERPROFILE:workspace.home}})
+  const child=spawn(process.execPath,['--input-type=module','-e',`import assert from 'node:assert/strict';import fs from 'node:fs/promises';import {get_auth_token,save_auth_token,remove_auth_token} from ${JSON.stringify(module)};${body}`],{env:{...process.env,HOME:workspace.home,USERPROFILE:workspace.home}})
   let output='';child.stderr.on('data',chunk=>output+=chunk);child.stdout.resume();child.on('error',reject);child.on('exit',status=>status===0?resolve():reject(new Error(output)))
  })
 }
@@ -45,4 +45,11 @@ test('cancellation while the token store is locked leaves credentials untouched'
  await run_auth_code(workspace,`const controller=new AbortController();setTimeout(()=>controller.abort(),40);await assert.rejects(save_auth_token('https://cancelled.test','secret',controller.signal),{name:'AbortError'});`)
  await assert.rejects(fs.access(path.join(workspace.home,'.primo/tokens.json')),{code:'ENOENT'})
  assert.equal(await fs.readFile(lock,'utf8'),'active owner')
+})
+
+
+test('rejected credential removal preserves refreshed and unrelated sessions',async t=>{
+ const workspace=await make_workspace();t.after(workspace.cleanup)
+ await workspace.write_token('https://cms.test:443','rejected')
+ await run_auth_code(workspace,`await save_auth_token('https://other.test','keep');await remove_auth_token('https://cms.test','rejected');assert.equal(await get_auth_token('https://cms.test'),null);await save_auth_token('https://cms.test','fresh');await remove_auth_token('https://cms.test','rejected');assert.equal(await get_auth_token('https://cms.test'),'fresh');assert.equal(await get_auth_token('https://other.test'),'keep');`)
 })

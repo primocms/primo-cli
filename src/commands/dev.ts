@@ -1490,7 +1490,10 @@ export async function dev_server(options: DevOptions) {
 							await sync_from_cms(site.dir, api_url, site.config, server_config, base_dir, sync_policy)
 						} else {
 							await normalize_site(site.dir)
-							const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap, base_dir, sync_policy.mode === 'both' && !use_bootstrap ? required_site_revision(site) : undefined))
+							const initial_revision = sync_policy.mode === 'both' && !use_bootstrap
+								? await verify_initial_two_way_import(site.dir, api_url, site.config, server_config, base_dir)
+								: undefined
+							const import_timings = await with_site_import_lock(site.dir, site.config, () => import_site_files(site.dir, api_url, site.config, port, server_config, use_bootstrap, base_dir, initial_revision))
 							if (import_timings === null) {
 								// Duplicate _ids on a freshly discovered site — quarantine
 								// it from CMS→file polling until a later import succeeds.
@@ -3204,7 +3207,12 @@ export async function sync_from_cms(site_dir: string, api_url: string, config: S
 	await fs.rm(temp_dir, { recursive: true, force: true })
 	await fs.mkdir(temp_dir, { recursive: true })
 	await fs.writeFile(temp_zip, Buffer.from(zip_data))
-	await extract(temp_zip, { dir: temp_dir })
+	try {
+		await extract(temp_zip, { dir: temp_dir })
+	} catch (error) {
+		await fs.rm(temp_dir, { recursive: true, force: true })
+		throw error
+	}
 	await fs.unlink(temp_zip)
 
 	const site_key = get_site_sync_key(site_dir, config)
@@ -3310,7 +3318,12 @@ async function sync_library_from_cms(base_dir: string, api_url: string): Promise
 	await fs.rm(temp_dir, { recursive: true, force: true })
 	await fs.mkdir(temp_dir, { recursive: true })
 	await fs.writeFile(temp_zip, Buffer.from(zip_data))
-	await extract(temp_zip, { dir: temp_dir })
+	try {
+		await extract(temp_zip, { dir: temp_dir })
+	} catch (error) {
+		await fs.rm(temp_dir, { recursive: true, force: true })
+		throw error
+	}
 	await fs.unlink(temp_zip)
 
 	const temp_library_path = path.join(temp_dir, LIBRARY_DIR)

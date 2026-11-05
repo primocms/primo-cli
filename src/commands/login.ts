@@ -7,7 +7,7 @@ import {
 	browser_login_origin,
 	type BrowserLoginOptions
 } from '../utils/browser-login.js'
-import { get_auth_token, save_auth_token } from '../utils/auth.js'
+import { get_auth_token, save_auth_token, remove_auth_token } from '../utils/auth.js'
 import {
 	read_server_config,
 	get_server_config_path,
@@ -97,6 +97,7 @@ export async function login(options: LoginOptions) {
 						return
 					}
 				}
+				if ([401, 403].includes(response.status)) await remove_auth_token(server, cached)
 				if (![401, 403, 404].includes(response.status))
 					throw new Error(
 						'Could not verify the saved login. Try again when the server is available.'

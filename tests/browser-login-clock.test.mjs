@@ -21,3 +21,10 @@ test('slow_down honors a Retry-After longer than thirty seconds',async t=>{
  assert.equal(polls,2)
  await rejected
 })
+
+test('approval with an empty identity is rejected before credential persistence',async t=>{
+ t.mock.method(globalThis,'fetch',async url=>Response.json(String(url).endsWith('/start')
+  ?{protocol:1,device_code:'a'.repeat(64),user_code:'ABCD-1234-EF01-5678',verification_uri:'/admin/cli-login?code=ABCD-1234-EF01-5678',expires_in:300,interval:1}
+  :{token:'must-not-save',record:{email:''}}))
+ await assert.rejects(authenticate_in_browser('https://cms.test',{noBrowser:true}),/invalid login result/)
+})
