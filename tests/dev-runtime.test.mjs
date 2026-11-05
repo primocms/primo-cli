@@ -227,3 +227,17 @@ test('early CMS exit drains inherited stderr before final startup diagnostics',a
  const log=await fs.readFile(path.join(workspace.work,'.primo/dev.log'),'utf8')
  assert.match(log,/\[cms:stderr\] late drained diagnostic 🚀/)
 })
+
+
+test('startup failure is bounded when a descendant holds the stderr pipe open',async t=>{
+ const workspace=await empty_workspace(t),binary=path.join(workspace.root,'held-stderr-cms.mjs'),pidfile=path.join(workspace.root,'descendant.pid')
+ const writer="process.stderr.write('inherited pipe diagnostic');setInterval(()=>{},1000)"
+ await fs.writeFile(binary,`#!${process.execPath}\nimport {spawn} from 'node:child_process';import fs from 'node:fs';const child=spawn(process.execPath,['-e',${JSON.stringify(writer)}],{stdio:['ignore','ignore',2]});fs.writeFileSync(${JSON.stringify(pidfile)},String(child.pid));child.unref();process.exit(1);\n`)
+ await fs.chmod(binary,0o755)
+ t.after(async()=>{const pid=Number(await fs.readFile(pidfile,'utf8').catch(()=>0));if(pid)try{process.kill(pid,'SIGKILL')}catch{}})
+ const result=await run_cli(['dev'],{cwd:workspace.work,home:workspace.home,env:{PRIMO_BINARY:binary},timeout_ms:8000})
+ assert.equal(result.code,1)
+ assert.match(result.output,/CMS failed to start/)
+ assert.match(result.stdout,/inherited pipe diagnostic/)
+ await assert.rejects(fs.access(path.join(workspace.work,'.primo/dev-server.json')))
+})

@@ -1038,8 +1038,14 @@ export async function dev_server(options: DevOptions) {
 		// Wait for CMS to be ready
 		const ready = await Promise.race([wait_for_ready(`http://127.0.0.1:${port}`, 30000), cms_exited])
 		if (!ready || cms_start_error || cms_process.exitCode !== null || cms_process.signalCode !== null) {
-			// exit precedes close; drain both pipes before finalizing diagnostics.
-			if (cms_start_error || starting_cms.exitCode !== null || starting_cms.signalCode !== null) await cms_closed
+			// exit precedes close. Allow queued diagnostics to drain, but a
+			// descendant can inherit the pipes and keep them open indefinitely.
+			if (cms_start_error || starting_cms.exitCode !== null || starting_cms.signalCode !== null) {
+				await new Promise<void>(resolve => {
+					const timeout = setTimeout(resolve, 1000)
+					cms_closed.then(() => { clearTimeout(timeout); resolve() })
+				})
+			}
 			const stderr_output = stderr_tail.end()
 			spinner.fail('CMS failed to start')
 			if (stderr_output) {
