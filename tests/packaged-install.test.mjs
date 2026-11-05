@@ -5,11 +5,14 @@ import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 import { make_workspace } from './helpers/run-cli.mjs'
 
 const exec = promisify(execFile)
 const root = path.dirname(await fs.realpath(fileURLToPath(new URL('../package.json', import.meta.url))))
-const dependencyRoot = await fs.access(path.join(root, 'node_modules')).then(() => path.join(root, 'node_modules'), () => path.dirname(root))
+// Bundled ZIP dependencies can create a partial local node_modules in an
+// installed package. Resolve a compiler dependency to find the complete tree.
+const dependencyRoot = path.dirname(path.dirname(createRequire(import.meta.url).resolve('svelte/package.json')))
 
 test('installed tarball builds with hoisted dependencies outside the project', { timeout: 60000 }, async t => {
 	const ws = await make_workspace(); t.after(ws.cleanup)
