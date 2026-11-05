@@ -234,8 +234,11 @@ test('startup failure is bounded when a descendant holds the stderr pipe open',a
  const writer="process.stderr.write('inherited pipe diagnostic');setInterval(()=>{},1000)"
  await fs.writeFile(binary,`#!${process.execPath}\nimport {spawn} from 'node:child_process';import fs from 'node:fs';const child=spawn(process.execPath,['-e',${JSON.stringify(writer)}],{stdio:['ignore','ignore',2]});fs.writeFileSync(${JSON.stringify(pidfile)},String(child.pid));child.unref();process.exit(1);\n`)
  await fs.chmod(binary,0o755)
- t.after(async()=>{const pid=Number(await fs.readFile(pidfile,'utf8').catch(()=>0));if(pid)try{process.kill(pid,'SIGKILL')}catch{}})
- const result=await run_cli(['dev'],{cwd:workspace.work,home:workspace.home,env:{PRIMO_BINARY:binary},timeout_ms:8000})
+ const result=await run_cli(['dev'],{cwd:workspace.work,home:workspace.home,env:{PRIMO_BINARY:binary},timeout_ms:8000}).finally(async()=>{
+  // Stop the descendant before workspace cleanup removes its PID file.
+  const pid=Number(await fs.readFile(pidfile,'utf8').catch(()=>0))
+  if(pid)try{process.kill(pid,'SIGKILL')}catch{}
+ })
  assert.equal(result.code,1)
  assert.match(result.output,/CMS failed to start/)
  assert.match(result.stdout,/inherited pipe diagnostic/)
