@@ -60,6 +60,24 @@ The port comes from `--port`, then `port:` in the workspace's `server.yaml`, the
 
 The selected port is saved in `.primo/dev-server.json`, leaving `server.yaml` unchanged. Status, previews (CLI and MCP), new-site handling, and local pull discovery use this session record. A second dev server for the same workspace is refused to avoid opening its database twice. `--force` explicitly stops processes on the requested ports; automatic fallback never stops them.
 
+Agents may start `primo dev --author files` from the workspace root in a background process or persistent terminal. Check `primo status --json` or MCP `get_dev_status` first and reuse the workspace server. If `process_alive` is true but `running` is false, inspect the logs and wait for startup or diagnose the existing process. Keep the PID and stop only a server you started.
+
+### `primo logs`
+
+Read persistent local CLI messages and CMS stdout/stderr, including startup failures. Logs remain readable after the server stops.
+
+```bash
+primo logs                          # Last 100 lines
+primo logs --follow                 # Follow new output until Ctrl+C
+primo logs --dir sites/my-site -n 50 # Resolve the enclosing workspace
+primo logs --previous               # Read the previous rotated log
+primo logs --json                   # Structured result for agents
+```
+
+The workspace stores `.primo/dev.log` and one rotated file, `.primo/dev.log.1`, with a 5 MiB limit per file. Entries identify their timestamp and source (`cli:stdout`, `cli:stderr`, `cms:stdout`, or `cms:stderr`). The underlying CMS output also appears in the terminal. Keep `.primo/` out of version control.
+
+CLI and MCP reads return at most 1000 lines and 256 KiB, with `truncated` indicating omitted history. Read the returned `log_file` directly for the full retained file, or use `--previous` for earlier output. MCP exposes the same output through `get_dev_logs`; `get_dev_status` reports import outcomes separately. These are local process logs; browser console messages are not included.
+
 ### `primo push`
 
 Save local changes to the editable hosted draft. Plain `push` does not publish
@@ -204,12 +222,21 @@ Options:
 
 ### `primo login`
 
-Authenticate with a hosted Primo instance.
+Sign in to a hosted Primo instance through your browser. The CLI opens an approval page, waits for you to sign in if needed, then saves the approved session for later commands.
 
 ```bash
 primo login https://cms.example.com
-primo login https://cms.example.com -e user@example.com
+primo login                           # Use server: in server.yaml
+primo login --no-browser              # Print the approval link for an agent or remote session
+primo login --reauth                  # Request new approval even with a saved login
+primo login --password -e user@example.com # Explicit terminal login for older servers
 ```
+
+Check that the displayed code matches the browser page, then select **Allow access**. The CLI receives the browser session's existing account permissions and expiry. Saved tokens are written privately to `~/.primo/tokens.json` and reused by `pull`, `push`, and `publish`. Running `primo login` again verifies and refreshes a valid saved login without opening the browser.
+
+Browser requests expire after five minutes. `--timeout <seconds>` bounds the CLI wait (1–600 seconds; default 300); Ctrl+C cancels waiting. Expired or revoked sessions require browser approval again. Pending requests are held in server memory, so restarting the CMS cancels them. All login requests and polling must reach the same CMS process.
+
+This flow requires the corresponding CMS endpoints and frontend update. Older servers return an upgrade message; the CLI never silently falls back to password prompts. `--password` explicitly enables the previous email/password flow and requires an interactive terminal. Browser login requires HTTPS except on loopback addresses. `primo pull` also starts browser approval when no hosted token is saved.
 
 ### `primo deploy`
 
@@ -351,5 +378,31 @@ Full documentation: [docs.primo.build](https://docs.primo.build)
 
 ## Requirements
 
-- Node.js 18+
+- Node.js 22.13+ (22.x) or 24+
 - For `primo deploy`: Railway CLI or Fly.io CLI
+
+## Testing
+
+Run `npm ci`, `npx playwright install chromium`, then `npm test`. The suite builds the CLI and verifies its generated pages in Chromium, including preservation of server-rendered content during hydration. CI installs Chromium and its system dependencies before running the suite.
+
+### Large pushes through a reverse proxy
+
+With a CMS supporting `import_chunks_v1`, `primo push`, `primo push --preview`,
+first-instance bootstrap, workspace library pushes and `primo library push`
+send large archives in 1 MiB chunks. A proxy's HTTP 413 response reduces the
+chunk size automatically, down to 64 KiB. Identical chunks can be retried after
+a lost response. No extra flag or proxy-specific configuration is needed.
+
+Chunks are temporary staging only. The CMS verifies the complete archive and
+applies the normal import once, with the original revision and force/backup
+checks. An edit made during upload still rejects a stale push. A failed or
+interrupted upload leaves existing content unchanged; rerun the command to
+start a fresh upload. A lost response to the final import is reported without
+automatic replay, since the import may already have succeeded.
+
+The CMS retains its 512 MiB compressed/expanded archive budgets and normal
+per-file validation. The transport splits even an individual asset across
+requests; it sends the whole archive and the existing importer deduplicates
+unchanged assets. Staged files expire after one hour and are removed on
+completion/cancellation or server restart. Older servers use ordinary
+multipart imports; a 413 explains that a coordinated CMS/CLI upgrade is needed.

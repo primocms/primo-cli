@@ -59,10 +59,10 @@ test(
 			'server.yaml': `server: ${server}\n`,
 			'sites/demo/site.yaml': `name: Demo\nsite_id: ${id}\nserver: ${server}\n`,
 			'sites/demo/blocks/hero/config.yaml': 'name: Hero\n',
-			'sites/demo/blocks/hero/component.svelte': '<h1>{heading}</h1>\n<style>h1 { color: red; }</style>\n',
-			'sites/demo/blocks/hero/fields.yaml': '- name: heading\n  type: text\n',
+			'sites/demo/blocks/hero/component.svelte': '<h1>{heading}</h1><img src={photo.url} alt={photo.alt} width={photo.width} height={photo.height} />{@html body}\n<style>h1 { color: red; }</style>\n',
+			'sites/demo/blocks/hero/fields.yaml': '- name: heading\n  type: text\n- name: photo\n  type: image\n- name: body\n  type: rich-text\n',
 			'sites/demo/page-types/default/config.yaml': 'name: Default\nallowed_blocks: [hero]\n',
-			'sites/demo/pages/index.yaml': 'name: Home\npage_type: Default\nsections:\n  - block: hero\n    content:\n      heading: Original headline\n'
+			'sites/demo/pages/index.yaml': 'name: Home\npage_type: Default\nsections:\n  - block: hero\n    content:\n      heading: Original headline\n      photo: { url: /photo.jpg, alt: Hero, width: 1600, height: 900 }\n      body: { type: doc, content: [{ type: heading, attrs: { level: 3 }, content: [{ type: text, text: Book now, marks: [{ type: bold }, { type: link, attrs: { href: /booking/ } }] }] }] }\n'
 		}
 		for (const [file, value] of Object.entries(files)) {
 			await fs.mkdir(path.dirname(path.join(workspace.work, file)), { recursive: true })
@@ -82,6 +82,14 @@ test(
 		assert.equal(published.code, 0, published.output)
 		assert.equal(JSON.parse(published.stdout).results[0].publish.state, 'succeeded')
 		assert.match(await publicHTML(), /Original headline/)
+		const assertContent = async () => {
+			const html = await publicHTML()
+			assert.match(html, /width="1600" height="900"/)
+			assert.match(html, /<h3>/)
+			assert.match(html, /<strong>Book now<\/strong>/)
+			assert.match(html, /href="\/booking\/"/)
+		}
+		await assertContent()
 		const originalRevision = (await status()).published_revision
 		await fs.writeFile(page, files['sites/demo/pages/index.yaml'].replace('Original headline', 'Draft headline'))
 		const draft = await cli(['push', '--only', 'demo', '--token', token, '--json'])
@@ -97,6 +105,7 @@ test(
 		assert.equal(result.push.revision, result.publish.revision)
 		assert.notEqual(result.push.revision, originalRevision)
 		assert.match(await publicHTML(), /Draft headline/)
+		await assertContent()
 		// Importing source saves a draft; only publication evaluates the Svelte code.
 		await fs.writeFile(component, '<h1>{heading}</h1><script>const broken = ;</script>')
 		const failure = await cli(['push', '--only', 'demo', '--token', token, '--publish', '--json'])

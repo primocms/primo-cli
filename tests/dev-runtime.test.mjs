@@ -95,9 +95,9 @@ test('an orphaned CMS from a killed CLI is named, and --force can stop it', asyn
  assert.notEqual(cms.signalCode ?? (await once(cms, 'exit'))[1], null)
 })
 
-async function start_dev(t, workspace, args = []) {
+async function start_dev(t, workspace, args = [], startup = '') {
  const binary = path.join(workspace.root, 'fake-cms.mjs')
- await fs.writeFile(binary, `#!${process.execPath}\nimport http from 'node:http';\nconst address = process.argv[process.argv.indexOf('--http') + 1];\nhttp.createServer((req,res) => { res.setHeader('Content-Type','application/json'); res.end(req.url === '/api/primo/dev-auth' ? '{"token":"test"}' : '{"items":[]}'); }).listen(Number(address.split(':').pop()), '127.0.0.1');\n`)
+ await fs.writeFile(binary, `#!${process.execPath}\nimport http from 'node:http';\nconst address = process.argv[process.argv.indexOf('--http') + 1];\n${startup}\nhttp.createServer((req,res) => { res.setHeader('Content-Type','application/json'); res.end(req.url === '/api/primo/dev-auth' ? '{"token":"test"}' : '{"items":[]}'); }).listen(Number(address.split(':').pop()), '127.0.0.1');\n`)
  await fs.chmod(binary, 0o755)
  const child = spawn(process.execPath, [CLI_ENTRY, 'dev', ...args], { cwd: workspace.work, env: { ...process.env, HOME: workspace.home, PRIMO_BINARY: binary } })
  let output = ''; child.stdout.on('data', b => output += b); child.stderr.on('data', b => output += b)
@@ -131,6 +131,42 @@ test('two CLI dev sessions use distinct port pairs, retain config, and clean up 
  assert.equal(JSON.parse(status.stdout).port, b.runtime.port)
  b.child.kill('SIGTERM'); await once(b.child, 'exit')
  assert.equal(await read_dev_runtime(second.work), null)
+})
+
+test('dev drains CMS pipes, exposes both streams, and retains CLI and CMS logs after shutdown', async t => {
+ const workspace = await empty_workspace(t)
+ const session = await start_dev(t, workspace, [], `process.stdout.write('x'.repeat(200000)); console.log('CMS stdout ready'); console.error('CMS stderr ready');`)
+ const log_file = path.join(workspace.work, '.primo/dev.log')
+ const contents = await fs.readFile(log_file, 'utf8')
+ assert.match(contents, /\[cms:stdout\].*x/)
+ assert.match(contents, /CMS stdout ready/)
+ assert.match(contents, /\[cms:stderr\] CMS stderr ready/)
+ assert.match(contents, /\[cli:(stdout|stderr)\].*Primo running/)
+ assert.match(session.output(), /CMS stdout ready/)
+ assert.match(session.output(), /CMS stderr ready/)
+ assert.equal((await fs.stat(log_file)).mode & 0o777, 0o600)
+ const status = await run_cli(['status', '--json'], { cwd: workspace.work, home: workspace.home })
+ assert.equal(JSON.parse(status.stdout).pid, session.runtime.pid)
+ assert.equal(JSON.parse(status.stdout).process_alive, true)
+ session.child.kill('SIGTERM'); await once(session.child, 'exit')
+ const result = await run_cli(['logs', '--json', '--lines', '1000'], { cwd: workspace.work, home: workspace.home })
+ assert.equal(result.code, 0, result.output)
+ assert.match(JSON.parse(result.stdout).text, /Shutting down/)
+ assert.match(JSON.parse(result.stdout).text, /CMS stderr ready/)
+})
+
+test('CMS startup failure retains both server streams for later inspection', async t => {
+ const workspace = await empty_workspace(t)
+ const binary = path.join(workspace.root, 'failing-cms.mjs')
+ await fs.writeFile(binary, `#!${process.execPath}\nconsole.log('startup context'); console.error('startup failure detail'); process.exit(1);\n`)
+ await fs.chmod(binary, 0o755)
+ const result = await run_cli(['dev'], { cwd: workspace.work, home: workspace.home, env: { PRIMO_BINARY: binary }, timeout_ms: 10000 })
+ assert.notEqual(result.code, 0)
+ const contents = await fs.readFile(path.join(workspace.work, '.primo/dev.log'), 'utf8')
+ assert.match(contents, /\[cms:stdout\] startup context/)
+ assert.match(contents, /\[cms:stderr\] startup failure detail/)
+ assert.match(contents, /CMS failed to start/)
+ assert.equal(await read_dev_runtime(workspace.work), null)
 })
 
 test('new and local pull discovery use the runtime even when config points elsewhere', async t => {
@@ -178,4 +214,33 @@ test('CLI --port actually controls the server despite a different configured por
  assert.equal(session.runtime.port, port)
  assert.equal((await fetch(`http://127.0.0.1:${port}/api/health`)).ok, true)
  assert.equal(await fs.readFile(path.join(workspace.work, 'server.yaml'), 'utf8'), 'port: 2\n')
+})
+
+test('early CMS exit drains inherited stderr before final startup diagnostics',async t=>{
+ const workspace=await empty_workspace(t),binary=path.join(workspace.root,'late-stderr-cms.mjs')
+ const writer="setTimeout(()=>process.stderr.write('late drained diagnostic 🚀',()=>process.exit(0)),80)"
+ await fs.writeFile(binary,`#!${process.execPath}\nimport {spawn} from 'node:child_process';console.log('startup context');spawn(process.execPath,['-e',${JSON.stringify(writer)}],{stdio:['ignore','ignore',2]}).unref();process.exit(1);\n`)
+ await fs.chmod(binary,0o755)
+ const result=await run_cli(['dev'],{cwd:workspace.work,home:workspace.home,env:{PRIMO_BINARY:binary},timeout_ms:10000})
+ assert.notEqual(result.code,0)
+ assert.match(result.stdout,/late drained diagnostic 🚀/)
+ const log=await fs.readFile(path.join(workspace.work,'.primo/dev.log'),'utf8')
+ assert.match(log,/\[cms:stderr\] late drained diagnostic 🚀/)
+})
+
+
+test('startup failure is bounded when a descendant holds the stderr pipe open',async t=>{
+ const workspace=await empty_workspace(t),binary=path.join(workspace.root,'held-stderr-cms.mjs'),pidfile=path.join(workspace.root,'descendant.pid')
+ const writer="process.stderr.write('inherited pipe diagnostic');setInterval(()=>{},1000)"
+ await fs.writeFile(binary,`#!${process.execPath}\nimport {spawn} from 'node:child_process';import fs from 'node:fs';const child=spawn(process.execPath,['-e',${JSON.stringify(writer)}],{stdio:['ignore','ignore',2]});fs.writeFileSync(${JSON.stringify(pidfile)},String(child.pid));child.unref();process.exit(1);\n`)
+ await fs.chmod(binary,0o755)
+ const result=await run_cli(['dev'],{cwd:workspace.work,home:workspace.home,env:{PRIMO_BINARY:binary},timeout_ms:8000}).finally(async()=>{
+  // Stop the descendant before workspace cleanup removes its PID file.
+  const pid=Number(await fs.readFile(pidfile,'utf8').catch(()=>0))
+  if(pid)try{process.kill(pid,'SIGKILL')}catch{}
+ })
+ assert.equal(result.code,1)
+ assert.match(result.output,/CMS failed to start/)
+ assert.match(result.stdout,/inherited pipe diagnostic/)
+ await assert.rejects(fs.access(path.join(workspace.work,'.primo/dev-server.json')))
 })

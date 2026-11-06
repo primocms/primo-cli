@@ -1,6 +1,6 @@
 import { hosted_targets, type HostedOptions } from '../utils/hosted-targets.js'
 import { read_publication_status } from '../utils/publication.js'
-import { resolve_dev_server } from '../utils/dev-runtime.js'
+import { resolve_dev_server, read_dev_runtime, runtime_has_live_process } from '../utils/dev-runtime.js'
 import fs from 'fs/promises'
 import path from 'path'
 import chalk from 'chalk'
@@ -56,6 +56,7 @@ export async function status(options: StatusOptions) {
 
 	const server_config = await read_server_config(base_dir)
 	const { port, url: api_url, running } = await resolve_dev_server(base_dir, server_config.port)
+	const runtime = await read_dev_runtime(base_dir)
 	const sites = await read_sites(base_dir)
 
 	// When the server is up, its dev-auth token unlocks the authoritative CMS
@@ -73,6 +74,9 @@ export async function status(options: StatusOptions) {
 			workspace: base_dir,
 			port,
 			running,
+			process_alive: runtime !== null && runtime_has_live_process(runtime),
+			...(runtime ? { pid: runtime.pid, cms_pid: runtime.cms_pid } : {}),
+			log_file: path.join(base_dir, '.primo/dev.log'),
 			groups: server_config.site_groups ?? [],
 			sites,
 			...(cms ? { cms } : {})

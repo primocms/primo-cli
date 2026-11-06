@@ -161,7 +161,7 @@ test('preview and dry-run cannot publish, even in non-interactive JSON mode', as
 		assert.equal(result.code, 1, result.output)
 		assert.match(JSON.parse(result.stdout).error, /cannot be combined/)
 	}
-	assert.equal(server.requests.length, 0)
+	assert.equal(server.requests.length, 0, JSON.stringify(server.requests.map(({method,path})=>({method,path}))))
 })
 
 test('hosted status reports behind and unknown without falling back to local state', async (t) => {
@@ -254,7 +254,7 @@ test('push and standalone publication agree on explicit per-site servers', async
 	const result = await run('push', '--only', 'alpha', '--publish', '--json')
 	assert.equal(result.code, 0, result.output)
 	assert.equal(JSON.parse(result.stdout).results[0].server, alternate.url)
-	assert.equal(server.requests.length, 0)
+	assert.equal(server.requests.length, 0, JSON.stringify(server.requests.map(({method,path})=>({method,path}))))
 	const publish = await run('publish', '--only', 'alpha', '--json')
 	assert.equal(publish.code, 0, publish.output)
 	assert.equal(JSON.parse(publish.stdout).results[0].server, alternate.url)
@@ -269,7 +269,7 @@ test('dry-run JSON lists selected targets without sending requests', async (t) =
 	assert.equal(parsed.results[0].target, 'alpha')
 	assert.equal(parsed.results[0].push.state, 'not_attempted')
 	assert.equal(parsed.results[0].publish.state, 'not_requested')
-	assert.equal(server.requests.length, 0)
+	assert.equal(server.requests.length, 0, JSON.stringify(server.requests.map(({method,path})=>({method,path}))))
 })
 
 test('explicit server and site publish hosted content without a local checkout', async (t) => {

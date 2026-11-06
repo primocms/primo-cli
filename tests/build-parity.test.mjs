@@ -348,8 +348,8 @@ describe('primo build parity', () => {
 		try {
 			assert.equal(result.code, 0, result.output)
 			assert.match(html, /<body id="page">/)
-			assert.match(html, /<header><div data-section="navsection00001" id="section-navsection00001" data-symbol="nav"><nav>Nav<\/nav>/)
-			assert.match(html, /<main><div data-section="section0000001" id="section-section0000001" data-symbol="hero"><h1>Hello<\/h1>/)
+			assert.match(html, /<header><div data-section="navsection00001" id="section-navsection00001" data-symbol="nav"><!--\[--><nav>Nav<\/nav><!--\]--><\/div><\/header>/)
+			assert.match(html, /<main><div data-section="section0000001" id="section-section0000001" data-symbol="hero"><!--\[--><h1>Hello<\/h1><!--\]--><\/div><\/main>/)
 			assert.doesNotMatch(html, /<footer>/, 'an unused footer zone is left out')
 		} finally {
 			await cleanup()

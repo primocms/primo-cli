@@ -1,3 +1,4 @@
+import { post_import } from '../utils/import-upload.js'
 import fs from 'fs/promises'
 import path from 'path'
 import chalk from 'chalk'
@@ -447,9 +448,11 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 		if (options.preview) {
 			throw new Error('Authentication required for --preview. Run `primo login` first.')
 		}
-		outcome.push = { state: 'unknown', error_code: 'push_outcome_unknown' }
+		outcome.push = { state: 'failed', error_code: 'push_failed' }
 		spinner.text = 'No auth token — attempting bootstrap...'
-		const bootstrap_result = await try_bootstrap_site(server, undefined, zip_buffer, config, site_id, group_name, plan)
+		const bootstrap_result = await try_bootstrap_site(server, undefined, zip_buffer, config, site_id, group_name, plan, started => {
+			outcome.push = started ? { state: 'unknown', error_code: 'push_outcome_unknown' } : { state: 'failed', error_code: 'push_failed' }
+		})
 		if (bootstrap_result.ok) {
 			outcome.push = { state: 'succeeded', revision: bootstrap_result.revision }
 			await finish_push(plan, bootstrap_result)
@@ -477,11 +480,9 @@ async function push_single_site(site_dir: string, options: PushOptions, spinner:
 	if (group_name) form_data.append('group_name', group_name)
 	append_push_guard(form_data, plan)
 
-	if (!options.preview) outcome.push = { state: 'unknown', error_code: 'push_outcome_unknown' }
-	const response = await fetch(endpoint, {
-		method: 'POST',
-		headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-		body: form_data
+	if (!options.preview) outcome.push = { state: 'failed', error_code: 'push_failed' }
+	const response = await post_import(endpoint, form_data, token, started => {
+		if (!options.preview) outcome.push = started ? { state: 'unknown', error_code: 'push_outcome_unknown' } : { state: 'failed', error_code: 'push_failed' }
 	})
 
 
@@ -519,7 +520,8 @@ async function try_bootstrap_site(
 	config: SiteConfig | null,
 	site_id: string,
 	group_name?: string,
-	plan?: PushPlan
+	plan?: PushPlan,
+	onCommitState?: (started: boolean) => void
 ): Promise<{ ok: true; created_ids?: CreatedIDs; revision?: string } | { ok: false; error: string }> {
 	const form = new FormData()
 	form.append('site_id', site_id)
@@ -535,14 +537,7 @@ async function try_bootstrap_site(
 	// deploy URL's host so that instance's front door resolves immediately.
 	form.append('file', new Blob([zip_buffer]), 'site.zip')
 
-	const headers: Record<string, string> = {}
-	if (token) headers['Authorization'] = `Bearer ${token}`
-
-	const response = await fetch(`${server}/api/primo/bootstrap`, {
-		method: 'POST',
-		headers,
-		body: form
-	})
+	const response = await post_import(`${server}/api/primo/bootstrap`, form, token, onCommitState)
 
 	if (response.ok) {
 		const body = await response.json().catch(() => ({})) as { created_ids?: CreatedIDs; revision?: string }
@@ -581,11 +576,9 @@ async function push_library_dir(root_dir: string, options: PushOptions, spinner:
 	form_data.append('file', new Blob([zip_buffer]), 'library.zip')
 	append_push_guard(form_data, plan)
 
-	push_result(options, plan.label, plan).push = { state: 'unknown', error_code: 'push_outcome_unknown' }
-	const response = await fetch(`${server}/api/primo/import-library`, {
-		method: 'POST',
-		headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-		body: form_data
+	push_result(options, plan.label, plan).push = { state: 'failed', error_code: 'push_failed' }
+	const response = await post_import(`${server}/api/primo/import-library`, form_data, token, started => {
+		push_result(options, plan.label, plan).push = started ? { state: 'unknown', error_code: 'push_outcome_unknown' } : { state: 'failed', error_code: 'push_failed' }
 	})
 
 	if (response.status === 404) {

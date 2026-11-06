@@ -141,3 +141,24 @@ test('a deleted server site is a conflict rather than silently recreated', async
 	assert.match(result.output,/changed on the server/)
 	assert.equal(server.requests.filter(r => r.method === 'POST').length,0)
 })
+
+test('bootstrap staging failure reports failed before any import is submitted',async t=>{
+ const {randomBytes}=await import('node:crypto')
+ const workspace=await make_workspace();t.after(workspace.cleanup)
+ const server=await start_mock_server({sites:[],revisions:{firstsite000001:'absent'},on_request:({url,res})=>{
+  if(url.pathname==='/api/primo/import-uploads'){
+   res.writeHead(201,{'Content-Type':'application/json'});res.end(JSON.stringify({protocol:2,upload_id:'a'.repeat(64),chunk_bytes:1024*1024}));return true
+  }
+ }})
+ t.after(server.close)
+ await fs.writeFile(path.join(workspace.work,'site.yaml'),`name: First site\nsite_id: firstsite000001\nserver: ${server.url}\n`)
+ await fs.mkdir(path.join(workspace.work,'uploads'))
+ await fs.writeFile(path.join(workspace.work,'uploads/payload.bin'),randomBytes(2*1024*1024))
+ const result=await run_cli(['push','--json'],{cwd:workspace.work,home:workspace.home})
+ assert.equal(result.code,1,result.output)
+ const report=JSON.parse(result.stdout)
+ assert.equal(report.results[0].push.state,'failed')
+ assert.equal(report.results[0].push.error_code,'push_failed')
+ assert.match(report.results[0].push.error,/invalid batched-upload session/)
+ assert.equal(server.matching('/api/primo/bootstrap').length,0)
+})
